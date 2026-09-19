@@ -21,7 +21,7 @@ public class ObjectPresenceTrackerTest {
                 "vision-detection-service/src/main/resources/models/yolov8n.onnx"
         );
 
-        try (PresenceEventStore store = new PresenceEventStore("object-presence-tracker/data/presence")) {
+        try (PresenceEventStore store = new PresenceEventStore("./object-presence-tracker/data/presence")) {
             ObjectTracker tracker = new ObjectTracker(store);
 
             Thread.sleep(1000); // esperar el primer frame
