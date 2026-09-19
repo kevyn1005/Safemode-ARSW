@@ -1,13 +1,7 @@
-# Build con contexto en la raiz del repo (ver docker-compose.yml): este
-# modulo pertenece a un reactor Maven multi-modulo y necesita el pom padre.
 FROM maven:3.9-eclipse-temurin-17
 
-# Robot.createScreenCapture() (FrameCapturer) necesita un entorno grafico.
-# El contenedor no tiene pantalla real, asi que se usa Xvfb (framebuffer X
-# virtual) para evitar HeadlessException / falta de DISPLAY. No cambia nada
-# del codigo Java, solo envuelve la ejecucion.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends xvfb \
+    && apt-get install -y --no-install-recommends xvfb libxtst6 libxi6 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
@@ -18,12 +12,19 @@ COPY object-presence-tracker/pom.xml object-presence-tracker/pom.xml
 COPY alert-engine/pom.xml alert-engine/pom.xml
 COPY realtime-gateway/pom.xml realtime-gateway/pom.xml
 
-# Compila en build-time para detectar errores temprano (no en cada arranque).
-RUN mvn -q -pl camera-feed-service -am package -DskipTests
+RUN mvn -q -pl camera-feed-service package -DskipTests
 
 ENV DISPLAY=:99
 EXPOSE 8080
 
-# Reutiliza exec-maven-plugin, ya configurado en camera-feed-service/pom.xml
-# (mainClass=FrameCapturerTest), igual que se corre localmente.
-CMD ["xvfb-run", "-a", "mvn", "-pl", "camera-feed-service", "-am", "exec:java"]
+# xvfb-run se quedaba colgado esperando a que el X server "avisara" que
+# estaba listo y nunca llegaba a lanzar el comando (probado en vivo: el
+# proceso Xvfb arrancaba bien, pero xvfb-run nunca hacia exec al comando).
+# Por eso se levanta Xvfb a mano en background y se corre el jar directo.
+#
+# Tampoco se usa "mvn exec:java": con -am (necesario para que el reactor
+# resuelva el pom padre) el goal se ejecuta sobre TODOS los proyectos del
+# reactor, incluido el pom padre, que no tiene mainClass configurado y
+# hace fallar el build antes de llegar a camera-feed-service (probado en
+# vivo, ver docs/adr/0001-...md).
+CMD ["sh", "-c", "Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp & sleep 1; exec java -cp camera-feed-service/target/classes com.safemode.camerafeed.FrameCapturerTest"]
