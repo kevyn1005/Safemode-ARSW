@@ -1,32 +1,47 @@
-﻿version: "3.9"
+version: "3.9"
 
 services:
   camera-feed-service:
-    build: ./camera-feed-service
+    build:
+      context: .
+      dockerfile: camera-feed-service/Dockerfile
     ports:
       - "8081:8080"
 
   vision-detection-service:
-    build: ./vision-detection-service
+    build:
+      context: .
+      dockerfile: vision-detection-service/Dockerfile
     ports:
       - "8082:8080"
 
-  object-presence-tracker:
-    build: ./object-presence-tracker
-    ports:
-      - "8083:8080"
+  # Los servicios de abajo todavia no tienen codigo (solo el pom.xml /
+  # package.json base, ver README). Un contenedor para ellos arrancaria
+  # sin Main-Class / app real y fallaria de inmediato, asi que quedan
+  # comentados hasta que el equipo los implemente.
 
-  alert-engine:
-    build: ./alert-engine
-    ports:
-      - "8084:8080"
+  # object-presence-tracker:
+  #   build:
+  #     context: .
+  #     dockerfile: object-presence-tracker/Dockerfile
+  #   ports:
+  #     - "8083:8080"
 
-  realtime-gateway:
-    build: ./realtime-gateway
-    ports:
-      - "8085:8080"
+  # alert-engine:
+  #   build:
+  #     context: .
+  #     dockerfile: alert-engine/Dockerfile
+  #   ports:
+  #     - "8084:8080"
 
-  security-dashboard:
-    build: ./security-dashboard
-    ports:
-      - "3000:3000"
+  # realtime-gateway:
+  #   build:
+  #     context: .
+  #     dockerfile: realtime-gateway/Dockerfile
+  #   ports:
+  #     - "8085:8080"
+
+  # security-dashboard:
+  #   build: ./security-dashboard
+  #   ports:
+  #     - "3000:3000"

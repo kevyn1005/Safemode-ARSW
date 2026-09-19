@@ -5,6 +5,7 @@ import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.util.List;
 
+// Script de verificacion manual (no es un test automatizado; no usa JUnit).
 public class VisionDetectionTest {
     public static void main(String[] args) throws Exception {
         Rectangle region = new Rectangle(41, 45, 1195, 660);
