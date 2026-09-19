@@ -15,3 +15,4 @@ dist/
 build/
 .env
 *.log
+object-presence-tracker/data/
