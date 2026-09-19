@@ -1,47 +1,31 @@
 package com.safemode.vision;
 
 import com.safemode.camerafeed.FrameCapturer;
+import javax.imageio.ImageIO;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
-import java.util.List;
+import java.io.File;
 
-// Script de verificacion manual (no es un test automatizado; no usa JUnit).
 public class VisionDetectionTest {
     public static void main(String[] args) throws Exception {
         Rectangle region = new Rectangle(41, 45, 1195, 660);
 
         FrameCapturer capturer = new FrameCapturer(region);
-        capturer.start(2); // 2 fps
+        capturer.start(2);
 
         ObjectDetector detector = new ObjectDetector(
                 "vision-detection-service/src/main/resources/models/yolov8n.onnx"
         );
 
-        Thread.sleep(1000); // esperar el primer frame
+        System.out.println("Tienes 8 segundos para acomodar la escena...");
+        Thread.sleep(8000);
 
-        int totalFrames = 15;
-        for (int i = 0; i < totalFrames; i++) {
-            BufferedImage frame = capturer.getLatestFrame();
-            if (frame == null) {
-                Thread.sleep(500);
-                continue;
-            }
+        BufferedImage frame = capturer.getLatestFrame();
 
-            List<ObjectDetector.Detection> detections = detector.detect(frame);
+        ImageIO.write(frame, "png", new File("debug_frame.png"));
+        System.out.println("Frame guardado en debug_frame.png - revísalo");
 
-            System.out.println("--- Frame " + i + " ---");
-            if (detections.isEmpty()) {
-                System.out.println("  Sin detecciones.");
-            } else {
-                for (ObjectDetector.Detection d : detections) {
-                    System.out.println("  clase=" + d.className()
-                            + " posicion=(" + d.x() + "," + d.y() + ")"
-                            + " tamaño=" + d.width() + "x" + d.height());
-                }
-            }
-
-            Thread.sleep(500);
-        }
+        detector.debugRelevantClassesOnly(frame);
 
         capturer.stop();
     }

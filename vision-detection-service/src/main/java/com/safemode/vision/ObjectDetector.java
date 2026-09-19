@@ -1,8 +1,10 @@
 package com.safemode.vision;
 
 import ai.onnxruntime.*;
-import java.awt.image.BufferedImage;
+import java.awt.Color;
+import java.awt.Graphics2D;
 import java.awt.Image;
+import java.awt.image.BufferedImage;
 import java.nio.FloatBuffer;
 import java.util.*;
 
@@ -30,11 +32,8 @@ public class ObjectDetector {
     }
 
     public List<Detection> detect(BufferedImage frame) throws OrtException {
-        int origW = frame.getWidth();
-        int origH = frame.getHeight();
-
-        BufferedImage resized = resize(frame, INPUT_SIZE, INPUT_SIZE);
-        float[] inputData = imageToCHWArray(resized);
+        Letterbox lb = letterbox(frame, INPUT_SIZE);
+        float[] inputData = imageToCHWArray(lb.image);
 
         OnnxTensor inputTensor = OnnxTensor.createTensor(env,
                 FloatBuffer.wrap(inputData), new long[]{1, 3, INPUT_SIZE, INPUT_SIZE});
@@ -44,14 +43,13 @@ public class ObjectDetector {
 
         float[][][] output = (float[][][]) result.get(0).getValue(); // [1][84][8400]
 
-        return parseDetections(output, origW, origH);
+        return parseDetections(output, lb);
     }
 
-    // Método de debug: muestra las mejores detecciones SIN filtrar por umbral,
-    // para diagnosticar si el modelo "ve" algo aunque sea con poca confianza.
+    // Método de debug: top N detecciones SIN filtrar por umbral (todas las 80 clases)
     public void debugTopDetections(BufferedImage frame, int topN) throws OrtException {
-        BufferedImage resized = resize(frame, INPUT_SIZE, INPUT_SIZE);
-        float[] inputData = imageToCHWArray(resized);
+        Letterbox lb = letterbox(frame, INPUT_SIZE);
+        float[] inputData = imageToCHWArray(lb.image);
 
         OnnxTensor inputTensor = OnnxTensor.createTensor(env,
                 FloatBuffer.wrap(inputData), new long[]{1, 3, INPUT_SIZE, INPUT_SIZE});
@@ -64,7 +62,7 @@ public class ObjectDetector {
 
         System.out.println("Shape real: [" + pred.length + "][" + pred[0].length + "]");
 
-        List<float[]> best = new ArrayList<>(); // cada elemento: [score, classIdx, boxIdx]
+        List<float[]> best = new ArrayList<>();
         for (int i = 0; i < pred[0].length; i++) {
             for (int c = 0; c < NUM_CLASSES; c++) {
                 float score = pred[4 + c][i];
@@ -82,11 +80,55 @@ public class ObjectDetector {
         }
     }
 
-    private BufferedImage resize(BufferedImage original, int w, int h) {
-        Image scaled = original.getScaledInstance(w, h, Image.SCALE_SMOOTH);
-        BufferedImage resized = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
-        resized.getGraphics().drawImage(scaled, 0, 0, null);
-        return resized;
+    // Método de debug: mejor score SOLO de tus 4 clases relevantes
+    public void debugRelevantClassesOnly(BufferedImage frame) throws OrtException {
+        Letterbox lb = letterbox(frame, INPUT_SIZE);
+        float[] inputData = imageToCHWArray(lb.image);
+
+        OnnxTensor inputTensor = OnnxTensor.createTensor(env,
+                FloatBuffer.wrap(inputData), new long[]{1, 3, INPUT_SIZE, INPUT_SIZE});
+
+        String inputName = session.getInputNames().iterator().next();
+        OrtSession.Result result = session.run(Map.of(inputName, inputTensor));
+
+        float[][][] output = (float[][][]) result.get(0).getValue();
+        float[][] pred = output[0];
+
+        for (Map.Entry<Integer, String> entry : RELEVANT_CLASSES.entrySet()) {
+            int classIdx = entry.getKey();
+            String className = entry.getValue();
+            float best = 0;
+            for (int i = 0; i < pred[0].length; i++) {
+                float score = pred[4 + classIdx][i];
+                if (score > best) best = score;
+            }
+            System.out.println("  mejor score para " + className + " = " + best);
+        }
+    }
+
+    // Redimensiona manteniendo proporción y rellena con gris (estándar de YOLO)
+    private Letterbox letterbox(BufferedImage src, int targetSize) {
+        int w = src.getWidth(), h = src.getHeight();
+        float scale = Math.min((float) targetSize / w, (float) targetSize / h);
+        int newW = Math.round(w * scale);
+        int newH = Math.round(h * scale);
+
+        Image scaled = src.getScaledInstance(newW, newH, Image.SCALE_SMOOTH);
+        BufferedImage padded = new BufferedImage(targetSize, targetSize, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = padded.createGraphics();
+        g.setColor(new Color(114, 114, 114));
+        g.fillRect(0, 0, targetSize, targetSize);
+        int padX = (targetSize - newW) / 2;
+        int padY = (targetSize - newH) / 2;
+        g.drawImage(scaled, padX, padY, null);
+        g.dispose();
+
+        Letterbox result = new Letterbox();
+        result.image = padded;
+        result.scale = scale;
+        result.padX = padX;
+        result.padY = padY;
+        return result;
     }
 
     // Convierte a formato CHW (channels-height-width) que espera YOLO/ONNX
@@ -104,14 +146,11 @@ public class ObjectDetector {
     }
 
     // output[0] tiene forma [84][8400]:
-    // filas 0-3 = x_center, y_center, width, height (en escala 0-640)
+    // filas 0-3 = x_center, y_center, width, height (en escala 0-640, sobre la imagen con letterbox)
     // filas 4-83 = score de cada una de las 80 clases COCO
-    private List<Detection> parseDetections(float[][][] output, int origW, int origH) {
+    private List<Detection> parseDetections(float[][][] output, Letterbox lb) {
         List<Detection> detections = new ArrayList<>();
         float[][] pred = output[0]; // [84][8400]
-
-        float scaleX = (float) origW / INPUT_SIZE;
-        float scaleY = (float) origH / INPUT_SIZE;
 
         for (int i = 0; i < NUM_BOXES; i++) {
             int bestClass = -1;
@@ -129,10 +168,11 @@ public class ObjectDetector {
 
             float cx = pred[0][i], cy = pred[1][i], bw = pred[2][i], bh = pred[3][i];
 
-            int x = (int) ((cx - bw / 2) * scaleX);
-            int y = (int) ((cy - bh / 2) * scaleY);
-            int w = (int) (bw * scaleX);
-            int h = (int) (bh * scaleY);
+            // Deshacer el padding y el escalado del letterbox para volver a coordenadas reales
+            int x = (int) ((cx - bw / 2 - lb.padX) / lb.scale);
+            int y = (int) ((cy - bh / 2 - lb.padY) / lb.scale);
+            int w = (int) (bw / lb.scale);
+            int h = (int) (bh / lb.scale);
 
             detections.add(new Detection(RELEVANT_CLASSES.get(bestClass), bestScore, x, y, w, h));
         }
@@ -140,7 +180,7 @@ public class ObjectDetector {
         return nonMaxSuppression(detections);
     }
 
-    // Elimina cajas duplicadas/solapadas de la misma clase (YOLO genera muchas por objeto)
+    // Elimina cajas duplicadas de la misma clase (YOLO genera varias por objeto)
     private List<Detection> nonMaxSuppression(List<Detection> input) {
         List<Detection> sorted = new ArrayList<>(input);
         sorted.sort((a, b) -> Float.compare(b.confidence(), a.confidence()));
@@ -155,7 +195,8 @@ public class ObjectDetector {
             for (int j = i + 1; j < sorted.size(); j++) {
                 if (removed[j]) continue;
                 Detection b = sorted.get(j);
-                if (a.className().equals(b.className()) && iou(a, b) > 0.45f) {
+                // misma clase => nos quedamos solo con la de mayor confianza
+                if (a.className().equals(b.className())) {
                     removed[j] = true;
                 }
             }
@@ -163,17 +204,10 @@ public class ObjectDetector {
         return result;
     }
 
-    private float iou(Detection a, Detection b) {
-        int x1 = Math.max(a.x(), b.x());
-        int y1 = Math.max(a.y(), b.y());
-        int x2 = Math.min(a.x() + a.width(), b.x() + b.width());
-        int y2 = Math.min(a.y() + a.height(), b.y() + b.height());
-
-        int interArea = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
-        int areaA = a.width() * a.height();
-        int areaB = b.width() * b.height();
-
-        return (float) interArea / (areaA + areaB - interArea);
+    private static class Letterbox {
+        BufferedImage image;
+        float scale;
+        int padX, padY;
     }
 
     public record Detection(String className, float confidence, int x, int y, int width, int height) {}

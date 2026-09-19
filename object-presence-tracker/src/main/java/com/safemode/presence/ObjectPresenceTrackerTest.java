@@ -18,7 +18,7 @@ public class ObjectPresenceTrackerTest {
         capturer.start(2); // 2 fps
 
         ObjectDetector detector = new ObjectDetector(
-                "vision-detection-service/src/main/resources/models/yolov8n.onnx"
+                "vision-detection-service/src/main/resources/models/yolov8s.onnx"
         );
 
         try (PresenceEventStore store = new PresenceEventStore("./object-presence-tracker/data/presence")) {
