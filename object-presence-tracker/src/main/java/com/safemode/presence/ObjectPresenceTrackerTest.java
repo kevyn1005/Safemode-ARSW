@@ -5,6 +5,8 @@ import com.safemode.vision.ObjectDetector;
 
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 // Script de verificacion manual (no es un test automatizado; no usa JUnit).
@@ -17,17 +19,22 @@ public class ObjectPresenceTrackerTest {
         FrameCapturer capturer = new FrameCapturer(region);
         capturer.start(2); // 2 fps
 
-        ObjectDetector detector = new ObjectDetector(
-                "vision-detection-service/src/main/resources/models/yolov8s.onnx"
-        );
+        // Si existe un modelo mas grande exportado localmente (no va al repo: data/ esta en .gitignore), se usa ese.
+        Path biggerModel = Path.of("object-presence-tracker", "data", "models", "yolov8m.onnx");
+        String modelPath = Files.exists(biggerModel)
+                ? biggerModel.toString()
+                : "vision-detection-service/src/main/resources/models/yolov8s.onnx";
+        System.out.println("Modelo de deteccion: " + modelPath);
+        ObjectDetector detector = new ObjectDetector(modelPath);
 
         try (PresenceEventStore store = new PresenceEventStore("./object-presence-tracker/data/presence")) {
             ObjectTracker tracker = new ObjectTracker(store);
 
             Thread.sleep(1000); // esperar el primer frame
 
-            int totalFrames = 30;
-            for (int i = 0; i < totalFrames; i++) {
+            long captureSeconds = 30;
+            long endAt = System.currentTimeMillis() + captureSeconds * 1000;
+            while (System.currentTimeMillis() < endAt) {
                 BufferedImage frame = capturer.getLatestFrame();
                 if (frame == null) {
                     Thread.sleep(500);
