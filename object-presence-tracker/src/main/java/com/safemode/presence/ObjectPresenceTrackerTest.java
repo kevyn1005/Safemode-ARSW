@@ -6,6 +6,7 @@ import com.safemode.vision.PoseEstimator;
 
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -16,6 +17,8 @@ import java.util.List;
 // ver ObjectTrackerTest en src/test/java (no necesitan camara).
 public class ObjectPresenceTrackerTest {
     public static void main(String[] args) throws Exception {
+        clearPreviousRunPhotos();
+
         Rectangle region = new Rectangle(0, 0, 2560, 1080);
 
         FrameCapturer capturer = new FrameCapturer(region);
@@ -35,6 +38,9 @@ public class ObjectPresenceTrackerTest {
         System.out.println("Modelo de pose: " + (poseEstimator != null ? poseModel : "ninguno (se usa la franja central)"));
 
         try (PresenceEventStore store = new PresenceEventStore("./object-presence-tracker/data/presence")) {
+            // Cada corrida de prueba empieza tambien con la tabla vacia (las fotos ya se borraron arriba).
+            System.out.println("Filas de la corrida anterior borradas: " + store.clearAllEvents());
+
             ObjectTracker tracker = new ObjectTracker(store, poseEstimator);
 
             // Descripcion del dueno con IA (opcional): solo si existe la variable de entorno NVIDIA_API_KEY.
@@ -68,5 +74,22 @@ public class ObjectPresenceTrackerTest {
         } finally {
             capturer.stop();
         }
+    }
+
+    // Cada corrida de prueba empieza con la carpeta de fotos vacia: cada PNG pesa ~3 MB y se acumulan rapido.
+    // Solo borra los .png de esa carpeta (no toca subcarpetas). La tabla de eventos tambien se vacia al abrir la base.
+    private static void clearPreviousRunPhotos() throws IOException {
+        Path framesDir = Path.of("object-presence-tracker", "data", "frames");
+        if (!Files.isDirectory(framesDir)) {
+            return;
+        }
+        int deleted = 0;
+        try (var files = Files.list(framesDir)) {
+            for (Path file : files.filter(f -> Files.isRegularFile(f) && f.getFileName().toString().endsWith(".png")).toList()) {
+                Files.delete(file);
+                deleted++;
+            }
+        }
+        System.out.println("Fotos de la corrida anterior borradas: " + deleted);
     }
 }

@@ -238,6 +238,25 @@ public class PresenceEventStore implements AutoCloseable {
         }
     }
 
+    /**
+     * Borra todos los eventos y reinicia los ids desde 1. Solo para el script de prueba manual,
+     * que empieza cada corrida desde cero; el seguimiento real nunca borra historial.
+     * Devuelve cuantas filas habia.
+     */
+    public int clearAllEvents() {
+        try (Statement st = connection.createStatement()) {
+            int rows;
+            try (var rs = st.executeQuery("SELECT COUNT(*) FROM object_presence_event")) {
+                rs.next();
+                rows = rs.getInt(1);
+            }
+            st.execute("TRUNCATE TABLE object_presence_event RESTART IDENTITY");
+            return rows;
+        } catch (SQLException e) {
+            throw new IllegalStateException("No se pudo vaciar object_presence_event", e);
+        }
+    }
+
     /** Da la descripcion por IA del ultimo evento de ese tipo, o null (usado en las pruebas). */
     String lastOwnerAiDescription(String eventType) {
         String sql = "SELECT owner_ai_description FROM object_presence_event WHERE event_type = ? ORDER BY id DESC LIMIT 1";

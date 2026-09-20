@@ -389,6 +389,20 @@ class ObjectTrackerTest {
     }
 
     @Test
+    void vaciarLosEventosBorraTodoYReiniciaLosIds() {
+        PresenceEventStore store = PresenceEventStore.inMemory("vaciar-eventos");
+        Instant when = Instant.parse("2026-01-01T00:00:00Z");
+        store.recordRegistered(1, "suitcase", 0, 0, 10, 10, when, null, null);
+        store.recordRemoved(1, "suitcase", 0, 0, 10, 10, when, false, null, null);
+
+        assertEquals(2, store.clearAllEvents(), "debe informar cuantas filas habia");
+        assertEquals(0, store.countEvents("REGISTERED_AT_REST"));
+        assertEquals(0, store.countEvents("REMOVED"));
+        assertEquals(1L, store.recordRegistered(2, "backpack", 0, 0, 10, 10, when, null, null),
+                "despues de vaciar, los ids empiezan otra vez en 1");
+    }
+
+    @Test
     void guardaUnaImagenDelFrameCuandoRegistraElObjeto(@TempDir Path tempDir) {
         MutableClock clock = new MutableClock();
         PresenceEventStore store = PresenceEventStore.inMemory("guarda-imagen");
