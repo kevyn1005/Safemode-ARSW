@@ -74,6 +74,8 @@ public class PresenceEventStore implements AutoCloseable {
                     frame_path VARCHAR(500)
                 )
                 """);
+            // Bases creadas antes de existir frame_path: CREATE TABLE IF NOT EXISTS no las toca.
+            st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS frame_path VARCHAR(500)");
         }
     }
 
