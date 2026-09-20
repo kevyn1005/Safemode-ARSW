@@ -55,6 +55,8 @@ public class ObjectTracker {
     private final Path frameStorageDir;
     private final Function<BufferedImage, Keypoint[]> poseFinder;
     private OwnerVisionDescriber visionDescriber;
+    // persona -> dato de tatuajes ya obtenido de sus antebrazos en esta corrida (ver tattoosFromArms)
+    private final Map<Long, String> tattooCheckByPerson = new java.util.concurrent.ConcurrentHashMap<>();
     private Executor aiExecutor;
     private ExecutorService ownedAiPool;
 
@@ -284,7 +286,7 @@ public class ObjectTracker {
         t.setOwner(owner);
         long eventId = store.recordRegistered(t.getId(), t.getClassName(), t.getX(), t.getY(), t.getWidth(), t.getHeight(), now, framePath, owner);
         t.setRegisteredEventId(eventId);
-        requestAiDescription(t, t.takeOwnerCrop(), t.takeOwnerPose());
+        requestAiDescription(t, t.takeOwnerCrop(), t.takeOwnerPose(), owner == null ? null : owner.personId());
     }
 
     private void markRemoved(TrackedObject t, List<Detection> personDetections, Instant now, BufferedImage frame) {
@@ -343,14 +345,20 @@ public class ObjectTracker {
         return aiExecutor;
     }
 
-    /** Si la descripcion ya trae un dato de tatuajes (lo que se ve, o "ninguno"); "no se ve" ya se omite al armarla. */
-    static boolean hasTattooInfo(String description) {
+    /**
+     * Si la descripcion afirma que HAY tatuajes. Un "ninguno" no cuenta como confirmacion (con la persona
+     * entera el brazo es diminuto y un "ninguno" ya fallo con tatuajes visibles), ni tampoco que falte el dato
+     * ("no se ve" se omite al armar la frase): en ambos casos conviene revisar los antebrazos.
+     */
+    static boolean reportsTattoos(String description) {
         if (description == null) {
             return false;
         }
         for (String part : description.split("; ")) {
             if (part.startsWith("tatuajes:")) {
-                return true;
+                String value = part.substring("tatuajes:".length()).trim().toLowerCase(java.util.Locale.ROOT);
+                return !(value.isEmpty() || value.equals("ninguno") || value.equals("ninguna")
+                        || value.equals("no hay") || value.equals("sin tatuajes"));
             }
         }
         return false;
@@ -377,8 +385,35 @@ public class ObjectTracker {
         return String.join("; ", parts);
     }
 
+    /**
+     * Dato de tatuajes sacado del recorte de antebrazos, o null si no se pudo saber. El resultado se recuerda por
+     * persona durante la corrida: los otros objetos de la misma persona reutilizan la respuesta en vez de gastar
+     * otra llamada. Solo se recuerdan respuestas con dato; un fallo o un "no se ve" se puede reintentar despues.
+     * Limite: el id de persona es del seguimiento de esta corrida; si dos personas muy juntas se intercambian el id,
+     * se reutilizaria el dato de la otra.
+     */
+    private String tattoosFromArms(OwnerVisionDescriber describer, TrackedObject t, BufferedImage ownerCrop,
+                                   Keypoint[] pose, Long ownerId) {
+        String remembered = ownerId == null ? null : tattooCheckByPerson.get(ownerId);
+        if (remembered != null) {
+            System.out.println("[IA] Objeto #" + t.getId() + ": los antebrazos de la persona #" + ownerId
+                    + " ya se revisaron; se reutiliza el resultado");
+            return remembered;
+        }
+        BufferedImage armsCrop = ArmsCropper.armsCrop(ownerCrop, pose);
+        if (armsCrop == null) {
+            return null;
+        }
+        System.out.println("[IA] Objeto #" + t.getId() + ": los tatuajes no quedaron confirmados; se revisan los antebrazos");
+        String result = describer.describeArms(armsCrop);
+        if (result != null && ownerId != null) {
+            tattooCheckByPerson.put(ownerId, result);
+        }
+        return result;
+    }
+
     /** Pide la descripcion del dueno en un hilo aparte: puede tardar segundos y no debe frenar los frames. */
-    private void requestAiDescription(TrackedObject t, BufferedImage ownerCrop, Keypoint[] pose) {
+    private void requestAiDescription(TrackedObject t, BufferedImage ownerCrop, Keypoint[] pose, Long ownerId) {
         OwnerVisionDescriber describer = visionDescriber;
         if (describer == null || ownerCrop == null) {
             return;
@@ -386,15 +421,10 @@ public class ObjectTracker {
         aiExecutor().execute(() -> {
             try {
                 String text = describer.describe(ownerCrop);
-                // Segunda llamada solo si la primera respondio pero no dijo nada de tatuajes ("no se ve"):
-                // con la persona entera el brazo es diminuto. Si ya hay dato (incluido "ninguno") no se gasta otra llamada.
-                // Si la primera fallo del todo, el servicio probablemente no responde: tampoco se insiste.
-                if (text != null && !hasTattooInfo(text) && pose != null) {
-                    BufferedImage armsCrop = ArmsCropper.armsCrop(ownerCrop, pose);
-                    if (armsCrop != null) {
-                        System.out.println("[IA] Objeto #" + t.getId() + ": los tatuajes no quedaron claros; se revisan los antebrazos");
-                        text = mergeTattoos(text, describer.describeArms(armsCrop));
-                    }
+                // Segunda llamada (solo antebrazos) si la primera respondio pero no confirmo tatuajes: falto el dato
+                // o dijo "ninguno". Si la primera fallo del todo, el servicio probablemente no responde: no se insiste.
+                if (text != null && pose != null && !reportsTattoos(text)) {
+                    text = mergeTattoos(text, tattoosFromArms(describer, t, ownerCrop, pose, ownerId));
                 }
                 if (text == null || text.isBlank()) {
                     return;

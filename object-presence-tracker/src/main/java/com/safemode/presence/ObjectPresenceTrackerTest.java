@@ -48,6 +48,7 @@ public class ObjectPresenceTrackerTest {
             NvidiaOwnerVisionDescriber ai = NvidiaOwnerVisionDescriber.fromEnvironment();
             if (ai != null) {
                 tracker.withOwnerVisionDescriber(ai);
+                ai.warmUpAsync(); // el servicio apaga los modelos sin uso: se despierta mientras se prepara la escena
             }
             System.out.println("Descripcion por IA: " + (ai != null ? "NVIDIA " + ai.modelName()
                     : "desactivada (falta la variable de entorno NVIDIA_API_KEY)"));

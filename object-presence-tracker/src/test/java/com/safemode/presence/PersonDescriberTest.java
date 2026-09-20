@@ -78,6 +78,19 @@ class PersonDescriberTest {
     }
 
     @Test
+    void elNegroConTinteMagentaDeUnaWebcamSigueSiendoNegro() {
+        // valores medidos en una camiseta negra real: RGB (78,42,78), saturacion 0.47, brillo 0.32
+        assertEquals("persona con camisa negra", PersonDescriber.describe(solid(new Color(78, 42, 78), 50, 120)));
+        assertEquals("persona con camisa negra", PersonDescriber.describe(solid(new Color(70, 45, 60), 50, 120)));
+    }
+
+    @Test
+    void unMoradoOVinoOscuroDeVerdadNoSeConfundeConNegro() {
+        assertEquals("persona con camisa morada", PersonDescriber.describe(solid(new Color(60, 20, 80), 50, 120)));
+        assertEquals("persona con camisa roja", PersonDescriber.describe(solid(new Color(70, 15, 20), 50, 120)));
+    }
+
+    @Test
     void unColorOscuroPeroSaturadoNoSeConfundeConNegro() {
         assertEquals("persona con camisa azul", PersonDescriber.describe(solid(new Color(20, 30, 90), 50, 120)));
         assertEquals("persona con camisa roja", PersonDescriber.describe(solid(new Color(100, 20, 25), 50, 120)));

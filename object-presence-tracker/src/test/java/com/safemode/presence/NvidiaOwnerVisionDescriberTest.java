@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -28,8 +29,10 @@ class NvidiaOwnerVisionDescriberTest {
     private final AtomicReference<String> lastBody = new AtomicReference<>();
     private final AtomicInteger requests = new AtomicInteger();
     private volatile boolean rejectImageUrlFormat = false;
+    private volatile int stallRequests = 0; // las primeras N peticiones se cuelgan; Integer.MAX_VALUE = todas
     private volatile int status = 200;
     private volatile String responseBody = "";
+    private volatile String secondResponseBody = null; // si no es null, se responde esto desde la segunda peticion
 
     @BeforeEach
     void startServer() throws IOException {
@@ -38,19 +41,35 @@ class NvidiaOwnerVisionDescriberTest {
             lastPath.set(exchange.getRequestURI().getPath());
             lastAuth.set(exchange.getRequestHeaders().getFirst("Authorization"));
             lastBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            requests.incrementAndGet();
+            int requestNumber = requests.incrementAndGet();
+            if (stallRequests == Integer.MAX_VALUE || requestNumber <= stallRequests) {
+                try {
+                    Thread.sleep(2500); // mas que el limite de espera del cliente en las pruebas de cuelgue
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
             int code = status;
             String out = responseBody;
+            if (requestNumber >= 2 && secondResponseBody != null) {
+                out = secondResponseBody;
+            }
             if (rejectImageUrlFormat && lastBody.get().contains("\"image_url\"")) {
                 code = 422;
                 out = "{\"detail\": \"formato de imagen no soportado\"}";
             }
             byte[] bytes = out.getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().add("Content-Type", "application/json");
-            exchange.sendResponseHeaders(code, bytes.length);
-            exchange.getResponseBody().write(bytes);
-            exchange.close();
+            try {
+                exchange.getResponseHeaders().add("Content-Type", "application/json");
+                exchange.sendResponseHeaders(code, bytes.length);
+                exchange.getResponseBody().write(bytes);
+            } catch (IOException e) {
+                // el cliente ya se rindio (prueba de cuelgue): no importa
+            } finally {
+                exchange.close();
+            }
         });
+        server.setExecutor(java.util.concurrent.Executors.newFixedThreadPool(3)); // que un cuelgue no bloquee al reintento
         server.start();
     }
 
@@ -178,6 +197,31 @@ class NvidiaOwnerVisionDescriberTest {
         assertNull(client().describeArms(new BufferedImage(200, 512, BufferedImage.TYPE_INT_RGB)));
     }
 
+    private NvidiaOwnerVisionDescriber impatientClient() {
+        return new NvidiaOwnerVisionDescriber("clave-de-prueba", "http://127.0.0.1:" + server.getAddress().getPort(),
+                "modelo-de-prueba", Duration.ofSeconds(1));
+    }
+
+    @Test
+    void siLaPrimeraLlamadaSeCuelgaSeReintentaYLaSegundaRespondeBien() {
+        stallRequests = 1;
+        responseBody = serviceResponse("{\"ropa_superior\": \"camiseta negra\"}");
+
+        String description = impatientClient().describe(new BufferedImage(50, 100, BufferedImage.TYPE_INT_RGB));
+
+        assertEquals("ropa superior: camiseta negra", description);
+        assertEquals(2, requests.get(), "una llamada colgada y un reintento");
+    }
+
+    @Test
+    void siTodasLasLlamadasSeCuelganSeRindeTrasElReintentoSinExcepcion() {
+        stallRequests = Integer.MAX_VALUE;
+        responseBody = serviceResponse("{\"ropa_superior\": \"camiseta negra\"}");
+
+        assertNull(impatientClient().describe(new BufferedImage(50, 100, BufferedImage.TYPE_INT_RGB)));
+        assertEquals(2, requests.get(), "exactamente un intento y un reintento, sin bucle infinito");
+    }
+
     @Test
     void siElModeloRechazaElFormatoEstandarReintentaConLaImagenDentroDelTexto() {
         rejectImageUrlFormat = true;
@@ -199,6 +243,100 @@ class NvidiaOwnerVisionDescriberTest {
         client().describe(new BufferedImage(50, 100, BufferedImage.TYPE_INT_RGB));
 
         assertEquals(1, requests.get());
+    }
+
+    private static final String TEXTO_LIBRE = "**Analisis de la imagen** La imagen muestra a una mujer sentada en un sofa "
+            + "con una mochila negra. **Objetos identificados** * **Ropa superior**: camiseta blanca.";
+
+    @Test
+    void elCalentamientoEsUnaPeticionDeSoloTextoSinImagenes() {
+        responseBody = serviceResponse("ok");
+
+        client().warmUp();
+
+        assertEquals(1, requests.get());
+        assertEquals("/chat/completions", lastPath.get());
+        assertEquals("Bearer clave-de-prueba", lastAuth.get());
+        assertTrue(!lastBody.get().contains("image_url") && !lastBody.get().contains("base64"),
+                "el calentamiento no debe enviar ninguna imagen");
+        assertEquals(3, JsonParser.parseString(lastBody.get()).getAsJsonObject().get("max_tokens").getAsInt(),
+                "pide muy pocos tokens: solo despertar el modelo");
+    }
+
+    @Test
+    void siElCalentamientoFallaNoHayExcepcion() {
+        status = 500;
+        responseBody = "{\"error\": \"boom\"}";
+        client().warmUp();
+
+        new NvidiaOwnerVisionDescriber("k", "http://127.0.0.1:1", "m", Duration.ofSeconds(2)).warmUp();
+        assertEquals(1, requests.get());
+    }
+
+    @Test
+    void siElModeloRespondeEnTextoLibreSePideDeNuevoYSeUsaLaSegundaRespuesta() {
+        responseBody = serviceResponse(TEXTO_LIBRE);
+        secondResponseBody = serviceResponse("{\"ropa_superior\": \"camiseta blanca\"}");
+
+        String description = client().describe(new BufferedImage(50, 100, BufferedImage.TYPE_INT_RGB));
+
+        assertEquals("ropa superior: camiseta blanca", description);
+        assertEquals(2, requests.get(), "una respuesta sin JSON y una segunda pidiendola de nuevo");
+    }
+
+    @Test
+    void siElModeloNuncaRespondeConJsonSeRindeTrasUnSoloReintento() {
+        responseBody = serviceResponse(TEXTO_LIBRE);
+
+        assertNull(client().describe(new BufferedImage(50, 100, BufferedImage.TYPE_INT_RGB)));
+        assertEquals(2, requests.get(), "exactamente una peticion y un reintento");
+    }
+
+    @Test
+    void unJsonValidoSinDatosUtilesNoSeReintenta() {
+        responseBody = serviceResponse("{\"ropa_superior\": \"no se ve\", \"cabello\": \"no se ve\"}");
+
+        assertNull(client().describe(new BufferedImage(50, 100, BufferedImage.TYPE_INT_RGB)));
+        assertEquals(1, requests.get(), "el modelo si contesto en JSON: 'no se ve' es una respuesta, no un error de formato");
+    }
+
+    @Test
+    void describeArmsTambienSePideDeNuevoSiNoVieneEnJson() {
+        responseBody = serviceResponse(TEXTO_LIBRE);
+        secondResponseBody = serviceResponse("{\"tatuajes\": \"antebrazo, gris, mediano\"}");
+
+        assertEquals("antebrazo, gris, mediano", client().describeArms(new BufferedImage(200, 512, BufferedImage.TYPE_INT_RGB)));
+        assertEquals(2, requests.get());
+    }
+
+    @Test
+    void losPromptsNoLlevanBarrasComoAlternativasPorqueElModeloLasCopia() {
+        // respuesta real: el modelo copio "parte | ninguno | no se ve" y devolvio "brazo, negro | ninguno"
+        assertFalse(NvidiaOwnerVisionDescriber.PROMPT.contains("|"), "el prompt de la persona no debe llevar barras");
+        assertFalse(NvidiaOwnerVisionDescriber.ARMS_PROMPT.contains("|"), "el prompt de antebrazos no debe llevar barras");
+    }
+
+    @Test
+    void siElModeloCopiaLasAlternativasSeQuedaConLoConcreto() {
+        assertEquals("brazo, negro, grande y antebrazo, negro, pequeño",
+                NvidiaOwnerVisionDescriber.formatTattoos(
+                        "{\"tatuajes\": \"brazo, negro, grande | antebrazo, negro, pequeño | ninguno\"}"));
+        assertEquals("ninguno", NvidiaOwnerVisionDescriber.formatTattoos("{\"tatuajes\": \"ninguno | no se ve\"}"));
+        assertNull(NvidiaOwnerVisionDescriber.formatTattoos("{\"tatuajes\": \"no se ve | no se ve\"}"));
+        assertEquals("un texto sin barras", NvidiaOwnerVisionDescriber.resolveAlternatives("un texto sin barras"));
+        assertEquals("ropa superior: camisa negra; lentes: ninguno",
+                NvidiaOwnerVisionDescriber.formatDescription(
+                        "{\"ropa_superior\": \"camisa negra | no se ve\", \"lentes\": \"ninguno | no se ve\"}"));
+    }
+
+    @Test
+    void izquierdaYDerechaSeQuitanDeLoQueSeGuarda() {
+        assertEquals("En el brazo, un tatuaje de color negro",
+                NvidiaOwnerVisionDescriber.formatTattoos("{\"tatuajes\": \"En el brazo izquierdo, un tatuaje de color negro\"}"));
+        assertEquals("antebrazo gris", NvidiaOwnerVisionDescriber.withoutSides("antebrazo derecho gris"));
+        assertEquals("antebrazo", NvidiaOwnerVisionDescriber.withoutSides("antebrazo izquierdo"));
+        assertEquals("ancla en el brazo", NvidiaOwnerVisionDescriber.withoutSides("ancla en el brazo"));
+        assertEquals("ropa superior: camisa", NvidiaOwnerVisionDescriber.formatDescription("{\"ropa_superior\": \"camisa\"}"));
     }
 
     @Test

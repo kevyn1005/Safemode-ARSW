@@ -35,30 +35,39 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
 
     static final String DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
     static final String DEFAULT_MODEL = "meta/llama-3.2-11b-vision-instruct";
-    // el servicio gratuito a veces encola: se da margen porque la llamada corre en segundo plano
-    static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
+    // Una respuesta normal tarda ~3 s; las que pasan de 20 s se cuelgan (visto en la primera llamada de dos corridas
+    // seguidas), asi que se corta pronto y se reintenta una vez en vez de esperar un minuto.
+    static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(20);
+    private static final int MAX_ATTEMPTS = 2;
+    // el calentamiento corre aparte y puede tardar lo que tarde en arrancar el modelo
+    private static final Duration WARM_UP_TIMEOUT = Duration.ofSeconds(90);
 
     // 1024: con 640 un tatuaje en el antebrazo quedaba tan pequeno que el modelo respondia "no se ve"
     private static final int MAX_IMAGE_SIDE_PX = 1024;
     private static final int MAX_FIELD_CHARS = 120;
     private static final int MAX_DESCRIPTION_CHARS = 900;
 
-    private static final String PROMPT = "Analiza la imagen de una persona para un reporte de seguridad. "
-            + "Responde SOLO con un objeto JSON con estas claves, cada valor en espanol y muy corto: "
-            + "\"ropa_superior\", \"ropa_inferior\", \"calzado\", \"tatuajes\", \"lentes\", \"cabello\". "
-            + "Para \"tatuajes\" y \"lentes\" revisa con cuidado brazos, antebrazos, cuello y cara: si hay, "
-            + "di cuales y en que parte del cuerpo; escribe \"ninguno\" si esa zona se ve y no hay; "
-            + "usa \"no se ve\" solo si la zona no aparece en la imagen. "
-            + "Usa \"no se ve\" tambien en cualquier otra clave que no se aprecie. "
-            + "No estimes estatura, edad ni identidad, y no uses izquierda ni derecha.";
+    // Los marcadores <...> muestran el formato sin darle valores de ejemplo que el modelo pueda copiar. Nunca llevan
+    // barras "a | b" como alternativas: el modelo las copia tal cual ("brazo, negro | ninguno") y contradice su respuesta.
+    static final String PROMPT = "Analiza la imagen de una persona para un reporte de seguridad. "
+            + "Responde SOLO con un objeto JSON, sin texto antes ni despues, con exactamente estas claves y un texto corto "
+            + "en espanol como valor: {\"ropa_superior\": \"<tipo y color>\", \"ropa_inferior\": \"<tipo y color>\", "
+            + "\"calzado\": \"<tipo>\", \"tatuajes\": \"<parte del cuerpo y color>\", "
+            + "\"lentes\": \"<texto>\", \"cabello\": \"<largo y color>\"}. "
+            + "Para \"tatuajes\" y \"lentes\" revisa con cuidado brazos, antebrazos, cuello y cara: si hay, describelos; "
+            + "escribe exactamente \"ninguno\" si esa zona se ve y no hay, y exactamente \"no se ve\" solo si la zona no "
+            + "aparece en la imagen. Usa exactamente \"no se ve\" tambien en cualquier otra clave que no se aprecie. "
+            + "Cada valor es UN solo texto: nunca separes alternativas con barras. "
+            + "No estimes estatura, edad ni identidad, no interpretes que dibujo es un tatuaje y no uses izquierda ni derecha.";
 
     // Segunda pregunta, solo sobre el recorte de los antebrazos (sin cara): ahi el tatuaje ocupa gran parte de la imagen
     static final String ARMS_PROMPT = "La imagen muestra los antebrazos de una persona, uno o dos lado a lado. "
-            + "Responde SOLO con un objeto JSON con la clave \"tatuajes\", cuyo valor es un texto corto (no una lista): "
-            + "para cada tatuaje visible di en que parte esta (brazo o antebrazo, sin decir izquierda ni derecha) y su "
-            + "color o tamano aproximado, sin interpretar que dibujo es si no se ve con claridad. "
-            + "Escribe \"ninguno\" si se ven los antebrazos y no hay tatuajes, o \"no se ve\" si la imagen no permite saberlo. "
-            + "No supongas nada que no se vea.";
+            + "Responde SOLO con un objeto JSON, sin texto antes ni despues, con exactamente esta forma: "
+            + "{\"tatuajes\": \"<texto>\"}. El valor es UN solo texto corto (nunca una lista ni alternativas separadas "
+            + "por barras): si hay tatuajes, di en que parte esta (brazo o antebrazo) y su color y tamano aproximado; "
+            + "escribe exactamente \"ninguno\" si se ven los antebrazos y no hay tatuajes, y exactamente \"no se ve\" "
+            + "si la imagen no permite saberlo. No interpretes que dibujo es, no uses izquierda ni derecha "
+            + "y no supongas nada que no se vea.";
 
     // clave del JSON -> etiqueta en la frase final (en este orden)
     private static final String[][] FIELDS = {
@@ -104,10 +113,61 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
         return model;
     }
 
+    /**
+     * Despierta el modelo en segundo plano con una peticion de solo texto (sin imagenes, ~5 tokens). El servicio
+     * gratuito parece apagar los modelos que no se usan: la primera llamada con imagen de tres corridas seguidas se
+     * colgo 20-60 s y las siguientes tardaban ~3 s (y el modelo 90b, casi sin uso, dio timeout hasta con solo texto).
+     * Asi el arranque ocurre mientras se prepara la escena, y no cuando ya hay un objeto esperando su descripcion.
+     */
+    public void warmUpAsync() {
+        Thread thread = new Thread(this::warmUp, "owner-vision-warmup");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    void warmUp() {
+        long startedAt = System.nanoTime();
+        System.out.println("[IA] Calentando el modelo (peticion de solo texto)...");
+        try {
+            JsonObject message = new JsonObject();
+            message.addProperty("role", "user");
+            message.addProperty("content", "Responde solo con la palabra: ok");
+            JsonArray messages = new JsonArray();
+            messages.add(message);
+            JsonObject body = new JsonObject();
+            body.addProperty("model", model);
+            body.add("messages", messages);
+            body.addProperty("max_tokens", 3);
+            body.addProperty("temperature", 0);
+            body.addProperty("stream", false);
+
+            HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl + "/chat/completions"))
+                    .timeout(WARM_UP_TIMEOUT)
+                    .header("Authorization", "Bearer " + apiKey)
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+                    .build();
+            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            System.out.println("[IA] Modelo " + (response.statusCode() == 200 ? "listo" : "respondio HTTP " + response.statusCode())
+                    + " tras " + secondsSince(startedAt) + " s");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (IOException | RuntimeException e) {
+            System.err.println("[IA] El calentamiento no obtuvo respuesta tras " + secondsSince(startedAt) + " s ("
+                    + e.getClass().getSimpleName() + ")");
+        }
+    }
+
     @Override
     public String describe(BufferedImage ownerCrop) {
         long startedAt = System.nanoTime();
         String content = fetchModelContent(ownerCrop);
+        if (content != null && !hasJson(content)) {
+            // el modelo contesto en texto libre (Markdown) en vez de JSON: se pide una vez mas antes de rendirse
+            System.err.println("[IA] La respuesta no venia en JSON; se pide de nuevo. Texto del modelo: " + snippet(content));
+            content = fetchModelContent(ownerCrop);
+        }
         if (content == null) {
             return null;
         }
@@ -126,6 +186,10 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
     public String describeArms(BufferedImage armsCrop) {
         long startedAt = System.nanoTime();
         String content = fetchModelContent(armsCrop, ARMS_PROMPT);
+        if (content != null && !hasJson(content)) {
+            System.err.println("[IA] La respuesta de antebrazos no venia en JSON; se pide de nuevo. Texto del modelo: " + snippet(content));
+            content = fetchModelContent(armsCrop, ARMS_PROMPT);
+        }
         if (content == null) {
             return null;
         }
@@ -142,26 +206,38 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
 
     String fetchModelContent(BufferedImage ownerCrop, String prompt) {
         long startedAt = System.nanoTime();
-        try {
-            HttpResponse<String> response = send(ownerCrop, prompt, false);
-            if (response.statusCode() == 400 || response.statusCode() == 422) {
-                // algunos modelos del catalogo (p. ej. phi-3-vision) esperan la imagen como <img> dentro del texto
-                response = send(ownerCrop, prompt, true);
-            }
-            if (response.statusCode() != 200) {
-                System.err.println("[IA] El servicio respondio HTTP " + response.statusCode() + " en " + secondsSince(startedAt)
-                        + " s: " + snippet(response.body()));
+        for (int attempt = 1; ; attempt++) {
+            try {
+                HttpResponse<String> response = send(ownerCrop, prompt, false);
+                if (response.statusCode() == 400 || response.statusCode() == 422) {
+                    // algunos modelos del catalogo (p. ej. phi-3-vision) esperan la imagen como <img> dentro del texto
+                    response = send(ownerCrop, prompt, true);
+                }
+                if (response.statusCode() != 200) {
+                    System.err.println("[IA] El servicio respondio HTTP " + response.statusCode() + " en " + secondsSince(startedAt)
+                            + " s: " + snippet(response.body()));
+                    return null;
+                }
+                return extractContent(response.body());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                System.err.println("[IA] Descripcion cancelada tras " + secondsSince(startedAt) + " s");
+                return null;
+            } catch (IOException e) {
+                // una llamada normal tarda ~3 s; si se cuelga (pasa a veces con la primera), otra conexion suele responder
+                if (attempt < MAX_ATTEMPTS) {
+                    System.err.println("[IA] Sin respuesta tras " + secondsSince(startedAt) + " s ("
+                            + e.getClass().getSimpleName() + "); se reintenta");
+                    continue;
+                }
+                System.err.println("[IA] No se pudo describir al dueno tras " + secondsSince(startedAt) + " s ("
+                        + e.getClass().getSimpleName() + "): " + e.getMessage());
+                return null;
+            } catch (RuntimeException e) {
+                System.err.println("[IA] No se pudo describir al dueno tras " + secondsSince(startedAt) + " s ("
+                        + e.getClass().getSimpleName() + "): " + e.getMessage());
                 return null;
             }
-            return extractContent(response.body());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            System.err.println("[IA] Descripcion cancelada tras " + secondsSince(startedAt) + " s");
-            return null;
-        } catch (IOException | RuntimeException e) {
-            System.err.println("[IA] No se pudo describir al dueno tras " + secondsSince(startedAt) + " s ("
-                    + e.getClass().getSimpleName() + "): " + e.getMessage());
-            return null;
         }
     }
 
@@ -263,7 +339,7 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
 
         List<String> parts = new ArrayList<>();
         for (String[] field : FIELDS) {
-            String value = renderValue(fields.get(field[0]));
+            String value = withoutSides(resolveAlternatives(renderValue(fields.get(field[0]))));
             String normalized = value.toLowerCase(Locale.ROOT);
             if (value.isEmpty() || normalized.equals("no se ve") || normalized.equals("no se aprecia")) {
                 continue;
@@ -286,7 +362,7 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
         if (fields == null) {
             return null;
         }
-        String value = renderValue(fields.get("tatuajes"));
+        String value = withoutSides(resolveAlternatives(renderValue(fields.get("tatuajes"))));
         String normalized = value.toLowerCase(Locale.ROOT);
         if (value.isEmpty() || normalized.equals("no se ve") || normalized.equals("no se aprecia")) {
             return null;
@@ -330,6 +406,51 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
             }
         }
         return String.join(" ", values);
+    }
+
+    /**
+     * Si el modelo copio las alternativas del formato ("brazo, negro | antebrazo, negro | ninguno"), se queda con lo
+     * concreto y descarta "ninguno"/"no se ve", que contradicen a lo demas. Si solo hay "ninguno" queda "ninguno".
+     * Un texto sin barras no cambia.
+     */
+    static String resolveAlternatives(String value) {
+        if (!value.contains("|")) {
+            return value;
+        }
+        List<String> concrete = new ArrayList<>();
+        boolean none = false;
+        for (String part : value.split("\\|")) {
+            String text = part.trim();
+            String normalized = text.toLowerCase(Locale.ROOT);
+            if (text.isEmpty() || normalized.equals("no se ve") || normalized.equals("no se aprecia")) {
+                continue;
+            }
+            if (normalized.equals("ninguno") || normalized.equals("ninguna") || normalized.equals("no hay")
+                    || normalized.equals("sin tatuajes")) {
+                none = true;
+                continue;
+            }
+            concrete.add(text);
+        }
+        if (!concrete.isEmpty()) {
+            return String.join(" y ", concrete);
+        }
+        return none ? "ninguno" : "no se ve";
+    }
+
+    /**
+     * Quita "izquierdo/derecha..." del texto: aunque el prompt lo pide, los modelos lo ponen igual y se equivocan de
+     * lado con frecuencia (el brazo de la persona es el opuesto en la imagen). "En el brazo izquierdo, un tatuaje"
+     * queda "En el brazo, un tatuaje".
+     */
+    static String withoutSides(String text) {
+        String cleaned = text.replaceAll("(?i)\\s*\\b(izquierd[oa]s?|derech[oa]s?)\\b", "");
+        return cleaned.replaceAll("\\s+,", ",").replaceAll("\\s{2,}", " ").trim();
+    }
+
+    /** true si el texto del modelo contiene un objeto JSON (aunque no traiga datos utiles). */
+    static boolean hasJson(String modelContent) {
+        return parseJsonObject(modelContent) != null;
     }
 
     /** Extrae el primer objeto JSON del texto del modelo (a veces viene dentro de ```json o con texto alrededor), o null. */

@@ -180,8 +180,9 @@ final class PersonDescriber {
         float sat = hsb[1];
         float bri = hsb[2];
 
-        // En una webcam el negro sale levantado y con tinte calido (ej. RGB ~ 73,53,62): brillo 0.2-0.3, saturacion baja.
-        if (bri < 0.20f || (bri < 0.35f && sat < 0.45f)) {
+        // En una webcam el negro sale levantado y con tinte (calido: RGB ~ 73,53,62; magenta: ~ 78,42,78 con saturacion
+        // 0.47): brillo 0.2-0.35 y saturacion hasta ~0.5. Un color oscuro de verdad (azul marino, vino, morado) pasa de 0.7.
+        if (bri < 0.20f || (bri < 0.35f && sat < 0.55f)) {
             return ColorName.NEGRA;
         }
         if (sat < 0.15f) {

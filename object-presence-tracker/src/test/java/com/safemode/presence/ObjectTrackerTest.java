@@ -376,21 +376,96 @@ class ObjectTrackerTest {
     }
 
     @Test
-    void siLaIAYaDijoAlgoDeTatuajesNoSeGastaLaSegundaLlamada(@TempDir Path tempDir) {
-        for (String respuesta : java.util.List.of("ropa superior: camiseta negra; tatuajes: ancla en el brazo",
-                "ropa superior: camiseta negra; tatuajes: ninguno")) {
-            MutableClock clock = new MutableClock();
-            PresenceEventStore store = PresenceEventStore.inMemory("ia-sin-segunda-" + respuesta.hashCode());
-            java.util.List<String> preguntas = new java.util.ArrayList<>();
-            ObjectTracker tracker = new ObjectTracker(store, clock, tempDir, crop -> poseConUnBrazo())
-                    .withOwnerVisionDescriber(iaQueAnotaLasPreguntas(preguntas, respuesta, "no debe usarse"));
-            tracker.useAiExecutor(Runnable::run);
+    void siLaIAYaConfirmaTatuajesNoSeGastaLaSegundaLlamada(@TempDir Path tempDir) {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("ia-tatuaje-confirmado");
+        java.util.List<String> preguntas = new java.util.ArrayList<>();
+        String respuesta = "ropa superior: camiseta negra; tatuajes: ancla en el brazo";
+        ObjectTracker tracker = new ObjectTracker(store, clock, tempDir, crop -> poseConUnBrazo())
+                .withOwnerVisionDescriber(iaQueAnotaLasPreguntas(preguntas, respuesta, "no debe usarse"));
+        tracker.useAiExecutor(Runnable::run);
 
-            registrarConDueno(tracker, clock, blankFrame());
+        registrarConDueno(tracker, clock, blankFrame());
 
-            assertEquals(java.util.List.of("persona"), preguntas, "ya hay dato de tatuajes: " + respuesta);
-            assertEquals(respuesta, store.lastOwnerAiDescription("REGISTERED_AT_REST"));
-        }
+        assertEquals(java.util.List.of("persona"), preguntas, "ya se confirmo un tatuaje");
+        assertEquals(respuesta, store.lastOwnerAiDescription("REGISTERED_AT_REST"));
+    }
+
+    @Test
+    void unNingunoDeLaPersonaEnteraSeVerificaEnLosAntebrazosYSeCorrigeSiHabiaTatuaje(@TempDir Path tempDir) {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("ia-ninguno-corregido");
+        java.util.List<String> preguntas = new java.util.ArrayList<>();
+        ObjectTracker tracker = new ObjectTracker(store, clock, tempDir, crop -> poseConUnBrazo())
+                .withOwnerVisionDescriber(iaQueAnotaLasPreguntas(preguntas,
+                        "ropa superior: camiseta negra; tatuajes: ninguno", "dibujo gris en el antebrazo"));
+        tracker.useAiExecutor(Runnable::run);
+
+        registrarConDueno(tracker, clock, blankFrame());
+
+        assertEquals(java.util.List.of("persona", "antebrazos"), preguntas);
+        assertEquals("ropa superior: camiseta negra; tatuajes: dibujo gris en el antebrazo",
+                store.lastOwnerAiDescription("REGISTERED_AT_REST"));
+    }
+
+    @Test
+    void siLosAntebrazosConfirmanQueNoHayTatuajesQuedaNinguno(@TempDir Path tempDir) {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("ia-ninguno-confirmado");
+        java.util.List<String> preguntas = new java.util.ArrayList<>();
+        ObjectTracker tracker = new ObjectTracker(store, clock, tempDir, crop -> poseConUnBrazo())
+                .withOwnerVisionDescriber(iaQueAnotaLasPreguntas(preguntas,
+                        "ropa superior: camiseta negra; tatuajes: ninguno", "ninguno"));
+        tracker.useAiExecutor(Runnable::run);
+
+        registrarConDueno(tracker, clock, blankFrame());
+
+        assertEquals(java.util.List.of("persona", "antebrazos"), preguntas);
+        assertEquals("ropa superior: camiseta negra; tatuajes: ninguno", store.lastOwnerAiDescription("REGISTERED_AT_REST"));
+    }
+
+    /** Dos maletas dentro de la caja de una misma persona: las dos tienen el mismo dueno. */
+    private static void registrarDosObjetosDeLaMismaPersona(ObjectTracker tracker, MutableClock clock) {
+        Detection persona = new Detection("person", 0.9f, 60, 60, 300, 300);
+        java.util.List<Detection> escena = java.util.List.of(suitcase(100, 100), suitcase(250, 250), persona);
+        tracker.onFrame(blankFrame(), escena);
+        clock.advance(Duration.ofSeconds(4));
+        tracker.onFrame(blankFrame(), escena);
+    }
+
+    @Test
+    void losAntebrazosDeUnaPersonaSeRevisanUnaSolaVezPorCorrida(@TempDir Path tempDir) {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("ia-una-vez-por-persona");
+        java.util.List<String> preguntas = new java.util.ArrayList<>();
+        ObjectTracker tracker = new ObjectTracker(store, clock, tempDir, crop -> poseConUnBrazo())
+                .withOwnerVisionDescriber(iaQueAnotaLasPreguntas(preguntas,
+                        "ropa superior: camiseta negra; tatuajes: ninguno", "dibujo gris en el antebrazo"));
+        tracker.useAiExecutor(Runnable::run);
+
+        registrarDosObjetosDeLaMismaPersona(tracker, clock);
+
+        assertEquals(2, store.countEvents("REGISTERED_AT_REST"));
+        assertEquals(java.util.List.of("persona", "antebrazos", "persona"), preguntas,
+                "el segundo objeto de la misma persona reutiliza el resultado de los antebrazos");
+        assertEquals("ropa superior: camiseta negra; tatuajes: dibujo gris en el antebrazo",
+                store.lastOwnerAiDescription("REGISTERED_AT_REST"), "y el segundo tambien queda corregido");
+    }
+
+    @Test
+    void unaRevisionDeAntebrazosSinDatoNoSeRecuerdaYSePuedeReintentar(@TempDir Path tempDir) {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("ia-sin-dato-no-se-recuerda");
+        java.util.List<String> preguntas = new java.util.ArrayList<>();
+        ObjectTracker tracker = new ObjectTracker(store, clock, tempDir, crop -> poseConUnBrazo())
+                .withOwnerVisionDescriber(iaQueAnotaLasPreguntas(preguntas,
+                        "ropa superior: camiseta negra; tatuajes: ninguno", null));
+        tracker.useAiExecutor(Runnable::run);
+
+        registrarDosObjetosDeLaMismaPersona(tracker, clock);
+
+        assertEquals(java.util.List.of("persona", "antebrazos", "persona", "antebrazos"), preguntas,
+                "una respuesta sin dato (fallo o 'no se ve') no se guarda: el segundo objeto vuelve a intentar");
     }
 
     @Test
@@ -409,12 +484,15 @@ class ObjectTrackerTest {
     }
 
     @Test
-    void hasTattooInfoDetectaSoloUnDatoRealDeTatuajes() {
-        assertTrue(ObjectTracker.hasTattooInfo("ropa superior: camisa; tatuajes: ninguno"));
-        assertTrue(ObjectTracker.hasTattooInfo("tatuajes: ancla"));
-        assertFalse(ObjectTracker.hasTattooInfo("ropa superior: camisa; cabello: corto"));
-        assertFalse(ObjectTracker.hasTattooInfo("ropa superior: camisa con tatuajes: no es una clave"));
-        assertFalse(ObjectTracker.hasTattooInfo(null));
+    void reportsTattoosSoloAfirmaCuandoLaDescripcionConfirmaUnTatuaje() {
+        assertTrue(ObjectTracker.reportsTattoos("tatuajes: ancla"));
+        assertTrue(ObjectTracker.reportsTattoos("ropa superior: camisa; tatuajes: uno en antebrazo"));
+        assertFalse(ObjectTracker.reportsTattoos("ropa superior: camisa; tatuajes: ninguno"));
+        assertFalse(ObjectTracker.reportsTattoos("ropa superior: camisa; tatuajes: Ninguna"));
+        assertFalse(ObjectTracker.reportsTattoos("ropa superior: camisa; tatuajes: no hay"));
+        assertFalse(ObjectTracker.reportsTattoos("ropa superior: camisa; cabello: corto"));
+        assertFalse(ObjectTracker.reportsTattoos("ropa superior: camisa con tatuajes: no es una clave"));
+        assertFalse(ObjectTracker.reportsTattoos(null));
     }
 
     @Test
