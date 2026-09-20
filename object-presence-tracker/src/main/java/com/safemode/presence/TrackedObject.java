@@ -1,6 +1,7 @@
 package com.safemode.presence;
 
 import com.safemode.presence.PresenceEventStore.OwnerInfo;
+import com.safemode.vision.PoseEstimator;
 
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
@@ -46,6 +47,7 @@ public class TrackedObject {
     private final Map<Long, Sighting> nearPersons = new LinkedHashMap<>();
     private OwnerInfo owner;
     private BufferedImage ownerCrop;
+    private PoseEstimator.Keypoint[] ownerPose;
     private long registeredEventId = -1;
     private long removedEventId = -1;
     private String aiDescription;
@@ -173,6 +175,20 @@ public class TrackedObject {
         BufferedImage crop = ownerCrop;
         ownerCrop = null;
         return crop;
+    }
+
+    /**
+     * Puntos del cuerpo del dueno, para recortar sus antebrazos solo si la IA los necesita (ver
+     * {@link ObjectTracker}); se entregan una vez, como el recorte.
+     */
+    void setOwnerPose(PoseEstimator.Keypoint[] pose) {
+        this.ownerPose = pose;
+    }
+
+    PoseEstimator.Keypoint[] takeOwnerPose() {
+        PoseEstimator.Keypoint[] pose = ownerPose;
+        ownerPose = null;
+        return pose;
     }
 
     synchronized void setRegisteredEventId(long eventId) {

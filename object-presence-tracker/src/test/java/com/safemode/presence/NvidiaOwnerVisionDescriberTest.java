@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -25,6 +26,8 @@ class NvidiaOwnerVisionDescriberTest {
     private final AtomicReference<String> lastPath = new AtomicReference<>();
     private final AtomicReference<String> lastAuth = new AtomicReference<>();
     private final AtomicReference<String> lastBody = new AtomicReference<>();
+    private final AtomicInteger requests = new AtomicInteger();
+    private volatile boolean rejectImageUrlFormat = false;
     private volatile int status = 200;
     private volatile String responseBody = "";
 
@@ -35,9 +38,16 @@ class NvidiaOwnerVisionDescriberTest {
             lastPath.set(exchange.getRequestURI().getPath());
             lastAuth.set(exchange.getRequestHeaders().getFirst("Authorization"));
             lastBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            byte[] bytes = responseBody.getBytes(StandardCharsets.UTF_8);
+            requests.incrementAndGet();
+            int code = status;
+            String out = responseBody;
+            if (rejectImageUrlFormat && lastBody.get().contains("\"image_url\"")) {
+                code = 422;
+                out = "{\"detail\": \"formato de imagen no soportado\"}";
+            }
+            byte[] bytes = out.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
-            exchange.sendResponseHeaders(status, bytes.length);
+            exchange.sendResponseHeaders(code, bytes.length);
             exchange.getResponseBody().write(bytes);
             exchange.close();
         });
@@ -81,7 +91,26 @@ class NvidiaOwnerVisionDescriberTest {
     void aceptaTextoAlrededorDelJsonYValoresQueNoSonTexto() {
         String content = "Claro, aqui esta: {\"ropa_superior\": [\"camisa\", \"chaleco\"], \"tatuajes\": null} Espero que sirva.";
 
-        assertEquals("ropa superior: [\"camisa\",\"chaleco\"]", NvidiaOwnerVisionDescriber.formatDescription(content));
+        assertEquals("ropa superior: camisa, chaleco", NvidiaOwnerVisionDescriber.formatDescription(content));
+    }
+
+    @Test
+    void unaListaDeObjetosDeTatuajesSeLeeComoTextoNoComoJsonCrudo() {
+        // respuesta real del modelo sobre un recorte de antebrazos
+        String content = "{ \"tatuajes\": [ { \"descripcion\": \"un corazón\", \"parte\": \"brazo\" }, "
+                + "{ \"descripcion\": \"un arco\", \"parte\": \"antebrazo\" } ] }";
+
+        assertEquals("un corazón (brazo), un arco (antebrazo)", NvidiaOwnerVisionDescriber.formatTattoos(content));
+    }
+
+    @Test
+    void unObjetoSinLasClavesEsperadasSeUneComoTexto() {
+        assertEquals("gris antebrazo", NvidiaOwnerVisionDescriber.formatTattoos("{\"tatuajes\": {\"color\": \"gris\", \"zona\": \"antebrazo\"}}"));
+    }
+
+    @Test
+    void unaListaVaciaDeTatuajesNoEsUnDato() {
+        assertNull(NvidiaOwnerVisionDescriber.formatTattoos("{\"tatuajes\": []}"));
     }
 
     @Test
@@ -113,6 +142,63 @@ class NvidiaOwnerVisionDescriberTest {
         JsonObject sent = JsonParser.parseString(lastBody.get()).getAsJsonObject();
         assertEquals("modelo-de-prueba", sent.get("model").getAsString());
         assertTrue(lastBody.get().contains("data:image/jpeg;base64,"), "la imagen viaja como JPEG en base64");
+    }
+
+    @Test
+    void formatTattoosDevuelveElDatoOninguno() {
+        assertEquals("dibujo en el antebrazo", NvidiaOwnerVisionDescriber.formatTattoos("{\"tatuajes\": \"dibujo en el antebrazo\"}"));
+        assertEquals("ninguno", NvidiaOwnerVisionDescriber.formatTattoos("```json\n{\"tatuajes\": \"ninguno\"}\n```"));
+    }
+
+    @Test
+    void formatTattoosSinDatoDevuelveNull() {
+        assertNull(NvidiaOwnerVisionDescriber.formatTattoos("{\"tatuajes\": \"no se ve\"}"));
+        assertNull(NvidiaOwnerVisionDescriber.formatTattoos("{\"tatuajes\": \"\"}"));
+        assertNull(NvidiaOwnerVisionDescriber.formatTattoos("{\"ropa_superior\": \"camisa\"}"));
+        assertNull(NvidiaOwnerVisionDescriber.formatTattoos("Se ven dos antebrazos."));
+        assertNull(NvidiaOwnerVisionDescriber.formatTattoos(null));
+    }
+
+    @Test
+    void describeArmsHaceLaPreguntaDeTatuajesYDevuelveSoloEseDato() {
+        responseBody = serviceResponse("{\"tatuajes\": \"dibujo gris en el antebrazo\"}");
+
+        String tattoos = client().describeArms(new BufferedImage(200, 512, BufferedImage.TYPE_INT_RGB));
+
+        assertEquals("dibujo gris en el antebrazo", tattoos);
+        String prompt = JsonParser.parseString(lastBody.get()).getAsJsonObject().getAsJsonArray("messages")
+                .get(0).getAsJsonObject().getAsJsonArray("content").get(0).getAsJsonObject().get("text").getAsString();
+        assertTrue(prompt.contains("antebrazos"), "debe usar la pregunta especifica de antebrazos, no la de la persona entera");
+    }
+
+    @Test
+    void describeArmsSiElModeloNoLoSabeDevuelveNull() {
+        responseBody = serviceResponse("{\"tatuajes\": \"no se ve\"}");
+
+        assertNull(client().describeArms(new BufferedImage(200, 512, BufferedImage.TYPE_INT_RGB)));
+    }
+
+    @Test
+    void siElModeloRechazaElFormatoEstandarReintentaConLaImagenDentroDelTexto() {
+        rejectImageUrlFormat = true;
+        responseBody = serviceResponse("{\"ropa_superior\": \"camiseta negra\"}");
+
+        String description = client().describe(new BufferedImage(50, 100, BufferedImage.TYPE_INT_RGB));
+
+        assertEquals("ropa superior: camiseta negra", description);
+        assertEquals(2, requests.get(), "primero el formato estandar, y tras el 422 el formato con <img>");
+        String content = JsonParser.parseString(lastBody.get()).getAsJsonObject().getAsJsonArray("messages")
+                .get(0).getAsJsonObject().get("content").getAsString();
+        assertTrue(content.contains("<img src=\"data:image/jpeg;base64,"), "la imagen viaja dentro del texto");
+    }
+
+    @Test
+    void conElFormatoEstandarAceptadoNoSeReintenta() {
+        responseBody = serviceResponse("{\"ropa_superior\": \"camiseta negra\"}");
+
+        client().describe(new BufferedImage(50, 100, BufferedImage.TYPE_INT_RGB));
+
+        assertEquals(1, requests.get());
     }
 
     @Test

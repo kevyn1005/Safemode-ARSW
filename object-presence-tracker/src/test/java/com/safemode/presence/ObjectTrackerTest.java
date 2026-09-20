@@ -17,6 +17,7 @@ import java.time.ZoneId;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -318,6 +319,129 @@ class ObjectTrackerTest {
         retirar(tracker, clock, blankFrame());
         assertEquals("ropa superior: camiseta negra; tatuajes: antebrazo", store.lastOwnerAiDescription("REMOVED"),
                 "el retiro tambien debe llevar la descripcion del dueno");
+    }
+
+    @Test
+    void mergeTattoosReemplazaElDatoDeLaPrimeraRespuestaYAgregaSiNoEstaba() {
+        assertEquals("ropa superior: camiseta negra; tatuajes: ancla",
+                ObjectTracker.mergeTattoos("ropa superior: camiseta negra; tatuajes: brazo", "ancla"));
+        assertEquals("ropa superior: camiseta negra; tatuajes: ninguno",
+                ObjectTracker.mergeTattoos("ropa superior: camiseta negra", "ninguno"));
+        assertEquals("tatuajes: ancla", ObjectTracker.mergeTattoos(null, "ancla"));
+        assertEquals("ropa superior: camiseta negra", ObjectTracker.mergeTattoos("ropa superior: camiseta negra", null));
+        assertNull(ObjectTracker.mergeTattoos(null, null));
+    }
+
+    /** Puntos del cuerpo falsos: un brazo dentro del recorte de la persona (50x120 en person(60,60)). */
+    private static PoseEstimator.Keypoint[] poseConUnBrazo() {
+        PoseEstimator.Keypoint[] pose = new PoseEstimator.Keypoint[17];
+        java.util.Arrays.fill(pose, new PoseEstimator.Keypoint(0, 0, 0));
+        pose[PoseEstimator.LEFT_ELBOW] = new PoseEstimator.Keypoint(10, 50, 0.9f);
+        pose[PoseEstimator.LEFT_WRIST] = new PoseEstimator.Keypoint(12, 95, 0.9f);
+        return pose;
+    }
+
+    /** IA falsa que anota cada pregunta que recibe y responde lo indicado (respuestaPersona puede ser null: fallo). */
+    private static OwnerVisionDescriber iaQueAnotaLasPreguntas(java.util.List<String> preguntas,
+                                                                String respuestaPersona, String respuestaAntebrazos) {
+        return new OwnerVisionDescriber() {
+            @Override
+            public String describe(BufferedImage ownerCrop) {
+                preguntas.add("persona");
+                return respuestaPersona;
+            }
+
+            @Override
+            public String describeArms(BufferedImage armsCrop) {
+                preguntas.add("antebrazos");
+                return respuestaAntebrazos;
+            }
+        };
+    }
+
+    @Test
+    void siLaIANoDiceNadaDeTatuajesSePreguntaSobreLosAntebrazosYSeCombinaLaRespuesta(@TempDir Path tempDir) {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("ia-antebrazos");
+        java.util.List<String> preguntas = new java.util.ArrayList<>();
+        ObjectTracker tracker = new ObjectTracker(store, clock, tempDir, crop -> poseConUnBrazo())
+                .withOwnerVisionDescriber(iaQueAnotaLasPreguntas(preguntas, "ropa superior: camiseta negra", "dibujo gris en el antebrazo"));
+        tracker.useAiExecutor(Runnable::run);
+
+        registrarConDueno(tracker, clock, blankFrame());
+
+        assertEquals(java.util.List.of("persona", "antebrazos"), preguntas);
+        assertEquals("ropa superior: camiseta negra; tatuajes: dibujo gris en el antebrazo",
+                store.lastOwnerAiDescription("REGISTERED_AT_REST"));
+    }
+
+    @Test
+    void siLaIAYaDijoAlgoDeTatuajesNoSeGastaLaSegundaLlamada(@TempDir Path tempDir) {
+        for (String respuesta : java.util.List.of("ropa superior: camiseta negra; tatuajes: ancla en el brazo",
+                "ropa superior: camiseta negra; tatuajes: ninguno")) {
+            MutableClock clock = new MutableClock();
+            PresenceEventStore store = PresenceEventStore.inMemory("ia-sin-segunda-" + respuesta.hashCode());
+            java.util.List<String> preguntas = new java.util.ArrayList<>();
+            ObjectTracker tracker = new ObjectTracker(store, clock, tempDir, crop -> poseConUnBrazo())
+                    .withOwnerVisionDescriber(iaQueAnotaLasPreguntas(preguntas, respuesta, "no debe usarse"));
+            tracker.useAiExecutor(Runnable::run);
+
+            registrarConDueno(tracker, clock, blankFrame());
+
+            assertEquals(java.util.List.of("persona"), preguntas, "ya hay dato de tatuajes: " + respuesta);
+            assertEquals(respuesta, store.lastOwnerAiDescription("REGISTERED_AT_REST"));
+        }
+    }
+
+    @Test
+    void siLaPrimeraLlamadaFalloNoSeInsisteConLosAntebrazos(@TempDir Path tempDir) {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("ia-primera-fallo");
+        java.util.List<String> preguntas = new java.util.ArrayList<>();
+        ObjectTracker tracker = new ObjectTracker(store, clock, tempDir, crop -> poseConUnBrazo())
+                .withOwnerVisionDescriber(iaQueAnotaLasPreguntas(preguntas, null, "no debe usarse"));
+        tracker.useAiExecutor(Runnable::run);
+
+        registrarConDueno(tracker, clock, blankFrame());
+
+        assertEquals(java.util.List.of("persona"), preguntas, "si el servicio no respondio, no se hace una segunda llamada");
+        assertNull(store.lastOwnerAiDescription("REGISTERED_AT_REST"));
+    }
+
+    @Test
+    void hasTattooInfoDetectaSoloUnDatoRealDeTatuajes() {
+        assertTrue(ObjectTracker.hasTattooInfo("ropa superior: camisa; tatuajes: ninguno"));
+        assertTrue(ObjectTracker.hasTattooInfo("tatuajes: ancla"));
+        assertFalse(ObjectTracker.hasTattooInfo("ropa superior: camisa; cabello: corto"));
+        assertFalse(ObjectTracker.hasTattooInfo("ropa superior: camisa con tatuajes: no es una clave"));
+        assertFalse(ObjectTracker.hasTattooInfo(null));
+    }
+
+    @Test
+    void sinPoseNoSePreguntaPorLosAntebrazos(@TempDir Path tempDir) {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("ia-sin-pose");
+        java.util.List<String> preguntas = new java.util.ArrayList<>();
+        OwnerVisionDescriber describer = new OwnerVisionDescriber() {
+            @Override
+            public String describe(BufferedImage ownerCrop) {
+                preguntas.add("persona");
+                return "ropa superior: camisa";
+            }
+
+            @Override
+            public String describeArms(BufferedImage armsCrop) {
+                preguntas.add("antebrazos");
+                return "algo";
+            }
+        };
+        ObjectTracker tracker = new ObjectTracker(store, clock, tempDir).withOwnerVisionDescriber(describer);
+        tracker.useAiExecutor(Runnable::run);
+
+        registrarConDueno(tracker, clock, blankFrame());
+
+        assertEquals(java.util.List.of("persona"), preguntas, "sin puntos del cuerpo no hay recorte de antebrazos");
+        assertEquals("ropa superior: camisa", store.lastOwnerAiDescription("REGISTERED_AT_REST"));
     }
 
     @Test

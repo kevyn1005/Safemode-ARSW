@@ -21,6 +21,10 @@ public class PoseEstimator implements AutoCloseable {
 
     public static final int LEFT_SHOULDER = 5;
     public static final int RIGHT_SHOULDER = 6;
+    public static final int LEFT_ELBOW = 7;
+    public static final int RIGHT_ELBOW = 8;
+    public static final int LEFT_WRIST = 9;
+    public static final int RIGHT_WRIST = 10;
     public static final int LEFT_HIP = 11;
     public static final int RIGHT_HIP = 12;
 

@@ -38,7 +38,8 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
     // el servicio gratuito a veces encola: se da margen porque la llamada corre en segundo plano
     static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
 
-    private static final int MAX_IMAGE_SIDE_PX = 640;
+    // 1024: con 640 un tatuaje en el antebrazo quedaba tan pequeno que el modelo respondia "no se ve"
+    private static final int MAX_IMAGE_SIDE_PX = 1024;
     private static final int MAX_FIELD_CHARS = 120;
     private static final int MAX_DESCRIPTION_CHARS = 900;
 
@@ -50,6 +51,14 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
             + "usa \"no se ve\" solo si la zona no aparece en la imagen. "
             + "Usa \"no se ve\" tambien en cualquier otra clave que no se aprecie. "
             + "No estimes estatura, edad ni identidad, y no uses izquierda ni derecha.";
+
+    // Segunda pregunta, solo sobre el recorte de los antebrazos (sin cara): ahi el tatuaje ocupa gran parte de la imagen
+    static final String ARMS_PROMPT = "La imagen muestra los antebrazos de una persona, uno o dos lado a lado. "
+            + "Responde SOLO con un objeto JSON con la clave \"tatuajes\", cuyo valor es un texto corto (no una lista): "
+            + "para cada tatuaje visible di en que parte esta (brazo o antebrazo, sin decir izquierda ni derecha) y su "
+            + "color o tamano aproximado, sin interpretar que dibujo es si no se ve con claridad. "
+            + "Escribe \"ninguno\" si se ven los antebrazos y no hay tatuajes, o \"no se ve\" si la imagen no permite saberlo. "
+            + "No supongas nada que no se vea.";
 
     // clave del JSON -> etiqueta en la frase final (en este orden)
     private static final String[][] FIELDS = {
@@ -112,18 +121,33 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
         return description;
     }
 
+    /** Pregunta solo por los tatuajes sobre el recorte de antebrazos; devuelve el dato, "ninguno", o null si no se pudo saber. */
+    @Override
+    public String describeArms(BufferedImage armsCrop) {
+        long startedAt = System.nanoTime();
+        String content = fetchModelContent(armsCrop, ARMS_PROMPT);
+        if (content == null) {
+            return null;
+        }
+        String tattoos = formatTattoos(content);
+        System.out.println("[IA] Antebrazos analizados en " + secondsSince(startedAt) + " s"
+                + (tattoos == null ? " (sin dato de tatuajes)" : ""));
+        return tattoos;
+    }
+
     /** Envia el recorte al servicio y devuelve el texto crudo que escribio el modelo, o null si fallo (ya avisa por consola). */
     String fetchModelContent(BufferedImage ownerCrop) {
+        return fetchModelContent(ownerCrop, PROMPT);
+    }
+
+    String fetchModelContent(BufferedImage ownerCrop, String prompt) {
         long startedAt = System.nanoTime();
         try {
-            HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl + "/chat/completions"))
-                    .timeout(timeout)
-                    .header("Authorization", "Bearer " + apiKey)
-                    .header("Content-Type", "application/json")
-                    .header("Accept", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(buildRequestBody(ownerCrop)))
-                    .build();
-            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = send(ownerCrop, prompt, false);
+            if (response.statusCode() == 400 || response.statusCode() == 422) {
+                // algunos modelos del catalogo (p. ej. phi-3-vision) esperan la imagen como <img> dentro del texto
+                response = send(ownerCrop, prompt, true);
+            }
             if (response.statusCode() != 200) {
                 System.err.println("[IA] El servicio respondio HTTP " + response.statusCode() + " en " + secondsSince(startedAt)
                         + " s: " + snippet(response.body()));
@@ -141,6 +165,17 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
         }
     }
 
+    private HttpResponse<String> send(BufferedImage crop, String prompt, boolean imgTagStyle) throws IOException, InterruptedException {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl + "/chat/completions"))
+                .timeout(timeout)
+                .header("Authorization", "Bearer " + apiKey)
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(buildRequestBody(crop, prompt, imgTagStyle)))
+                .build();
+        return http.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
     private static String secondsSince(long startNanos) {
         return String.format(Locale.ROOT, "%.1f", (System.nanoTime() - startNanos) / 1_000_000_000.0);
     }
@@ -153,24 +188,30 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
         return oneLine.length() > 300 ? oneLine.substring(0, 300) + "..." : oneLine;
     }
 
-    String buildRequestBody(BufferedImage crop) throws IOException {
-        JsonObject textPart = new JsonObject();
-        textPart.addProperty("type", "text");
-        textPart.addProperty("text", PROMPT);
-
-        JsonObject imageUrl = new JsonObject();
-        imageUrl.addProperty("url", "data:image/jpeg;base64," + encodeJpegBase64(crop));
-        JsonObject imagePart = new JsonObject();
-        imagePart.addProperty("type", "image_url");
-        imagePart.add("image_url", imageUrl);
-
-        JsonArray content = new JsonArray();
-        content.add(textPart);
-        content.add(imagePart);
+    /** imgTagStyle=false: formato estandar de mensajes con partes texto/imagen; true: la imagen como &lt;img&gt; dentro del texto. */
+    String buildRequestBody(BufferedImage crop, String prompt, boolean imgTagStyle) throws IOException {
+        String dataUri = "data:image/jpeg;base64," + encodeJpegBase64(crop);
 
         JsonObject message = new JsonObject();
         message.addProperty("role", "user");
-        message.add("content", content);
+        if (imgTagStyle) {
+            message.addProperty("content", prompt + " <img src=\"" + dataUri + "\" />");
+        } else {
+            JsonObject textPart = new JsonObject();
+            textPart.addProperty("type", "text");
+            textPart.addProperty("text", prompt);
+
+            JsonObject imageUrl = new JsonObject();
+            imageUrl.addProperty("url", dataUri);
+            JsonObject imagePart = new JsonObject();
+            imagePart.addProperty("type", "image_url");
+            imagePart.add("image_url", imageUrl);
+
+            JsonArray content = new JsonArray();
+            content.add(textPart);
+            content.add(imagePart);
+            message.add("content", content);
+        }
         JsonArray messages = new JsonArray();
         messages.add(message);
 
@@ -183,7 +224,7 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
         return body.toString();
     }
 
-    /** Reduce el recorte (max. 640 px por lado) y lo codifica en JPEG base64: la foto original no sale entera. */
+    /** Reduce el recorte (max. 1024 px por lado) y lo codifica en JPEG base64: la foto original no sale entera. */
     static String encodeJpegBase64(BufferedImage src) throws IOException {
         double scale = Math.min(1.0, (double) MAX_IMAGE_SIDE_PX / Math.max(src.getWidth(), src.getHeight()));
         int w = Math.max(1, (int) Math.round(src.getWidth() * scale));
@@ -215,28 +256,14 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
      * "ropa superior: ...; ropa inferior: ...". Devuelve null si no hay JSON o no quedo ningun dato util.
      */
     static String formatDescription(String modelContent) {
-        if (modelContent == null) {
-            return null;
-        }
-        int start = modelContent.indexOf('{');
-        int end = modelContent.lastIndexOf('}');
-        if (start < 0 || end <= start) {
-            return null;
-        }
-        JsonObject fields;
-        try {
-            fields = JsonParser.parseString(modelContent.substring(start, end + 1)).getAsJsonObject();
-        } catch (RuntimeException e) {
+        JsonObject fields = parseJsonObject(modelContent);
+        if (fields == null) {
             return null;
         }
 
         List<String> parts = new ArrayList<>();
         for (String[] field : FIELDS) {
-            JsonElement el = fields.get(field[0]);
-            if (el == null || el.isJsonNull()) {
-                continue;
-            }
-            String value = (el.isJsonPrimitive() ? el.getAsString() : el.toString()).trim();
+            String value = renderValue(fields.get(field[0]));
             String normalized = value.toLowerCase(Locale.ROOT);
             if (value.isEmpty() || normalized.equals("no se ve") || normalized.equals("no se aprecia")) {
                 continue;
@@ -251,5 +278,74 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
         }
         String description = String.join("; ", parts);
         return description.length() > MAX_DESCRIPTION_CHARS ? description.substring(0, MAX_DESCRIPTION_CHARS) : description;
+    }
+
+    /** Valor de "tatuajes" del JSON del modelo ("ninguno" incluido), o null si no hay JSON o dice que no se ve. */
+    static String formatTattoos(String modelContent) {
+        JsonObject fields = parseJsonObject(modelContent);
+        if (fields == null) {
+            return null;
+        }
+        String value = renderValue(fields.get("tatuajes"));
+        String normalized = value.toLowerCase(Locale.ROOT);
+        if (value.isEmpty() || normalized.equals("no se ve") || normalized.equals("no se aprecia")) {
+            return null;
+        }
+        return value.length() > MAX_FIELD_CHARS ? value.substring(0, MAX_FIELD_CHARS) : value;
+    }
+
+    /**
+     * Convierte un valor del JSON del modelo en texto legible. El modelo a veces devuelve listas u
+     * objetos en vez de una frase (ej. [{"descripcion": "un arco", "parte": "antebrazo"}]): se leen
+     * como "un arco (antebrazo)". Devuelve "" si no hay nada.
+     */
+    private static String renderValue(JsonElement el) {
+        if (el == null || el.isJsonNull()) {
+            return "";
+        }
+        if (el.isJsonPrimitive()) {
+            return el.getAsString().trim();
+        }
+        if (el.isJsonArray()) {
+            List<String> items = new ArrayList<>();
+            for (JsonElement item : el.getAsJsonArray()) {
+                String text = renderValue(item);
+                if (!text.isBlank()) {
+                    items.add(text);
+                }
+            }
+            return String.join(", ", items);
+        }
+        JsonObject object = el.getAsJsonObject();
+        JsonElement description = object.get("descripcion");
+        JsonElement part = object.get("parte");
+        if (description != null && part != null) {
+            return renderValue(description) + " (" + renderValue(part) + ")";
+        }
+        List<String> values = new ArrayList<>();
+        for (var entry : object.entrySet()) {
+            String text = renderValue(entry.getValue());
+            if (!text.isBlank()) {
+                values.add(text);
+            }
+        }
+        return String.join(" ", values);
+    }
+
+    /** Extrae el primer objeto JSON del texto del modelo (a veces viene dentro de ```json o con texto alrededor), o null. */
+    private static JsonObject parseJsonObject(String modelContent) {
+        if (modelContent == null) {
+            return null;
+        }
+        int start = modelContent.indexOf('{');
+        int end = modelContent.lastIndexOf('}');
+        if (start < 0 || end <= start) {
+            return null;
+        }
+        try {
+            return JsonParser.parseString(modelContent.substring(start, end + 1)).getAsJsonObject();
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 }
