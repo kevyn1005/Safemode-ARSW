@@ -4,6 +4,8 @@ import com.safemode.vision.ObjectDetector.Detection;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.awt.Color;
+import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,6 +17,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -190,5 +193,90 @@ class ObjectTrackerTest {
         String framePath = store.lastFramePath("REGISTERED_AT_REST");
         assertNotNull(framePath, "debe guardar la ruta de la imagen junto con el evento");
         assertTrue(Files.exists(Path.of(framePath)), "el archivo de la imagen debe existir en disco");
+    }
+
+    @Test
+    void registraComoDuenoALaPersonaQueEstabaCercaDelObjeto() {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("dueno-cerca");
+        ObjectTracker tracker = new ObjectTracker(store, clock);
+
+        tracker.onFrame(null, List.of(suitcase(100, 100), person(60, 60)));
+        clock.advance(Duration.ofSeconds(4));
+        tracker.onFrame(null, List.of(suitcase(100, 100), person(60, 60)));
+
+        PresenceEventStore.OwnerInfo registered = store.lastOwner("REGISTERED_AT_REST");
+        assertNotNull(registered, "debe quedar un dueno probable al asentarse el objeto");
+        assertNotNull(registered.personId());
+        assertNull(registered.description(), "sin imagen no hay descripcion");
+        assertNull(registered.cropPath(), "sin imagen no hay recorte");
+
+        for (int i = 0; i < 3; i++) {
+            clock.advance(Duration.ofMillis(500));
+            tracker.onFrame(null, List.of());
+        }
+        PresenceEventStore.OwnerInfo removed = store.lastOwner("REMOVED");
+        assertNotNull(removed, "el evento de retiro tambien debe llevar al dueno del objeto");
+        assertEquals(registered.personId(), removed.personId());
+    }
+
+    @Test
+    void noHayDuenoSiLaPersonaEstabaLejosDelObjeto() {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("dueno-lejos");
+        ObjectTracker tracker = new ObjectTracker(store, clock);
+
+        tracker.onFrame(null, List.of(suitcase(100, 100), person(600, 600)));
+        clock.advance(Duration.ofSeconds(4));
+        tracker.onFrame(null, List.of(suitcase(100, 100), person(600, 600)));
+
+        assertEquals(1, store.countEvents("REGISTERED_AT_REST"));
+        assertNull(store.lastOwner("REGISTERED_AT_REST"), "una persona lejana no es el dueno");
+    }
+
+    @Test
+    void guardaElRecorteYDescribeLaRopaDelDueno(@TempDir Path tempDir) {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("dueno-descripcion");
+        ObjectTracker tracker = new ObjectTracker(store, clock, tempDir);
+
+        BufferedImage frame = new BufferedImage(400, 400, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = frame.createGraphics();
+        g.setColor(Color.RED);
+        g.fillRect(0, 0, 400, 400);
+        g.dispose();
+
+        tracker.onFrame(frame, List.of(suitcase(100, 100), person(60, 60)));
+        clock.advance(Duration.ofSeconds(4));
+        tracker.onFrame(frame, List.of(suitcase(100, 100), person(60, 60)));
+
+        PresenceEventStore.OwnerInfo owner = store.lastOwner("REGISTERED_AT_REST");
+        assertNotNull(owner);
+        assertEquals("persona con camisa roja", owner.description());
+        assertNotNull(owner.cropPath(), "debe guardar la ruta del recorte del dueno");
+        assertTrue(Files.exists(Path.of(owner.cropPath())), "el recorte del dueno debe existir en disco");
+    }
+
+    @Test
+    void elDuenoEsLaPersonaQueMasFramesEstuvoCercaYCadaPersonaTieneSuPropioId() {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("dueno-votacion");
+        ObjectTracker tracker = new ObjectTracker(store, clock);
+
+        // maleta en (300,300); las personas A (id 1) y B (id 2) quedan a 60px de ella y a 170px entre si
+        Detection a = person(230, 250);
+        Detection b = person(400, 250);
+
+        tracker.onFrame(null, List.of(suitcase(300, 300), a));
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onFrame(null, List.of(suitcase(300, 300), b));
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onFrame(null, List.of(suitcase(300, 300), b));
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onFrame(null, List.of(suitcase(300, 300), b)); // aqui se cumplen los 3s quieta
+
+        PresenceEventStore.OwnerInfo owner = store.lastOwner("REGISTERED_AT_REST");
+        assertNotNull(owner);
+        assertEquals(2L, owner.personId(), "B estuvo 3 frames cerca y A solo 1: B es el dueno probable");
     }
 }

@@ -76,15 +76,25 @@ public class PresenceEventStore implements AutoCloseable {
                 """);
             // Bases creadas antes de existir frame_path: CREATE TABLE IF NOT EXISTS no las toca.
             st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS frame_path VARCHAR(500)");
+            st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS owner_person_id BIGINT");
+            st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS owner_description VARCHAR(200)");
+            st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS owner_crop_path VARCHAR(500)");
         }
     }
 
-    public void recordRegistered(long trackedId, String className, int x, int y, int w, int h, Instant when, String framePath) {
-        insert(trackedId, className, "REGISTERED_AT_REST", x, y, w, h, when, null, framePath);
+    /**
+     * Dueno probable de un objeto: la persona que estuvo mas tiempo cerca de el
+     * mientras aparecia y se asentaba. Todos los campos pueden ser null (ej. sin
+     * imagen no hay recorte ni descripcion).
+     */
+    public record OwnerInfo(Long personId, String description, String cropPath) {}
+
+    public void recordRegistered(long trackedId, String className, int x, int y, int w, int h, Instant when, String framePath, OwnerInfo owner) {
+        insert(trackedId, className, "REGISTERED_AT_REST", x, y, w, h, when, null, framePath, owner);
     }
 
-    public void recordRemoved(long trackedId, String className, int x, int y, int w, int h, Instant when, boolean personNearby, String framePath) {
-        insert(trackedId, className, "REMOVED", x, y, w, h, when, personNearby, framePath);
+    public void recordRemoved(long trackedId, String className, int x, int y, int w, int h, Instant when, boolean personNearby, String framePath, OwnerInfo owner) {
+        insert(trackedId, className, "REMOVED", x, y, w, h, when, personNearby, framePath, owner);
     }
 
     /** Da el valor de person_nearby del ultimo evento de ese tipo (usado en las pruebas). */
@@ -120,6 +130,30 @@ public class PresenceEventStore implements AutoCloseable {
         }
     }
 
+    /** Da el dueno guardado en el ultimo evento de ese tipo, o null si no tenia dueno (usado en las pruebas). */
+    OwnerInfo lastOwner(String eventType) {
+        String sql = "SELECT owner_person_id, owner_description, owner_crop_path FROM object_presence_event "
+                + "WHERE event_type = ? ORDER BY id DESC LIMIT 1";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, eventType);
+            try (var rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    return null;
+                }
+                long personId = rs.getLong(1);
+                Long id = rs.wasNull() ? null : personId;
+                String description = rs.getString(2);
+                String cropPath = rs.getString(3);
+                if (id == null && description == null && cropPath == null) {
+                    return null;
+                }
+                return new OwnerInfo(id, description, cropPath);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("No se pudo consultar object_presence_event", e);
+        }
+    }
+
     /** Cuenta los eventos guardados de un tipo dado (usado en las pruebas). */
     int countEvents(String eventType) {
         String sql = "SELECT COUNT(*) FROM object_presence_event WHERE event_type = ?";
@@ -135,11 +169,12 @@ public class PresenceEventStore implements AutoCloseable {
     }
 
     private void insert(long trackedId, String className, String eventType,
-                         int x, int y, int w, int h, Instant when, Boolean personNearby, String framePath) {
+                         int x, int y, int w, int h, Instant when, Boolean personNearby, String framePath, OwnerInfo owner) {
         String sql = """
             INSERT INTO object_presence_event
-                (tracked_object_id, class_name, event_type, occurred_at, pos_x, pos_y, width, height, person_nearby, frame_path)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (tracked_object_id, class_name, event_type, occurred_at, pos_x, pos_y, width, height, person_nearby, frame_path,
+                 owner_person_id, owner_description, owner_crop_path)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setLong(1, trackedId);
@@ -156,6 +191,13 @@ public class PresenceEventStore implements AutoCloseable {
                 ps.setBoolean(9, personNearby);
             }
             ps.setString(10, framePath);
+            if (owner == null || owner.personId() == null) {
+                ps.setNull(11, Types.BIGINT);
+            } else {
+                ps.setLong(11, owner.personId());
+            }
+            ps.setString(12, owner == null ? null : owner.description());
+            ps.setString(13, owner == null ? null : owner.cropPath());
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new IllegalStateException("No se pudo guardar el evento de presencia", e);
@@ -164,7 +206,11 @@ public class PresenceEventStore implements AutoCloseable {
         String label = "REGISTERED_AT_REST".equals(eventType) ? "registrado en reposo" : "retirado";
         String personInfo = personNearby != null ? " - persona cerca: " + personNearby : "";
         String frameInfo = framePath != null ? " - foto: " + framePath : "";
-        System.out.println("[" + when + "] Objeto #" + trackedId + " (" + className + ") " + label + personInfo + frameInfo);
+        String ownerInfo = owner != null && owner.personId() != null
+                ? " - dueño: persona #" + owner.personId()
+                        + (owner.description() != null ? " (" + owner.description() + ")" : "")
+                : "";
+        System.out.println("[" + when + "] Objeto #" + trackedId + " (" + className + ") " + label + personInfo + frameInfo + ownerInfo);
     }
 
     @Override

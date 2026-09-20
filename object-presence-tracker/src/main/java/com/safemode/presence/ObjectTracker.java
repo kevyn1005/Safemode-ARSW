@@ -1,8 +1,11 @@
 package com.safemode.presence;
 
+import com.safemode.presence.PresenceEventStore.OwnerInfo;
 import com.safemode.vision.ObjectDetector.Detection;
 
 import javax.imageio.ImageIO;
+import java.awt.Graphics2D;
+import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -30,8 +33,15 @@ public class ObjectTracker {
     private static final int MAX_FRAMES_UNSEEN = 3;
     private static final double PERSON_PROXIMITY_PX = 80;
 
+    // Dueno probable: distancia del centro del objeto al rectangulo de la persona (0 si esta dentro).
+    private static final double OWNER_PROXIMITY_PX = 100;
+    private static final double MAX_PERSON_FALLBACK_DISTANCE_PX = 150;
+    private static final int MAX_PERSON_FRAMES_UNSEEN = 5;
+
     private final Map<Long, TrackedObject> tracked = new LinkedHashMap<>();
     private final AtomicLong nextId = new AtomicLong(1);
+    private final Map<Long, TrackedPerson> trackedPersons = new LinkedHashMap<>();
+    private final AtomicLong nextPersonId = new AtomicLong(1);
     private final PresenceEventStore store;
     private final Clock clock;
     private final Path frameStorageDir;
@@ -72,6 +82,7 @@ public class ObjectTracker {
                 + personDetections.size() + " persona(s) detectadas. Objetos rastreados actualmente: "
                 + tracked.size());
 
+        List<Long> personIds = matchPersons(personDetections);
         Set<Long> matchedIds = new HashSet<>();
 
         for (Detection det : objectDetections) {
@@ -82,6 +93,7 @@ public class ObjectTracker {
                         det.x(), det.y(), det.width(), det.height(), now);
                 tracked.put(t.getId(), t);
                 matchedIds.add(t.getId());
+                updateOwnerCandidate(t, det, personDetections, personIds, frame);
                 System.out.println("[DEBUG]   -> Nuevo objeto #" + t.getId() + " (" + det.className()
                         + ") en (" + det.x() + "," + det.y() + ")");
                 continue;
@@ -91,6 +103,9 @@ public class ObjectTracker {
             System.out.println("[DEBUG]   -> Match con objeto #" + best.getId()
                     + " (estado=" + best.getState() + ", pos anterior=(" + best.getX() + "," + best.getY() + "))"
                     + " nueva pos=(" + det.x() + "," + det.y() + ")");
+            if (best.getState() == TrackedObject.State.NEW) {
+                updateOwnerCandidate(best, det, personDetections, personIds, frame);
+            }
             updatePosition(best, det, personDetections, now, frame);
         }
 
@@ -183,7 +198,9 @@ public class ObjectTracker {
         t.setState(TrackedObject.State.AT_REST);
         System.out.println("[DEBUG]   -> ¡Objeto #" + t.getId() + " marcado EN REPOSO! Guardando en BD...");
         String framePath = saveFrameSnapshot(frame, t.getId(), "REGISTERED_AT_REST", now);
-        store.recordRegistered(t.getId(), t.getClassName(), t.getX(), t.getY(), t.getWidth(), t.getHeight(), now, framePath);
+        OwnerInfo owner = resolveOwner(t, now);
+        t.setOwner(owner);
+        store.recordRegistered(t.getId(), t.getClassName(), t.getX(), t.getY(), t.getWidth(), t.getHeight(), now, framePath, owner);
     }
 
     private void markRemoved(TrackedObject t, List<Detection> personDetections, Instant now, BufferedImage frame) {
@@ -191,7 +208,141 @@ public class ObjectTracker {
         boolean personNearby = personDetections.stream()
                 .anyMatch(p -> distanceCenters(p, t) <= PERSON_PROXIMITY_PX);
         String framePath = saveFrameSnapshot(frame, t.getId(), "REMOVED", now);
-        store.recordRemoved(t.getId(), t.getClassName(), t.getX(), t.getY(), t.getWidth(), t.getHeight(), now, personNearby, framePath);
+        store.recordRemoved(t.getId(), t.getClassName(), t.getX(), t.getY(), t.getWidth(), t.getHeight(), now, personNearby, framePath, t.getOwner());
+    }
+
+    /**
+     * Asigna un id estable a cada persona detectada en este frame (IoU, con
+     * respaldo por distancia entre centros). Devuelve una lista de ids alineada
+     * por indice con {@code personDetections}. Las personas que no se ven se
+     * descartan tras {@link #MAX_PERSON_FRAMES_UNSEEN} frames.
+     */
+    private List<Long> matchPersons(List<Detection> personDetections) {
+        List<Long> ids = new ArrayList<>();
+        Set<Long> matched = new HashSet<>();
+
+        for (Detection det : personDetections) {
+            TrackedPerson person = findBestPersonMatch(det, matched);
+            if (person == null) {
+                person = new TrackedPerson(nextPersonId.getAndIncrement(), det.x(), det.y(), det.width(), det.height());
+                trackedPersons.put(person.getId(), person);
+            } else {
+                person.setPosition(det.x(), det.y(), det.width(), det.height());
+            }
+            person.resetFramesUnseen();
+            matched.add(person.getId());
+            ids.add(person.getId());
+        }
+
+        for (TrackedPerson p : new ArrayList<>(trackedPersons.values())) {
+            if (matched.contains(p.getId())) {
+                continue;
+            }
+            p.incrementFramesUnseen();
+            if (p.getFramesUnseen() > MAX_PERSON_FRAMES_UNSEEN) {
+                trackedPersons.remove(p.getId());
+            }
+        }
+        return ids;
+    }
+
+    private TrackedPerson findBestPersonMatch(Detection det, Set<Long> alreadyMatched) {
+        TrackedPerson bestByIou = null;
+        double bestIou = MATCH_IOU_THRESHOLD;
+        for (TrackedPerson p : trackedPersons.values()) {
+            if (alreadyMatched.contains(p.getId())) {
+                continue;
+            }
+            double iou = iou(p.getX(), p.getY(), p.getWidth(), p.getHeight(),
+                    det.x(), det.y(), det.width(), det.height());
+            if (iou > bestIou) {
+                bestIou = iou;
+                bestByIou = p;
+            }
+        }
+        if (bestByIou != null) {
+            return bestByIou;
+        }
+
+        TrackedPerson bestByDistance = null;
+        double bestDistance = MAX_PERSON_FALLBACK_DISTANCE_PX;
+        for (TrackedPerson p : trackedPersons.values()) {
+            if (alreadyMatched.contains(p.getId())) {
+                continue;
+            }
+            double distance = Math.hypot(
+                    (det.x() + det.width() / 2.0) - (p.getX() + p.getWidth() / 2.0),
+                    (det.y() + det.height() / 2.0) - (p.getY() + p.getHeight() / 2.0));
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                bestByDistance = p;
+            }
+        }
+        return bestByDistance;
+    }
+
+    /** Anota, en un objeto todavia NEW, la persona mas cercana (si hay alguna dentro del radio de dueno). */
+    private void updateOwnerCandidate(TrackedObject t, Detection objDet, List<Detection> persons,
+                                      List<Long> personIds, BufferedImage frame) {
+        double ox = objDet.x() + objDet.width() / 2.0;
+        double oy = objDet.y() + objDet.height() / 2.0;
+
+        int nearestIdx = -1;
+        double nearest = OWNER_PROXIMITY_PX;
+        for (int i = 0; i < persons.size(); i++) {
+            double d = distanceToBox(ox, oy, persons.get(i));
+            if (d <= nearest) {
+                nearest = d;
+                nearestIdx = i;
+            }
+        }
+        if (nearestIdx >= 0) {
+            Detection person = persons.get(nearestIdx);
+            // el recorte empieza en la esquina (x,y) de la persona, recortada al borde del frame
+            Rectangle objectInCrop = new Rectangle(objDet.x() - Math.max(0, person.x()),
+                    objDet.y() - Math.max(0, person.y()), objDet.width(), objDet.height());
+            t.recordNearPerson(personIds.get(nearestIdx), cropPerson(frame, person), objectInCrop);
+        }
+    }
+
+    /** Distancia de un punto a un rectangulo (0 si el punto queda dentro). */
+    private double distanceToBox(double px, double py, Detection box) {
+        double dx = Math.max(Math.max(box.x() - px, 0), px - (box.x() + box.width()));
+        double dy = Math.max(Math.max(box.y() - py, 0), py - (box.y() + box.height()));
+        return Math.hypot(dx, dy);
+    }
+
+    /** Copia del recorte de la persona (no retiene el frame completo en memoria), o null si no hay imagen. */
+    private BufferedImage cropPerson(BufferedImage frame, Detection person) {
+        if (frame == null) {
+            return null;
+        }
+        int x = Math.max(0, person.x());
+        int y = Math.max(0, person.y());
+        int w = Math.min(frame.getWidth(), person.x() + person.width()) - x;
+        int h = Math.min(frame.getHeight(), person.y() + person.height()) - y;
+        if (w <= 0 || h <= 0) {
+            return null;
+        }
+        BufferedImage copy = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = copy.createGraphics();
+        g.drawImage(frame.getSubimage(x, y, w, h), 0, 0, null);
+        g.dispose();
+        return copy;
+    }
+
+    /** Elige el dueno (la persona mas frecuente cerca del objeto), guarda su recorte y lo describe. */
+    private OwnerInfo resolveOwner(TrackedObject t, Instant now) {
+        Long ownerId = t.mostFrequentNearPersonId();
+        if (ownerId == null) {
+            return null;
+        }
+        BufferedImage crop = t.cropOf(ownerId);
+        String cropPath = crop == null ? null
+                : writePng(crop, "obj" + t.getId() + "_OWNER_person" + ownerId + "_" + now.toEpochMilli() + ".png");
+        String description = PersonDescriber.describe(crop, t.objectInCropOf(ownerId));
+        t.clearSightings();
+        return new OwnerInfo(ownerId, description, cropPath);
     }
 
     /**
@@ -204,11 +355,14 @@ public class ObjectTracker {
         if (frame == null) {
             return null;
         }
+        return writePng(frame, "obj" + trackedId + "_" + eventType + "_" + now.toEpochMilli() + ".png");
+    }
+
+    private String writePng(BufferedImage image, String filename) {
         try {
             Files.createDirectories(frameStorageDir);
-            String filename = "obj" + trackedId + "_" + eventType + "_" + now.toEpochMilli() + ".png";
             Path path = frameStorageDir.resolve(filename);
-            ImageIO.write(frame, "png", path.toFile());
+            ImageIO.write(image, "png", path.toFile());
             return path.toString();
         } catch (IOException e) {
             System.err.println("No se pudo guardar la imagen del evento: " + e.getMessage());
