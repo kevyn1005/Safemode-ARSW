@@ -1,5 +1,7 @@
 package com.safemode.presence;
 
+import com.safemode.vision.PoseEstimator;
+import com.safemode.vision.PoseEstimator.Keypoint;
 import org.junit.jupiter.api.Test;
 
 import java.awt.Color;
@@ -8,6 +10,7 @@ import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 class PersonDescriberTest {
@@ -78,6 +81,72 @@ class PersonDescriberTest {
     void unColorOscuroPeroSaturadoNoSeConfundeConNegro() {
         assertEquals("persona con camisa azul", PersonDescriber.describe(solid(new Color(20, 30, 90), 50, 120)));
         assertEquals("persona con camisa roja", PersonDescriber.describe(solid(new Color(100, 20, 25), 50, 120)));
+    }
+
+    /** Recorte ancho (150x120) con el torso rojo a la izquierda y fondo blanco: la franja central cae en el fondo. */
+    private static BufferedImage personaConTorsoRojoALaIzquierda() {
+        BufferedImage img = solid(Color.WHITE, 150, 120);
+        Graphics2D g = img.createGraphics();
+        g.setColor(Color.RED);
+        g.fillRect(5, 30, 40, 40);
+        g.dispose();
+        return img;
+    }
+
+    private static Keypoint[] pose(float confidence, float lsX, float lsY, float rsX, float rsY,
+                                   float lhX, float lhY, float rhX, float rhY) {
+        Keypoint[] kp = new Keypoint[17];
+        java.util.Arrays.fill(kp, new Keypoint(0, 0, 0));
+        kp[PoseEstimator.LEFT_SHOULDER] = new Keypoint(lsX, lsY, confidence);
+        kp[PoseEstimator.RIGHT_SHOULDER] = new Keypoint(rsX, rsY, confidence);
+        kp[PoseEstimator.LEFT_HIP] = new Keypoint(lhX, lhY, confidence);
+        kp[PoseEstimator.RIGHT_HIP] = new Keypoint(rhX, rhY, confidence);
+        return kp;
+    }
+
+    @Test
+    void conPuntosDelCuerpoLeeElTorsoAunqueLaFranjaCentralCaigaEnElFondo() {
+        BufferedImage img = personaConTorsoRojoALaIzquierda();
+        Keypoint[] torso = pose(0.9f, 8, 32, 42, 32, 10, 68, 40, 68);
+
+        assertEquals("persona con camisa roja", PersonDescriber.describe(img, null, torso));
+        assertNotEquals("persona con camisa roja", PersonDescriber.describe(img),
+                "sin los puntos, la franja fija lee el fondo blanco");
+    }
+
+    @Test
+    void conPuntosDeBajaConfianzaUsaLaFranjaCentralComoAntes() {
+        BufferedImage img = personaConTorsoRojoALaIzquierda();
+        Keypoint[] dudosos = pose(0.2f, 8, 32, 42, 32, 10, 68, 40, 68);
+
+        assertEquals(PersonDescriber.describe(img), PersonDescriber.describe(img, null, dudosos));
+    }
+
+    @Test
+    void siNoSeVenLasCaderasElTorsoSeEstimaHaciaAbajoDesdeLosHombros() {
+        BufferedImage img = personaConTorsoRojoALaIzquierda();
+        Keypoint[] sinCaderas = pose(0.9f, 8, 32, 42, 32, 0, 0, 0, 0);
+        sinCaderas[PoseEstimator.LEFT_HIP] = new Keypoint(0, 0, 0.1f);
+        sinCaderas[PoseEstimator.RIGHT_HIP] = new Keypoint(0, 0, 0.1f);
+
+        assertEquals("persona con camisa roja", PersonDescriber.describe(img, null, sinCaderas));
+    }
+
+    @Test
+    void ignoraElTonoDePielDeUnBrazoQueCruzaElPecho() {
+        BufferedImage img = solid(Color.BLACK, 100, 200);   // camisa negra
+        Graphics2D g = img.createGraphics();
+        g.setColor(new Color(200, 140, 110));               // antebrazo: mas area que la camisa visible en la banda del torso
+        g.fillRect(0, 45, 100, 45);
+        g.dispose();
+
+        assertEquals("persona con camisa negra", PersonDescriber.describe(img));
+    }
+
+    @Test
+    void siTodoLoQueSeVeEsPielSeDescribeComoColorPiel() {
+        assertEquals("persona con camisa color piel",
+                PersonDescriber.describe(solid(new Color(200, 140, 110), 100, 200)));
     }
 
     @Test

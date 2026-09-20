@@ -1,6 +1,7 @@
 package com.safemode.presence;
 
 import com.safemode.vision.ObjectDetector.Detection;
+import com.safemode.vision.PoseEstimator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -251,6 +252,39 @@ class ObjectTrackerTest {
         }
         assertEquals(2, store.countEvents("REMOVED"));
         assertEquals(2L, store.lastOwner("REMOVED").personId());
+    }
+
+    @Test
+    void usaLosPuntosDelCuerpoParaLeerElColorDeLaCamisaDelDueno(@TempDir Path tempDir) {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("dueno-con-pose");
+
+        // buscador de pose falso: hombros y caderas sobre la zona roja, a la izquierda del recorte
+        PoseEstimator.Keypoint[] pose = new PoseEstimator.Keypoint[17];
+        java.util.Arrays.fill(pose, new PoseEstimator.Keypoint(0, 0, 0));
+        pose[PoseEstimator.LEFT_SHOULDER] = new PoseEstimator.Keypoint(8, 32, 0.9f);
+        pose[PoseEstimator.RIGHT_SHOULDER] = new PoseEstimator.Keypoint(42, 32, 0.9f);
+        pose[PoseEstimator.LEFT_HIP] = new PoseEstimator.Keypoint(10, 68, 0.9f);
+        pose[PoseEstimator.RIGHT_HIP] = new PoseEstimator.Keypoint(40, 68, 0.9f);
+        ObjectTracker tracker = new ObjectTracker(store, clock, tempDir, crop -> pose);
+
+        // frame blanco con un torso rojo en (65,90); la persona (caja ancha 150x120) empieza en (60,60)
+        BufferedImage frame = new BufferedImage(400, 400, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = frame.createGraphics();
+        g.setColor(Color.WHITE);
+        g.fillRect(0, 0, 400, 400);
+        g.setColor(Color.RED);
+        g.fillRect(65, 90, 40, 40);
+        g.dispose();
+        Detection ancha = new Detection("person", 0.9f, 60, 60, 150, 120);
+
+        tracker.onFrame(frame, List.of(suitcase(100, 100), ancha));
+        clock.advance(Duration.ofSeconds(4));
+        tracker.onFrame(frame, List.of(suitcase(100, 100), ancha));
+
+        PresenceEventStore.OwnerInfo owner = store.lastOwner("REGISTERED_AT_REST");
+        assertNotNull(owner);
+        assertEquals("persona con camisa roja", owner.description());
     }
 
     @Test

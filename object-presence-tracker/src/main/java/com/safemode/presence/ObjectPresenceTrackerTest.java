@@ -2,6 +2,7 @@ package com.safemode.presence;
 
 import com.safemode.camerafeed.FrameCapturer;
 import com.safemode.vision.ObjectDetector;
+import com.safemode.vision.PoseEstimator;
 
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
@@ -27,8 +28,13 @@ public class ObjectPresenceTrackerTest {
         System.out.println("Modelo de deteccion: " + modelPath);
         ObjectDetector detector = new ObjectDetector(modelPath);
 
+        // Modelo de pose opcional (tambien local, en data/): ubica el torso del dueno para leer el color de su camisa.
+        Path poseModel = Path.of("object-presence-tracker", "data", "models", "yolov8m-pose.onnx");
+        PoseEstimator poseEstimator = Files.exists(poseModel) ? new PoseEstimator(poseModel.toString()) : null;
+        System.out.println("Modelo de pose: " + (poseEstimator != null ? poseModel : "ninguno (se usa la franja central)"));
+
         try (PresenceEventStore store = new PresenceEventStore("./object-presence-tracker/data/presence")) {
-            ObjectTracker tracker = new ObjectTracker(store);
+            ObjectTracker tracker = new ObjectTracker(store, poseEstimator);
 
             Thread.sleep(1000); // esperar el primer frame
 

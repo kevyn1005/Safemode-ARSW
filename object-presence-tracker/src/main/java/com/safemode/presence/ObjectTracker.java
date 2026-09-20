@@ -1,7 +1,10 @@
 package com.safemode.presence;
 
+import ai.onnxruntime.OrtException;
 import com.safemode.presence.PresenceEventStore.OwnerInfo;
 import com.safemode.vision.ObjectDetector.Detection;
+import com.safemode.vision.PoseEstimator;
+import com.safemode.vision.PoseEstimator.Keypoint;
 
 import javax.imageio.ImageIO;
 import java.awt.Graphics2D;
@@ -20,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 
 public class ObjectTracker {
 
@@ -45,6 +49,7 @@ public class ObjectTracker {
     private final PresenceEventStore store;
     private final Clock clock;
     private final Path frameStorageDir;
+    private final Function<BufferedImage, Keypoint[]> poseFinder;
 
     public ObjectTracker(PresenceEventStore store) {
         this(store, Clock.systemUTC(), Path.of("object-presence-tracker", "data", "frames"));
@@ -54,11 +59,40 @@ public class ObjectTracker {
         this(store, clock, Path.of("object-presence-tracker", "data", "frames"));
     }
 
+    /**
+     * Igual que el constructor basico, pero con un modelo de pose que ubica el torso del dueno
+     * para describir el color de su camisa con mas precision. Puede ser {@code null}.
+     */
+    public ObjectTracker(PresenceEventStore store, PoseEstimator poseEstimator) {
+        this(store, Clock.systemUTC(), Path.of("object-presence-tracker", "data", "frames"), asPoseFinder(poseEstimator));
+    }
+
     /** Constructor para pruebas: permite ademas elegir donde se guardan las imagenes (ej. un directorio temporal). */
     ObjectTracker(PresenceEventStore store, Clock clock, Path frameStorageDir) {
+        this(store, clock, frameStorageDir, null);
+    }
+
+    /** Constructor para pruebas con un buscador de pose falso (no necesita el modelo .onnx). */
+    ObjectTracker(PresenceEventStore store, Clock clock, Path frameStorageDir,
+                  Function<BufferedImage, Keypoint[]> poseFinder) {
         this.store = store;
         this.clock = clock;
         this.frameStorageDir = frameStorageDir;
+        this.poseFinder = poseFinder;
+    }
+
+    private static Function<BufferedImage, Keypoint[]> asPoseFinder(PoseEstimator poseEstimator) {
+        if (poseEstimator == null) {
+            return null;
+        }
+        return crop -> {
+            try {
+                return poseEstimator.estimate(crop);
+            } catch (OrtException e) {
+                System.err.println("No se pudo estimar la pose del dueno: " + e.getMessage());
+                return null;
+            }
+        };
     }
 
     /**
@@ -344,7 +378,8 @@ public class ObjectTracker {
         BufferedImage crop = t.cropOf(ownerId);
         String cropPath = crop == null ? null
                 : writePng(crop, "obj" + t.getId() + "_OWNER_person" + ownerId + "_" + now.toEpochMilli() + ".png");
-        String description = PersonDescriber.describe(crop, t.objectInCropOf(ownerId));
+        Keypoint[] pose = (crop == null || poseFinder == null) ? null : poseFinder.apply(crop);
+        String description = PersonDescriber.describe(crop, t.objectInCropOf(ownerId), pose);
         t.clearSightings();
         return new OwnerInfo(ownerId, description, cropPath);
     }
