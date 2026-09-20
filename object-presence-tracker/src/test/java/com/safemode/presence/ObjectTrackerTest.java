@@ -181,7 +181,7 @@ class ObjectTrackerTest {
     }
 
     @Test
-    void unObjetoEnReposoQueSeMueveBruscamenteSeMarcaRetiradoDeInmediato() {
+    void unObjetoEnReposoQueSigueDesplazadoDosFramesSeguidosSeMarcaRetirado() {
         MutableClock clock = new MutableClock();
         PresenceEventStore store = PresenceEventStore.inMemory("movimiento-brusco");
         ObjectTracker tracker = new ObjectTracker(store, clock);
@@ -193,9 +193,38 @@ class ObjectTrackerTest {
 
         clock.advance(Duration.ofMillis(500));
         tracker.onFrame(null, List.of(suitcase(400, 100))); // salto grande: alguien la levanto y la movio
+        assertEquals(0, store.countEvents("REMOVED"), "un solo frame desplazado aun no basta: puede ser que alguien la tape");
 
-        assertEquals(1, store.countEvents("REMOVED"),
-                "un movimiento brusco estando en reposo debe tratarse como un retiro inmediato");
+        clock.advance(Duration.ofMillis(500));
+        tracker.onFrame(null, List.of(suitcase(430, 100))); // sigue lejos del sitio original
+
+        assertEquals(1, store.countEvents("REMOVED"), "desplazada dos frames seguidos: se la llevaron");
+    }
+
+    @Test
+    void unDesplazamientoAisladoDeUnObjetoEnReposoNoLoDaPorRetirado() {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("desplazamiento-aislado");
+        ObjectTracker tracker = new ObjectTracker(store, clock);
+
+        tracker.onFrame(null, List.of(suitcase(100, 100)));
+        clock.advance(Duration.ofSeconds(4));
+        tracker.onFrame(null, List.of(suitcase(100, 100)));
+        assertEquals(1, store.countEvents("REGISTERED_AT_REST"));
+
+        // una persona pasa por delante y la caja del detector salta 70 px (caso real), y en el frame siguiente vuelve
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onFrame(null, List.of(suitcase(170, 100)));
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onFrame(null, List.of(suitcase(102, 101)));
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onFrame(null, List.of(suitcase(100, 100)));
+
+        assertEquals(0, store.countEvents("REMOVED"), "la maleta nunca se fue: no debe haber retiro falso");
+
+        // y sigue vigilada: cuando de verdad desaparece, si se registra el retiro
+        desaparecerLaMaleta(tracker, clock, List.of());
+        assertEquals(1, store.countEvents("REMOVED"));
     }
 
     @Test
@@ -595,7 +624,7 @@ class ObjectTrackerTest {
         PresenceEventStore store = PresenceEventStore.inMemory("vaciar-eventos");
         Instant when = Instant.parse("2026-01-01T00:00:00Z");
         store.recordRegistered(1, "suitcase", 0, 0, 10, 10, when, null, null);
-        store.recordRemoved(1, "suitcase", 0, 0, 10, 10, when, false, null, null);
+        store.recordRemoved(1, "suitcase", 0, 0, 10, 10, when, false, null, null, null);
 
         assertEquals(2, store.clearAllEvents(), "debe informar cuantas filas habia");
         assertEquals(0, store.countEvents("REGISTERED_AT_REST"));
@@ -636,6 +665,190 @@ class ObjectTrackerTest {
         tracker.onFrame(null, List.of(bolso, mochila));
 
         assertEquals(2, store.countEvents("REGISTERED_AT_REST"), "dos objetos distintos, aunque se solapen");
+    }
+
+    // ---- Quien retira el objeto: el dueno u otra persona ----
+
+    private static final Detection DUENO = person(60, 60);        // id 1; junto a suitcase(100,100)
+    private static final Detection OTRA = person(230, 60);        // a 90 px de la maleta y a 170 px de DUENO: id distinto
+
+    /** Deja la maleta en reposo con el dueno junto a ella (persona #1) y ya vista un frame mas en reposo. */
+    private static void asentarConDueno(ObjectTracker tracker, MutableClock clock) {
+        tracker.onFrame(null, List.of(suitcase(100, 100), DUENO));
+        clock.advance(Duration.ofSeconds(4));
+        tracker.onFrame(null, List.of(suitcase(100, 100), DUENO));   // pasa a reposo, dueno = persona #1
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onFrame(null, List.of(suitcase(100, 100), DUENO));   // un frame en reposo: se anota quien esta cerca
+    }
+
+    /** La maleta deja de verse; las personas indicadas siguen en escena. */
+    private static void desaparecerLaMaleta(ObjectTracker tracker, MutableClock clock, List<Detection> personas) {
+        for (int i = 0; i < 3; i++) {
+            clock.advance(Duration.ofSeconds(1));
+            tracker.onFrame(null, personas);
+        }
+    }
+
+    @Test
+    void siSoloElDuenoEstabaCercaElRetiroEsDelDueno() {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("retiro-por-dueno");
+        ObjectTracker tracker = new ObjectTracker(store, clock);
+
+        asentarConDueno(tracker, clock);
+        desaparecerLaMaleta(tracker, clock, List.of(DUENO));
+
+        PresenceEventStore.RemovalInfo removal = store.lastRemoval();
+        assertEquals(RemovalKind.BY_OWNER.name(), removal.kind());
+        assertEquals(1L, removal.personId(), "se le atribuye al dueno");
+        assertEquals(1L, store.lastOwner("REMOVED").personId());
+    }
+
+    @Test
+    void siLaRetiraUnaPersonaDistintaDelDuenoEsPosibleRobo() {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("retiro-por-otro");
+        ObjectTracker tracker = new ObjectTracker(store, clock);
+
+        asentarConDueno(tracker, clock);
+        // el dueno se va (6 frames sin verlo: el seguimiento lo olvida) y llega otra persona que se queda junto a la maleta
+        for (int i = 0; i < 6; i++) {
+            clock.advance(Duration.ofSeconds(1));
+            tracker.onFrame(null, List.of(suitcase(100, 100)));
+        }
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onFrame(null, List.of(suitcase(100, 100), OTRA));
+        desaparecerLaMaleta(tracker, clock, List.of(OTRA));
+
+        PresenceEventStore.RemovalInfo removal = store.lastRemoval();
+        assertEquals(RemovalKind.BY_OTHER.name(), removal.kind());
+        assertEquals(2L, removal.personId(), "se le atribuye a la persona nueva");
+        assertEquals(1L, store.lastOwner("REMOVED").personId(), "el dueno sigue siendo la persona #1");
+    }
+
+    @Test
+    void siElDuenoYOtraPersonaEstabanCercaNoSeSabeQuienLaTomo() {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("retiro-ambiguo");
+        ObjectTracker tracker = new ObjectTracker(store, clock);
+
+        asentarConDueno(tracker, clock);
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onFrame(null, List.of(suitcase(100, 100), DUENO, OTRA));
+        desaparecerLaMaleta(tracker, clock, List.of(DUENO, OTRA));
+
+        PresenceEventStore.RemovalInfo removal = store.lastRemoval();
+        assertEquals(RemovalKind.OWNER_AND_OTHER_NEAR.name(), removal.kind());
+        assertEquals(2L, removal.personId(), "se anota la otra persona, la que no es el dueno, para revisarla");
+    }
+
+    @Test
+    void siDesapareceSinNadieCercaNoSeAtribuyeANadie() {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("retiro-sin-nadie");
+        ObjectTracker tracker = new ObjectTracker(store, clock);
+
+        asentarConDueno(tracker, clock);
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onFrame(null, List.of(suitcase(100, 100)));   // el dueno ya no esta al lado
+        desaparecerLaMaleta(tracker, clock, List.of());
+
+        PresenceEventStore.RemovalInfo removal = store.lastRemoval();
+        assertEquals(RemovalKind.NO_ONE_NEAR.name(), removal.kind());
+        assertNull(removal.personId());
+        assertNull(removal.cropPath());
+    }
+
+    @Test
+    void unObjetoSinDuenoRegistradoQueRetiraAlguienQuedaComoDuenoDesconocido() {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("retiro-sin-dueno");
+        ObjectTracker tracker = new ObjectTracker(store, clock);
+
+        tracker.onFrame(null, List.of(suitcase(100, 100)));           // aparece sin nadie cerca
+        clock.advance(Duration.ofSeconds(4));
+        tracker.onFrame(null, List.of(suitcase(100, 100)));           // en reposo, sin dueno
+        assertNull(store.lastOwner("REGISTERED_AT_REST"));
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onFrame(null, List.of(suitcase(100, 100), DUENO));    // llega alguien despues
+        desaparecerLaMaleta(tracker, clock, List.of(DUENO));
+
+        PresenceEventStore.RemovalInfo removal = store.lastRemoval();
+        assertEquals(RemovalKind.OWNER_UNKNOWN.name(), removal.kind());
+        assertEquals(1L, removal.personId());
+    }
+
+    @Test
+    void siLaMaletaSeMueveBruscamenteUnaPersonaNuevaJuntoAElLaAtribuyeAEsaPersona() {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("retiro-brusco");
+        ObjectTracker tracker = new ObjectTracker(store, clock);
+
+        asentarConDueno(tracker, clock);
+        clock.advance(Duration.ofSeconds(1));
+        // alguien la levanta y se la lleva: la maleta salta de sitio y la persona nueva va pegada a ella
+        tracker.onFrame(null, List.of(suitcase(400, 100), person(330, 60)));
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onFrame(null, List.of(suitcase(440, 100), person(370, 60)));   // y sigue alejandose
+
+        PresenceEventStore.RemovalInfo removal = store.lastRemoval();
+        assertEquals(RemovalKind.OWNER_AND_OTHER_NEAR.name(), removal.kind(),
+                "el dueno estaba al lado hace un instante y ahora hay otra persona con la maleta");
+        assertEquals(2L, removal.personId());
+    }
+
+    @Test
+    void quienSeAcercaAlSitioMientrasLaMaletaDesapareceSeAtribuyeElRetiroAunqueYaSeHayaIdo() {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("retiro-visto-al-desaparecer");
+        ObjectTracker tracker = new ObjectTracker(store, clock);
+
+        asentarConDueno(tracker, clock);
+        // el dueno se va y la maleta queda sola, sin nadie al lado
+        for (int i = 0; i < 6; i++) {
+            clock.advance(Duration.ofSeconds(1));
+            tracker.onFrame(null, List.of(suitcase(100, 100)));
+        }
+        // otra persona llega, la levanta (la maleta deja de verse) y se aleja: en el ultimo frame ya no esta al lado
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onFrame(null, List.of(OTRA));
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onFrame(null, List.of(OTRA));
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onFrame(null, List.of());
+
+        PresenceEventStore.RemovalInfo removal = store.lastRemoval();
+        assertEquals(RemovalKind.BY_OTHER.name(), removal.kind(),
+                "la persona estuvo junto al sitio mientras la maleta desaparecia, aunque al declararse el retiro ya no este");
+        assertEquals(2L, removal.personId());
+    }
+
+    @Test
+    void unaDesaparicionPasajeraDeLaMaletaNoDejaAlDuenoComoCercanoParaUnRetiroPosterior() {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("desaparicion-pasajera");
+        ObjectTracker tracker = new ObjectTracker(store, clock);
+
+        asentarConDueno(tracker, clock);
+        // la maleta se deja de ver un frame con el dueno al lado (caso real) y vuelve a verse
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onFrame(null, List.of(DUENO));
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onFrame(null, List.of(suitcase(100, 100), DUENO));
+        // el dueno se va y la maleta queda sola (el seguimiento olvida al dueno tras 6 frames)
+        for (int i = 0; i < 6; i++) {
+            clock.advance(Duration.ofSeconds(1));
+            tracker.onFrame(null, List.of(suitcase(100, 100)));
+        }
+        // llega otra persona y se lleva la maleta
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onFrame(null, List.of(suitcase(100, 100), OTRA));
+        desaparecerLaMaleta(tracker, clock, List.of(OTRA));
+
+        PresenceEventStore.RemovalInfo removal = store.lastRemoval();
+        assertEquals(RemovalKind.BY_OTHER.name(), removal.kind(),
+                "el dueno ya no estaba: lo anotado en la desaparicion pasajera no debe seguir contando");
+        assertEquals(2L, removal.personId());
     }
 
     @Test

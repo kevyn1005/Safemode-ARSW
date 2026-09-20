@@ -44,7 +44,30 @@ public class TrackedObject {
         BufferedImage evidenceCrop;
     }
 
+    /**
+     * Persona que estaba junto al objeto en un frame (mientras esta en reposo), con su recorte y la foto que la
+     * muestra junto al objeto. Sirve para saber quien se lo llevo: cuando el objeto desaparece ya no esta a la vista.
+     */
+    static final class NearPerson {
+        final long personId;
+        final double distance;
+        final BufferedImage crop;
+        final BufferedImage evidenceCrop;
+        final Rectangle objectInCrop;
+
+        NearPerson(long personId, double distance, BufferedImage crop, BufferedImage evidenceCrop, Rectangle objectInCrop) {
+            this.personId = personId;
+            this.distance = distance;
+            this.crop = crop;
+            this.evidenceCrop = evidenceCrop;
+            this.objectInCrop = objectInCrop;
+        }
+    }
+
     private final Map<Long, Sighting> nearPersons = new LinkedHashMap<>();
+    private Map<Long, NearPerson> lastNearPersons = new LinkedHashMap<>();
+    private final Map<Long, NearPerson> disappearanceNear = new LinkedHashMap<>();
+    private int displacedFrames = 0;
     private OwnerInfo owner;
     private BufferedImage ownerCrop;
     private PoseEstimator.Keypoint[] ownerPose;
@@ -115,6 +138,8 @@ public class TrackedObject {
 
     void resetFramesUnseen() {
         this.framesUnseen = 0;
+        // el objeto volvio a verse: lo anotado durante esa desaparicion ya no cuenta para un retiro posterior
+        this.disappearanceNear.clear();
     }
 
     void incrementFramesUnseen() {
@@ -164,6 +189,38 @@ public class TrackedObject {
 
     void clearSightings() {
         nearPersons.clear();
+    }
+
+    /** Personas junto al objeto en el ultimo frame en que se vio quieto, en reposo (se reemplaza cada frame). */
+    void setLastNearPersons(Map<Long, NearPerson> persons) {
+        this.lastNearPersons = persons;
+    }
+
+    Map<Long, NearPerson> getLastNearPersons() {
+        return lastNearPersons;
+    }
+
+    /** Suma personas vistas junto al sitio del objeto mientras no se ve (de cada una se conserva la vez que estuvo mas cerca). */
+    void addDisappearanceNear(Map<Long, NearPerson> persons) {
+        for (NearPerson candidate : persons.values()) {
+            NearPerson current = disappearanceNear.get(candidate.personId);
+            if (current == null || candidate.distance < current.distance) {
+                disappearanceNear.put(candidate.personId, candidate);
+            }
+        }
+    }
+
+    Map<Long, NearPerson> getDisappearanceNear() {
+        return disappearanceNear;
+    }
+
+    /** Cuenta los frames seguidos en que el objeto en reposo aparecio desplazado; devuelve el nuevo total. */
+    int incrementDisplacedFrames() {
+        return ++displacedFrames;
+    }
+
+    void resetDisplacedFrames() {
+        displacedFrames = 0;
     }
 
     /** Recorte del dueno, guardado solo hasta enviarlo a describir (para no retener imagenes). */

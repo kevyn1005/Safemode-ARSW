@@ -80,6 +80,11 @@ public class PresenceEventStore implements AutoCloseable {
             st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS owner_description VARCHAR(200)");
             st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS owner_crop_path VARCHAR(500)");
             st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS owner_ai_description VARCHAR(1000)");
+            // Solo se llenan en los eventos REMOVED: como se retiro el objeto y quien estaba junto a el
+            st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS removal_kind VARCHAR(30)");
+            st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS remover_person_id BIGINT");
+            st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS remover_description VARCHAR(200)");
+            st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS remover_crop_path VARCHAR(500)");
         }
     }
 
@@ -90,14 +95,38 @@ public class PresenceEventStore implements AutoCloseable {
      */
     public record OwnerInfo(Long personId, String description, String cropPath) {}
 
+    /**
+     * Como se retiro un objeto: el tipo (nombre de {@link RemovalKind}) y, si hubo alguien a quien atribuirselo, esa
+     * persona (id, descripcion por color y foto junto al objeto). personId es null en NO_ONE_NEAR; los demas campos
+     * pueden ser null (ej. sin imagen no hay foto ni descripcion).
+     */
+    public record RemovalInfo(String kind, Long personId, String description, String cropPath) {}
+
     /** Guarda el evento y devuelve el id de la fila. */
     public long recordRegistered(long trackedId, String className, int x, int y, int w, int h, Instant when, String framePath, OwnerInfo owner) {
-        return insert(trackedId, className, "REGISTERED_AT_REST", x, y, w, h, when, null, framePath, owner);
+        return insert(trackedId, className, "REGISTERED_AT_REST", x, y, w, h, when, null, framePath, owner, null);
     }
 
     /** Guarda el evento y devuelve el id de la fila. */
-    public long recordRemoved(long trackedId, String className, int x, int y, int w, int h, Instant when, boolean personNearby, String framePath, OwnerInfo owner) {
-        return insert(trackedId, className, "REMOVED", x, y, w, h, when, personNearby, framePath, owner);
+    public long recordRemoved(long trackedId, String className, int x, int y, int w, int h, Instant when, boolean personNearby,
+                              String framePath, OwnerInfo owner, RemovalInfo removal) {
+        return insert(trackedId, className, "REMOVED", x, y, w, h, when, personNearby, framePath, owner, removal);
+    }
+
+    /** Da como se retiro el objeto en el ultimo evento REMOVED, o null si no hay (usado en las pruebas). */
+    RemovalInfo lastRemoval() {
+        String sql = "SELECT removal_kind, remover_person_id, remover_description, remover_crop_path FROM object_presence_event "
+                + "WHERE event_type = 'REMOVED' ORDER BY id DESC LIMIT 1";
+        try (var st = connection.createStatement(); var rs = st.executeQuery(sql)) {
+            if (!rs.next()) {
+                return null;
+            }
+            long personId = rs.getLong(2);
+            Long id = rs.wasNull() ? null : personId;
+            return new RemovalInfo(rs.getString(1), id, rs.getString(3), rs.getString(4));
+        } catch (SQLException e) {
+            throw new IllegalStateException("No se pudo consultar object_presence_event", e);
+        }
     }
 
     /** Da el valor de person_nearby del ultimo evento de ese tipo (usado en las pruebas). */
@@ -185,12 +214,14 @@ public class PresenceEventStore implements AutoCloseable {
     }
 
     private long insert(long trackedId, String className, String eventType,
-                         int x, int y, int w, int h, Instant when, Boolean personNearby, String framePath, OwnerInfo owner) {
+                         int x, int y, int w, int h, Instant when, Boolean personNearby, String framePath, OwnerInfo owner,
+                         RemovalInfo removal) {
         String sql = """
             INSERT INTO object_presence_event
                 (tracked_object_id, class_name, event_type, occurred_at, pos_x, pos_y, width, height, person_nearby, frame_path,
-                 owner_person_id, owner_description, owner_crop_path)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 owner_person_id, owner_description, owner_crop_path,
+                 removal_kind, remover_person_id, remover_description, remover_crop_path)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
         long eventId;
         try (PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
@@ -215,6 +246,14 @@ public class PresenceEventStore implements AutoCloseable {
             }
             ps.setString(12, owner == null ? null : owner.description());
             ps.setString(13, owner == null ? null : owner.cropPath());
+            ps.setString(14, removal == null ? null : removal.kind());
+            if (removal == null || removal.personId() == null) {
+                ps.setNull(15, Types.BIGINT);
+            } else {
+                ps.setLong(15, removal.personId());
+            }
+            ps.setString(16, removal == null ? null : removal.description());
+            ps.setString(17, removal == null ? null : removal.cropPath());
             ps.executeUpdate();
             try (var keys = ps.getGeneratedKeys()) {
                 keys.next();
@@ -231,7 +270,12 @@ public class PresenceEventStore implements AutoCloseable {
                 ? " - dueño: persona #" + owner.personId()
                         + (owner.description() != null ? " (" + owner.description() + ")" : "")
                 : "";
-        System.out.println("[" + when + "] Objeto #" + trackedId + " (" + className + ") " + label + personInfo + frameInfo + ownerInfo);
+        String removalInfo = removal == null ? ""
+                : " - RETIRO " + removal.kind()
+                        + (removal.personId() != null ? " por persona #" + removal.personId()
+                                + (removal.description() != null ? " (" + removal.description() + ")" : "") : "");
+        System.out.println("[" + when + "] Objeto #" + trackedId + " (" + className + ") " + label + personInfo + frameInfo
+                + ownerInfo + removalInfo);
         return eventId;
     }
 

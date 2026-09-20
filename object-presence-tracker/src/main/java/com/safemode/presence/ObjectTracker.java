@@ -2,6 +2,7 @@ package com.safemode.presence;
 
 import ai.onnxruntime.OrtException;
 import com.safemode.presence.PresenceEventStore.OwnerInfo;
+import com.safemode.presence.PresenceEventStore.RemovalInfo;
 import com.safemode.vision.ObjectDetector.Detection;
 import com.safemode.vision.PoseEstimator;
 import com.safemode.vision.PoseEstimator.Keypoint;
@@ -43,6 +44,11 @@ public class ObjectTracker {
 
     // Dueno probable: distancia del centro del objeto al rectangulo de la persona (0 si esta dentro).
     private static final double OWNER_PROXIMITY_PX = 100;
+    // Quien esta "junto" al objeto en reposo (para atribuir un retiro): distancia del centro del objeto a la caja de la persona.
+    private static final double REMOVAL_PROXIMITY_PX = 100;
+    // Un objeto en reposo que aparece desplazado mas de MOVEMENT_TOLERANCE_PX solo se da por retirado si sigue desplazado
+    // en este numero de frames seguidos: una persona que pasa por delante lo tapa y la caja del detector salta de sitio.
+    private static final int REMOVAL_CONFIRM_FRAMES = 2;
     private static final double MAX_PERSON_FALLBACK_DISTANCE_PX = 150;
     private static final int MAX_PERSON_FRAMES_UNSEEN = 5;
 
@@ -172,13 +178,14 @@ public class ObjectTracker {
             if (best.getState() == TrackedObject.State.NEW) {
                 updateOwnerCandidate(best, det, personDetections, personIds, frame);
             }
-            updatePosition(best, det, personDetections, now, frame);
+            updatePosition(best, det, personDetections, personIds, now, frame);
         }
 
-        handleUnseenObjects(matchedIds, personDetections, now, frame);
+        handleUnseenObjects(matchedIds, personDetections, personIds, now, frame);
     }
 
-    private void handleUnseenObjects(Set<Long> matchedIds, List<Detection> personDetections, Instant now, BufferedImage frame) {
+    private void handleUnseenObjects(Set<Long> matchedIds, List<Detection> personDetections, List<Long> personIds,
+                                     Instant now, BufferedImage frame) {
         for (TrackedObject t : new ArrayList<>(tracked.values())) {
             if (matchedIds.contains(t.getId())) {
                 continue;
@@ -186,11 +193,16 @@ public class ObjectTracker {
             t.incrementFramesUnseen();
             System.out.println("[DEBUG]   -> Objeto #" + t.getId() + " no visto este frame ("
                     + t.getFramesUnseen() + "/" + MAX_FRAMES_UNSEEN + ")");
+            if (t.getState() == TrackedObject.State.AT_REST) {
+                // quien se acerca al sitio del objeto mientras desaparece: cuando se declare el retiro quiza ya se alejo con el
+                t.addDisappearanceNear(collectNearPersons(t.getX(), t.getY(), t.getWidth(), t.getHeight(),
+                        personDetections, personIds, frame));
+            }
             if (t.getFramesUnseen() < MAX_FRAMES_UNSEEN) {
                 continue;
             }
             if (t.getState() == TrackedObject.State.AT_REST) {
-                markRemoved(t, personDetections, now, frame);
+                markRemoved(t, personDetections, personIds, now, frame);
             } else {
                 System.out.println("[DEBUG]   -> Objeto #" + t.getId()
                         + " descartado SIN GUARDAR (nunca llegó a AT_REST, estado=" + t.getState() + ")");
@@ -250,23 +262,45 @@ public class ObjectTracker {
         return bestByDistance;
     }
 
-    private void updatePosition(TrackedObject t, Detection det, List<Detection> personDetections, Instant now, BufferedImage frame) {
+    private void updatePosition(TrackedObject t, Detection det, List<Detection> personDetections, List<Long> personIds,
+                                Instant now, BufferedImage frame) {
         boolean stillInPlace = Math.abs(det.x() - t.getX()) <= MOVEMENT_TOLERANCE_PX
                 && Math.abs(det.y() - t.getY()) <= MOVEMENT_TOLERANCE_PX;
 
-        t.setPosition(det.x(), det.y(), det.width(), det.height());
         t.resetFramesUnseen();
+
+        if (t.getState() == TrackedObject.State.AT_REST) {
+            if (stillInPlace) {
+                t.resetDisplacedFrames();
+            } else {
+                int displaced = t.incrementDisplacedFrames();
+                if (displaced < REMOVAL_CONFIRM_FRAMES) {
+                    // no se actualiza la posicion: sigue valiendo la de reposo, a la que puede volver en el siguiente frame
+                    System.out.println("[DEBUG]   -> Objeto #" + t.getId() + " aparece desplazado mas de " + MOVEMENT_TOLERANCE_PX
+                            + "px estando en reposo (" + displaced + "/" + REMOVAL_CONFIRM_FRAMES
+                            + "): se espera confirmacion, puede ser que alguien lo tape");
+                    return;
+                }
+            }
+        }
+
+        t.setPosition(det.x(), det.y(), det.width(), det.height());
 
         if (!stillInPlace) {
             System.out.println("[DEBUG]   -> Objeto #" + t.getId() + " se movió más de " + MOVEMENT_TOLERANCE_PX
                     + "px, se reinicia el contador de quietud (estado=" + t.getState() + ")");
             if (t.getState() == TrackedObject.State.AT_REST) {
-                markRemoved(t, personDetections, now, frame);
+                markRemoved(t, personDetections, personIds, now, frame);
                 tracked.remove(t.getId());
             } else {
                 t.setRestSinceAt(now);
             }
             return;
+        }
+
+        if (t.getState() == TrackedObject.State.AT_REST) {
+            // quien esta junto al objeto ahora: si desaparece o se lo llevan, es a quien se le atribuye el retiro
+            t.setLastNearPersons(collectNearPersons(t.getX(), t.getY(), t.getWidth(), t.getHeight(), personDetections, personIds, frame));
         }
 
         Duration quietFor = Duration.between(t.getRestSinceAt(), now);
@@ -289,7 +323,7 @@ public class ObjectTracker {
         requestAiDescription(t, t.takeOwnerCrop(), t.takeOwnerPose(), owner == null ? null : owner.personId());
     }
 
-    private void markRemoved(TrackedObject t, List<Detection> personDetections, Instant now, BufferedImage frame) {
+    private void markRemoved(TrackedObject t, List<Detection> personDetections, List<Long> personIds, Instant now, BufferedImage frame) {
         t.setState(TrackedObject.State.REMOVED);
         // distancia del centro del objeto a la CAJA de la persona: una persona sentada o cargando el
         // objeto tiene una caja enorme y su centro queda lejos aunque este tocandolo
@@ -298,11 +332,100 @@ public class ObjectTracker {
         boolean personNearby = personDetections.stream()
                 .anyMatch(p -> distanceToBox(ox, oy, p) <= PERSON_PROXIMITY_PX);
         String framePath = saveFrameSnapshot(frame, t.getId(), "REMOVED", now);
-        long eventId = store.recordRemoved(t.getId(), t.getClassName(), t.getX(), t.getY(), t.getWidth(), t.getHeight(), now, personNearby, framePath, t.getOwner());
+        RemovalInfo removal = analyzeRemoval(t, personDetections, personIds, frame, now);
+        long eventId = store.recordRemoved(t.getId(), t.getClassName(), t.getX(), t.getY(), t.getWidth(), t.getHeight(), now,
+                personNearby, framePath, t.getOwner(), removal);
         String aiDescription = t.registerRemovedEvent(eventId);
         if (aiDescription != null) {
             store.updateOwnerAiDescription(eventId, aiDescription);
         }
+    }
+
+    /**
+     * Personas junto al objeto (dentro de {@link #REMOVAL_PROXIMITY_PX}), con su recorte y la foto que las muestra
+     * junto al objeto. La clave es el id de persona; el mas cercano se puede elegir por {@code distance}.
+     */
+    private Map<Long, TrackedObject.NearPerson> collectNearPersons(int ox, int oy, int ow, int oh, List<Detection> persons,
+                                                                   List<Long> personIds, BufferedImage frame) {
+        double cx = ox + ow / 2.0;
+        double cy = oy + oh / 2.0;
+        Map<Long, TrackedObject.NearPerson> near = new LinkedHashMap<>();
+        for (int i = 0; i < persons.size(); i++) {
+            Detection person = persons.get(i);
+            double distance = distanceToBox(cx, cy, person);
+            if (distance > REMOVAL_PROXIMITY_PX) {
+                continue;
+            }
+            Rectangle objectInCrop = new Rectangle(ox - Math.max(0, person.x()), oy - Math.max(0, person.y()), ow, oh);
+            int ux = Math.min(person.x(), ox);
+            int uy = Math.min(person.y(), oy);
+            int ux2 = Math.max(person.x() + person.width(), ox + ow);
+            int uy2 = Math.max(person.y() + person.height(), oy + oh);
+            near.put(personIds.get(i), new TrackedObject.NearPerson(personIds.get(i), distance,
+                    cropRegion(frame, person.x(), person.y(), person.width(), person.height()),
+                    cropRegion(frame, ux, uy, ux2 - ux, uy2 - uy), objectInCrop));
+        }
+        return near;
+    }
+
+    /**
+     * Como se retiro el objeto y a quien atribuirselo. Se consideran las personas junto al objeto en el ultimo frame en
+     * que se vio quieto y tambien las que estan junto a el ahora (quien se lo lleva suele aparecer justo al levantarlo,
+     * y para cuando el objeto desaparece quiza ya se alejo).
+     */
+    private RemovalInfo analyzeRemoval(TrackedObject t, List<Detection> personDetections, List<Long> personIds,
+                                       BufferedImage frame, Instant now) {
+        Map<Long, TrackedObject.NearPerson> near = new LinkedHashMap<>(t.getLastNearPersons());
+        near.putAll(t.getDisappearanceNear());
+        near.putAll(collectNearPersons(t.getX(), t.getY(), t.getWidth(), t.getHeight(), personDetections, personIds, frame));
+
+        Long ownerId = t.getOwner() == null ? null : t.getOwner().personId();
+        RemovalKind kind = classifyRemoval(ownerId, near.keySet());
+        TrackedObject.NearPerson remover = pickRemover(kind, ownerId, near);
+        if (remover == null) {
+            return new RemovalInfo(kind.name(), null, null, null);
+        }
+
+        String cropPath = remover.crop == null ? null
+                : writePng(remover.evidenceCrop != null ? remover.evidenceCrop : remover.crop,
+                        "obj" + t.getId() + "_REMOVER_person" + remover.personId + "_" + now.toEpochMilli() + ".png");
+        Keypoint[] pose = (remover.crop == null || poseFinder == null) ? null : poseFinder.apply(remover.crop);
+        String description = PersonDescriber.describe(remover.crop, remover.objectInCrop, pose);
+        return new RemovalInfo(kind.name(), remover.personId, description, cropPath);
+    }
+
+    /** Tipo de retiro segun el dueno del objeto (puede ser null) y las personas que estaban junto a el. */
+    static RemovalKind classifyRemoval(Long ownerId, java.util.Collection<Long> nearIds) {
+        if (nearIds.isEmpty()) {
+            return RemovalKind.NO_ONE_NEAR;
+        }
+        if (ownerId == null) {
+            return RemovalKind.OWNER_UNKNOWN;
+        }
+        if (nearIds.contains(ownerId)) {
+            return nearIds.size() == 1 ? RemovalKind.BY_OWNER : RemovalKind.OWNER_AND_OTHER_NEAR;
+        }
+        return RemovalKind.BY_OTHER;
+    }
+
+    /** A quien se le atribuye el retiro: el dueno si actuo solo; si no, la persona (distinta del dueno) mas cercana. */
+    private static TrackedObject.NearPerson pickRemover(RemovalKind kind, Long ownerId, Map<Long, TrackedObject.NearPerson> near) {
+        if (kind == RemovalKind.NO_ONE_NEAR) {
+            return null;
+        }
+        if (kind == RemovalKind.BY_OWNER) {
+            return near.get(ownerId);
+        }
+        TrackedObject.NearPerson best = null;
+        for (TrackedObject.NearPerson candidate : near.values()) {
+            if (ownerId != null && candidate.personId == ownerId) {
+                continue;
+            }
+            if (best == null || candidate.distance < best.distance) {
+                best = candidate;
+            }
+        }
+        return best;
     }
 
     /** Activa (opcionalmente) la descripcion del dueno con un modelo de vision; devuelve este mismo tracker. */
