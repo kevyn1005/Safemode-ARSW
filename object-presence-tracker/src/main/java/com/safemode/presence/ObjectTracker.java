@@ -414,7 +414,13 @@ public class ObjectTracker {
             // el recorte empieza en la esquina (x,y) de la persona, recortada al borde del frame
             Rectangle objectInCrop = new Rectangle(objDet.x() - Math.max(0, person.x()),
                     objDet.y() - Math.max(0, person.y()), objDet.width(), objDet.height());
-            t.recordNearPerson(personIds.get(nearestIdx), cropPerson(frame, person), objectInCrop);
+            // foto de evidencia: persona y objeto juntos (el objeto no siempre cae dentro de la caja de la persona)
+            int ux = Math.min(person.x(), objDet.x());
+            int uy = Math.min(person.y(), objDet.y());
+            int ux2 = Math.max(person.x() + person.width(), objDet.x() + objDet.width());
+            int uy2 = Math.max(person.y() + person.height(), objDet.y() + objDet.height());
+            t.recordNearPerson(personIds.get(nearestIdx), cropRegion(frame, person.x(), person.y(), person.width(), person.height()),
+                    objectInCrop, cropRegion(frame, ux, uy, ux2 - ux, uy2 - uy));
         }
     }
 
@@ -425,15 +431,15 @@ public class ObjectTracker {
         return Math.hypot(dx, dy);
     }
 
-    /** Copia del recorte de la persona (no retiene el frame completo en memoria), o null si no hay imagen. */
-    private BufferedImage cropPerson(BufferedImage frame, Detection person) {
+    /** Copia de una region del frame recortada a sus bordes (no retiene el frame completo en memoria), o null si no hay imagen. */
+    private BufferedImage cropRegion(BufferedImage frame, int rx, int ry, int rw, int rh) {
         if (frame == null) {
             return null;
         }
-        int x = Math.max(0, person.x());
-        int y = Math.max(0, person.y());
-        int w = Math.min(frame.getWidth(), person.x() + person.width()) - x;
-        int h = Math.min(frame.getHeight(), person.y() + person.height()) - y;
+        int x = Math.max(0, rx);
+        int y = Math.max(0, ry);
+        int w = Math.min(frame.getWidth(), rx + rw) - x;
+        int h = Math.min(frame.getHeight(), ry + rh) - y;
         if (w <= 0 || h <= 0) {
             return null;
         }
@@ -451,8 +457,11 @@ public class ObjectTracker {
             return null;
         }
         BufferedImage crop = t.cropOf(ownerId);
+        BufferedImage evidence = t.evidenceCropOf(ownerId);
+        // la foto guardada muestra a la persona junto al objeto; el color y la pose se leen solo del recorte de la persona
         String cropPath = crop == null ? null
-                : writePng(crop, "obj" + t.getId() + "_OWNER_person" + ownerId + "_" + now.toEpochMilli() + ".png");
+                : writePng(evidence != null ? evidence : crop,
+                        "obj" + t.getId() + "_OWNER_person" + ownerId + "_" + now.toEpochMilli() + ".png");
         Keypoint[] pose = (crop == null || poseFinder == null) ? null : poseFinder.apply(crop);
         String description = PersonDescriber.describe(crop, t.objectInCropOf(ownerId), pose);
         t.setOwnerCrop(crop);

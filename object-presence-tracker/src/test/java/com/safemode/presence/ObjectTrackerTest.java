@@ -371,6 +371,24 @@ class ObjectTrackerTest {
     }
 
     @Test
+    void laFotoDelDuenoIncluyeElObjetoAunqueNoEsteDentroDeLaCajaDeLaPersona(@TempDir Path tempDir) throws Exception {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("foto-dueno-con-objeto");
+        ObjectTracker tracker = new ObjectTracker(store, clock, tempDir);
+        BufferedImage frame = blankFrame();
+
+        Detection persona = person(60, 60);   // x 60-110, y 60-180
+        Detection maleta = suitcase(150, 100); // x 150-230, y 100-160: a un lado de la persona, sin tocarla
+        tracker.onFrame(frame, List.of(maleta, persona));
+        clock.advance(Duration.ofSeconds(4));
+        tracker.onFrame(frame, List.of(maleta, persona));
+
+        BufferedImage saved = javax.imageio.ImageIO.read(new java.io.File(store.lastOwner("REGISTERED_AT_REST").cropPath()));
+        assertEquals(170, saved.getWidth(), "el ancho abarca desde la persona (x=60) hasta el final de la maleta (x=230)");
+        assertEquals(120, saved.getHeight(), "el alto es el de la persona (y 60-180)");
+    }
+
+    @Test
     void guardaUnaImagenDelFrameCuandoRegistraElObjeto(@TempDir Path tempDir) {
         MutableClock clock = new MutableClock();
         PresenceEventStore store = PresenceEventStore.inMemory("guarda-imagen");

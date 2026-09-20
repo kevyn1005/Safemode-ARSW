@@ -40,6 +40,7 @@ public class TrackedObject {
         int frames;
         BufferedImage crop;
         Rectangle objectInCrop;
+        BufferedImage evidenceCrop;
     }
 
     private final Map<Long, Sighting> nearPersons = new LinkedHashMap<>();
@@ -119,13 +120,20 @@ public class TrackedObject {
     }
 
     /** Anota que esta persona estuvo cerca del objeto en este frame (mientras el objeto es NEW). */
-    void recordNearPerson(long personId, BufferedImage crop, Rectangle objectInCrop) {
+    void recordNearPerson(long personId, BufferedImage crop, Rectangle objectInCrop, BufferedImage evidenceCrop) {
         Sighting s = nearPersons.computeIfAbsent(personId, k -> new Sighting());
         s.frames++;
         if (crop != null) {
             s.crop = crop;
             s.objectInCrop = objectInCrop;
+            s.evidenceCrop = evidenceCrop;
         }
+    }
+
+    /** Recorte que abarca a la persona y al objeto juntos (foto de evidencia), o null. */
+    BufferedImage evidenceCropOf(long personId) {
+        Sighting s = nearPersons.get(personId);
+        return s == null ? null : s.evidenceCrop;
     }
 
     /** Id de la persona que mas frames estuvo cerca del objeto, o null si nadie lo estuvo. */
