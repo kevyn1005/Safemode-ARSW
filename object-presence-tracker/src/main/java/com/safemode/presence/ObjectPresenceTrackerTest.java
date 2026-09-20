@@ -55,8 +55,8 @@ public class ObjectPresenceTrackerTest {
 
             Thread.sleep(1000); // esperar el primer frame
 
-            // 30 s por defecto; para probar varios objetos: "-Dexec.args=60"
-            long captureSeconds = args.length > 0 ? Long.parseLong(args[0].trim()) : 30;
+            // 60 s por defecto (da tiempo a dejar un objeto, esperar y retirarlo); otro valor: "-Dexec.args=30"
+            long captureSeconds = args.length > 0 ? Long.parseLong(args[0].trim()) : 60;
             System.out.println("Duracion de captura: " + captureSeconds + " s");
             long endAt = System.currentTimeMillis() + captureSeconds * 1000;
             while (System.currentTimeMillis() < endAt) {

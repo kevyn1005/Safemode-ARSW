@@ -852,6 +852,69 @@ class ObjectTrackerTest {
     }
 
     @Test
+    void unaPersonaGrandePegadaALaCamaraQueSeMueveMuchoConservaSuIdYNoPareceOtra() {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("persona-grande");
+        ObjectTracker tracker = new ObjectTracker(store, clock);
+
+        // caja de 600x900 (persona cerca de la camara) que se desplaza 400 px entre frames: sin solape (IoU 0.2),
+        // pero 400 px es menos de la mitad de su tamano; la maleta queda dentro de la caja en todos los frames
+        Detection antes = new Detection("person", 0.9f, 0, 0, 600, 900);
+        Detection despues = new Detection("person", 0.9f, 400, 0, 600, 900);
+        tracker.onFrame(null, List.of(suitcase(450, 300), antes));
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onFrame(null, List.of(suitcase(450, 300), despues));
+        clock.advance(Duration.ofSeconds(3));
+        tracker.onFrame(null, List.of(suitcase(450, 300), despues));
+
+        assertEquals(1L, store.lastOwner("REGISTERED_AT_REST").personId(),
+                "es la misma persona en los tres frames: no se le debe asignar un id nuevo al moverse rapido");
+    }
+
+    @Test
+    void laFotoYLaDescripcionDeQuienSeLlevoLaMaletaSeGuardan(@TempDir Path tempDir) {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("retiro-con-foto");
+        ObjectTracker tracker = new ObjectTracker(store, clock, tempDir);
+        BufferedImage frame = new BufferedImage(400, 400, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = frame.createGraphics();
+        g.setColor(Color.RED);
+        g.fillRect(0, 0, 400, 400);
+        g.dispose();
+
+        tracker.onFrame(frame, List.of(suitcase(100, 100), DUENO));
+        clock.advance(Duration.ofSeconds(4));
+        tracker.onFrame(frame, List.of(suitcase(100, 100), DUENO));
+        for (int i = 0; i < 6; i++) {
+            clock.advance(Duration.ofSeconds(1));
+            tracker.onFrame(frame, List.of(suitcase(100, 100)));
+        }
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onFrame(frame, List.of(suitcase(100, 100), OTRA));
+        for (int i = 0; i < 3; i++) {
+            clock.advance(Duration.ofSeconds(1));
+            tracker.onFrame(frame, List.of(OTRA));
+        }
+
+        PresenceEventStore.RemovalInfo removal = store.lastRemoval();
+        assertEquals(RemovalKind.BY_OTHER.name(), removal.kind());
+        assertEquals("persona con camisa roja", removal.description());
+        assertNotNull(removal.cropPath());
+        assertTrue(Files.exists(Path.of(removal.cropPath())), "la foto de quien se la llevo debe existir en disco");
+    }
+
+    @Test
+    void classifyRemovalCubreTodosLosCasos() {
+        assertEquals(RemovalKind.NO_ONE_NEAR, ObjectTracker.classifyRemoval(1L, java.util.Set.of()));
+        assertEquals(RemovalKind.NO_ONE_NEAR, ObjectTracker.classifyRemoval(null, java.util.Set.of()));
+        assertEquals(RemovalKind.OWNER_UNKNOWN, ObjectTracker.classifyRemoval(null, java.util.Set.of(5L)));
+        assertEquals(RemovalKind.BY_OWNER, ObjectTracker.classifyRemoval(1L, java.util.Set.of(1L)));
+        assertEquals(RemovalKind.OWNER_AND_OTHER_NEAR, ObjectTracker.classifyRemoval(1L, java.util.Set.of(1L, 2L)));
+        assertEquals(RemovalKind.BY_OTHER, ObjectTracker.classifyRemoval(1L, java.util.Set.of(2L)));
+        assertEquals(RemovalKind.BY_OTHER, ObjectTracker.classifyRemoval(1L, java.util.Set.of(2L, 3L)));
+    }
+
+    @Test
     void guardaUnaImagenDelFrameCuandoRegistraElObjeto(@TempDir Path tempDir) {
         MutableClock clock = new MutableClock();
         PresenceEventStore store = PresenceEventStore.inMemory("guarda-imagen");

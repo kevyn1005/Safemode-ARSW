@@ -50,6 +50,8 @@ public class ObjectTracker {
     // en este numero de frames seguidos: una persona que pasa por delante lo tapa y la caja del detector salta de sitio.
     private static final int REMOVAL_CONFIRM_FRAMES = 2;
     private static final double MAX_PERSON_FALLBACK_DISTANCE_PX = 150;
+    // fraccion del tamano de la caja (ancho o alto, el mayor) que una persona puede desplazarse entre frames
+    private static final double PERSON_MOVE_PER_SIZE = 0.6;
     private static final int MAX_PERSON_FRAMES_UNSEEN = 5;
 
     private final Map<Long, TrackedObject> tracked = new LinkedHashMap<>();
@@ -615,8 +617,10 @@ public class ObjectTracker {
             return bestByIou;
         }
 
+        // Cuanto puede moverse una persona entre dos frames depende de su tamano en la imagen: una que pasa pegada a la
+        // camara (caja enorme) recorre cientos de pixeles, y con un limite fijo el seguimiento le cambiaba el id.
         TrackedPerson bestByDistance = null;
-        double bestDistance = MAX_PERSON_FALLBACK_DISTANCE_PX;
+        double bestRatio = 1.0; // distancia / limite de esa persona; solo cuentan las de ratio < 1
         for (TrackedPerson p : trackedPersons.values()) {
             if (alreadyMatched.contains(p.getId())) {
                 continue;
@@ -624,8 +628,10 @@ public class ObjectTracker {
             double distance = Math.hypot(
                     (det.x() + det.width() / 2.0) - (p.getX() + p.getWidth() / 2.0),
                     (det.y() + det.height() / 2.0) - (p.getY() + p.getHeight() / 2.0));
-            if (distance < bestDistance) {
-                bestDistance = distance;
+            double limit = Math.max(MAX_PERSON_FALLBACK_DISTANCE_PX, PERSON_MOVE_PER_SIZE * Math.max(p.getWidth(), p.getHeight()));
+            double ratio = distance / limit;
+            if (ratio < bestRatio) {
+                bestRatio = ratio;
                 bestByDistance = p;
             }
         }
