@@ -15,6 +15,8 @@ public class ObjectDetector {
     private static final int NUM_CLASSES = 80;
     private static final int NUM_BOXES = 8400;
     private static final float NMS_IOU_THRESHOLD = 0.5f;
+    // Clases de "bolso": un mismo objeto puede salir a la vez como backpack y como handbag (o suitcase)
+    private static final Set<String> BAG_CLASSES = Set.of("backpack", "handbag", "suitcase");
 
     // Clases COCO que te interesan para SafeMode
     private static final Map<Integer, String> RELEVANT_CLASSES = Map.of(
@@ -181,8 +183,9 @@ public class ObjectDetector {
         return nonMaxSuppression(detections);
     }
 
-    // Elimina cajas duplicadas: de la misma clase y muy solapadas (YOLO genera varias por objeto).
-    // Dos objetos distintos de la misma clase (ej. dos personas) se conservan si no se solapan.
+    // Elimina cajas duplicadas muy solapadas (YOLO genera varias por objeto): de la misma clase, o de dos clases
+    // de bolso distintas (la misma mochila detectada tambien como bolso). Dos objetos distintos de la misma clase
+    // (ej. dos personas) se conservan si no se solapan, y una persona nunca borra a un bolso ni al reves.
     static List<Detection> nonMaxSuppression(List<Detection> input) {
         List<Detection> sorted = new ArrayList<>(input);
         sorted.sort((a, b) -> Float.compare(b.confidence(), a.confidence()));
@@ -197,7 +200,9 @@ public class ObjectDetector {
             for (int j = i + 1; j < sorted.size(); j++) {
                 if (removed[j]) continue;
                 Detection b = sorted.get(j);
-                if (a.className().equals(b.className()) && iou(a, b) > NMS_IOU_THRESHOLD) {
+                boolean sameKind = a.className().equals(b.className())
+                        || (BAG_CLASSES.contains(a.className()) && BAG_CLASSES.contains(b.className()));
+                if (sameKind && iou(a, b) > NMS_IOU_THRESHOLD) {
                     removed[j] = true;
                 }
             }

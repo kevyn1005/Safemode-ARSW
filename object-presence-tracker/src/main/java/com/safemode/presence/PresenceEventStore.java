@@ -133,6 +133,19 @@ public class PresenceEventStore implements AutoCloseable {
         }
     }
 
+    /** Da el id del objeto (tracked_object_id) del ultimo evento de ese tipo, o -1 si no hay (usado en las pruebas). */
+    long lastTrackedObjectId(String eventType) {
+        String sql = "SELECT tracked_object_id FROM object_presence_event WHERE event_type = ? ORDER BY id DESC LIMIT 1";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, eventType);
+            try (var rs = ps.executeQuery()) {
+                return rs.next() ? rs.getLong(1) : -1;
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("No se pudo consultar object_presence_event", e);
+        }
+    }
+
     /** Da el dueno guardado en el ultimo evento de ese tipo, o null si no tenia dueno (usado en las pruebas). */
     OwnerInfo lastOwner(String eventType) {
         String sql = "SELECT owner_person_id, owner_description, owner_crop_path FROM object_presence_event "

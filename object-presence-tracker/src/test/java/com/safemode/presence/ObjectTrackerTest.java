@@ -527,6 +527,40 @@ class ObjectTrackerTest {
     }
 
     @Test
+    void unObjetoQueElDetectorCambiaDeClaseEntreFramesSigueSiendoElMismo() {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("cambio-de-clase");
+        ObjectTracker tracker = new ObjectTracker(store, clock);
+
+        // la misma maleta, siempre en el mismo sitio: el primer frame el detector dice backpack y despues handbag
+        tracker.onFrame(null, List.of(new Detection("backpack", 0.6f, 100, 100, 80, 90)));
+        for (int i = 0; i < 4; i++) {
+            clock.advance(Duration.ofSeconds(1));
+            tracker.onFrame(null, List.of(new Detection("handbag", 0.5f, 102, 101, 80, 90)));
+        }
+
+        assertEquals(1, store.countEvents("REGISTERED_AT_REST"));
+        assertEquals(1L, store.lastTrackedObjectId("REGISTERED_AT_REST"),
+                "sigue siendo el objeto #1 (el que empezo como backpack), no uno nuevo que empezo a contar de cero al cambiar la clase");
+    }
+
+    @Test
+    void unaDeteccionDeOtraClaseNoLeRobaElObjetoAOtraDeSuMismaClase() {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("sin-robo-entre-clases");
+        ObjectTracker tracker = new ObjectTracker(store, clock);
+
+        Detection mochila = new Detection("backpack", 0.7f, 100, 100, 80, 90);
+        Detection bolso = new Detection("handbag", 0.7f, 110, 110, 80, 90); // solapada con la mochila, pero es otro objeto
+        tracker.onFrame(null, List.of(mochila, bolso));
+        clock.advance(Duration.ofSeconds(4));
+        // en el siguiente frame llegan en orden distinto: cada una debe seguir con su objeto
+        tracker.onFrame(null, List.of(bolso, mochila));
+
+        assertEquals(2, store.countEvents("REGISTERED_AT_REST"), "dos objetos distintos, aunque se solapen");
+    }
+
+    @Test
     void guardaUnaImagenDelFrameCuandoRegistraElObjeto(@TempDir Path tempDir) {
         MutableClock clock = new MutableClock();
         PresenceEventStore store = PresenceEventStore.inMemory("guarda-imagen");

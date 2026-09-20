@@ -126,8 +126,29 @@ public class ObjectTracker {
         List<Long> personIds = matchPersons(personDetections);
         Set<Long> matchedIds = new HashSet<>();
 
-        for (Detection det : objectDetections) {
-            TrackedObject best = findBestMatch(det, matchedIds);
+        // Paso 1: cada deteccion con un objeto de su misma clase.
+        TrackedObject[] assigned = new TrackedObject[objectDetections.size()];
+        for (int i = 0; i < objectDetections.size(); i++) {
+            assigned[i] = findBestMatch(objectDetections.get(i), matchedIds);
+            if (assigned[i] != null) {
+                matchedIds.add(assigned[i].getId());
+            }
+        }
+        // Paso 2: las que quedaron sin objeto pueden ser un objeto que el detector cambio de clase entre frames
+        // (la misma maleta sale a veces como backpack y a veces como handbag). Va despues del paso 1 para no
+        // robarle el objeto a otra deteccion de su misma clase.
+        for (int i = 0; i < objectDetections.size(); i++) {
+            if (assigned[i] == null) {
+                assigned[i] = findClassChangeMatch(objectDetections.get(i), matchedIds);
+                if (assigned[i] != null) {
+                    matchedIds.add(assigned[i].getId());
+                }
+            }
+        }
+
+        for (int i = 0; i < objectDetections.size(); i++) {
+            Detection det = objectDetections.get(i);
+            TrackedObject best = assigned[i];
 
             if (best == null) {
                 TrackedObject t = new TrackedObject(nextId.getAndIncrement(), det.className(),
@@ -143,7 +164,9 @@ public class ObjectTracker {
             matchedIds.add(best.getId());
             System.out.println("[DEBUG]   -> Match con objeto #" + best.getId()
                     + " (estado=" + best.getState() + ", pos anterior=(" + best.getX() + "," + best.getY() + "))"
-                    + " nueva pos=(" + det.x() + "," + det.y() + ")");
+                    + " nueva pos=(" + det.x() + "," + det.y() + ")"
+                    + (best.getClassName().equals(det.className()) ? ""
+                            : " [el detector cambio de clase: " + best.getClassName() + " -> " + det.className() + "]"));
             if (best.getState() == TrackedObject.State.NEW) {
                 updateOwnerCandidate(best, det, personDetections, personIds, frame);
             }
@@ -172,6 +195,24 @@ public class ObjectTracker {
             }
             tracked.remove(t.getId());
         }
+    }
+
+    /** Objeto sin emparejar de OTRA clase que se solapa con la deteccion (el detector le cambio la clase), o null. */
+    private TrackedObject findClassChangeMatch(Detection det, Set<Long> alreadyMatched) {
+        TrackedObject best = null;
+        double bestIou = MATCH_IOU_THRESHOLD;
+        for (TrackedObject t : tracked.values()) {
+            if (alreadyMatched.contains(t.getId()) || t.getClassName().equals(det.className())) {
+                continue;
+            }
+            double iou = iou(t.getX(), t.getY(), t.getWidth(), t.getHeight(),
+                    det.x(), det.y(), det.width(), det.height());
+            if (iou > bestIou) {
+                bestIou = iou;
+                best = t;
+            }
+        }
+        return best;
     }
 
     private TrackedObject findBestMatch(Detection det, Set<Long> alreadyMatched) {

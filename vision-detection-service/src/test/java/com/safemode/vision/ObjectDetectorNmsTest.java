@@ -44,6 +44,25 @@ class ObjectDetectorNmsTest {
     }
 
     @Test
+    void laMismaMochilaDetectadaComoDosClasesDeBolsoQuedaEnUna() {
+        List<Detection> result = ObjectDetector.nonMaxSuppression(List.of(
+                det("handbag", 0.42f, 1720, 350, 160, 150),
+                det("backpack", 0.55f, 1722, 349, 158, 152)));
+
+        assertEquals(1, result.size(), "una sola maleta no debe salir como dos objetos");
+        assertEquals("backpack", result.get(0).className(), "gana la clase de mayor confianza");
+    }
+
+    @Test
+    void bolsosDeClasesDistintasEnLugaresDistintosSeConservan() {
+        List<Detection> result = ObjectDetector.nonMaxSuppression(List.of(
+                det("backpack", 0.8f, 100, 100, 150, 150),
+                det("suitcase", 0.7f, 900, 100, 150, 150)));
+
+        assertEquals(2, result.size());
+    }
+
+    @Test
     void cajasDeLaMismaClaseConPocoSolapeSonObjetosDistintos() {
         // IoU aprox. 0.11: dos personas pegadas, no un duplicado
         List<Detection> result = ObjectDetector.nonMaxSuppression(List.of(
