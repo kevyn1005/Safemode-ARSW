@@ -121,6 +121,45 @@ class ObjectTrackerTest {
     }
 
     @Test
+    void personaConCajaGrandeQueSostieneElObjetoCuentaComoCercaAunqueSuCentroEsteLejos() {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("retiro-persona-caja-grande");
+        ObjectTracker tracker = new ObjectTracker(store, clock);
+
+        tracker.onFrame(null, List.of(suitcase(100, 100)));
+        clock.advance(Duration.ofSeconds(4));
+        tracker.onFrame(null, List.of(suitcase(100, 100)));
+
+        // persona sentada/cargando: caja de 150x600 que contiene a la maleta, con su centro a ~180px de ella
+        Detection bigPerson = new Detection("person", 0.9f, 0, 0, 150, 600);
+        for (int i = 0; i < 3; i++) {
+            clock.advance(Duration.ofMillis(500));
+            tracker.onFrame(null, List.of(bigPerson));
+        }
+
+        assertEquals(Boolean.TRUE, store.lastPersonNearby("REMOVED"),
+                "la distancia debe medirse a la caja de la persona, no solo a su centro");
+    }
+
+    @Test
+    void unaPersonaLejanaNoCuentaComoCercaAlRetirarElObjeto() {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("retiro-persona-lejos");
+        ObjectTracker tracker = new ObjectTracker(store, clock);
+
+        tracker.onFrame(null, List.of(suitcase(100, 100)));
+        clock.advance(Duration.ofSeconds(4));
+        tracker.onFrame(null, List.of(suitcase(100, 100)));
+
+        for (int i = 0; i < 3; i++) {
+            clock.advance(Duration.ofMillis(500));
+            tracker.onFrame(null, List.of(person(900, 500)));
+        }
+
+        assertEquals(Boolean.FALSE, store.lastPersonNearby("REMOVED"));
+    }
+
+    @Test
     void marcaRetiradoSinPersonaCercaSiNadieEstabaAlLado() {
         MutableClock clock = new MutableClock();
         PresenceEventStore store = PresenceEventStore.inMemory("retiro-sin-persona");

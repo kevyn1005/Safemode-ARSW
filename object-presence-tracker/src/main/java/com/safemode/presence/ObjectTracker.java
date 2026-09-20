@@ -205,8 +205,12 @@ public class ObjectTracker {
 
     private void markRemoved(TrackedObject t, List<Detection> personDetections, Instant now, BufferedImage frame) {
         t.setState(TrackedObject.State.REMOVED);
+        // distancia del centro del objeto a la CAJA de la persona: una persona sentada o cargando el
+        // objeto tiene una caja enorme y su centro queda lejos aunque este tocandolo
+        double ox = t.getX() + t.getWidth() / 2.0;
+        double oy = t.getY() + t.getHeight() / 2.0;
         boolean personNearby = personDetections.stream()
-                .anyMatch(p -> distanceCenters(p, t) <= PERSON_PROXIMITY_PX);
+                .anyMatch(p -> distanceToBox(ox, oy, p) <= PERSON_PROXIMITY_PX);
         String framePath = saveFrameSnapshot(frame, t.getId(), "REMOVED", now);
         store.recordRemoved(t.getId(), t.getClassName(), t.getX(), t.getY(), t.getWidth(), t.getHeight(), now, personNearby, framePath, t.getOwner());
     }

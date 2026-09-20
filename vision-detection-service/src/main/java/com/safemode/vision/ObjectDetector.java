@@ -14,6 +14,7 @@ public class ObjectDetector {
     private static final float CONFIDENCE_THRESHOLD = 0.3f;
     private static final int NUM_CLASSES = 80;
     private static final int NUM_BOXES = 8400;
+    private static final float NMS_IOU_THRESHOLD = 0.5f;
 
     // Clases COCO que te interesan para SafeMode
     private static final Map<Integer, String> RELEVANT_CLASSES = Map.of(
@@ -180,8 +181,9 @@ public class ObjectDetector {
         return nonMaxSuppression(detections);
     }
 
-    // Elimina cajas duplicadas de la misma clase (YOLO genera varias por objeto)
-    private List<Detection> nonMaxSuppression(List<Detection> input) {
+    // Elimina cajas duplicadas: de la misma clase y muy solapadas (YOLO genera varias por objeto).
+    // Dos objetos distintos de la misma clase (ej. dos personas) se conservan si no se solapan.
+    static List<Detection> nonMaxSuppression(List<Detection> input) {
         List<Detection> sorted = new ArrayList<>(input);
         sorted.sort((a, b) -> Float.compare(b.confidence(), a.confidence()));
 
@@ -195,13 +197,22 @@ public class ObjectDetector {
             for (int j = i + 1; j < sorted.size(); j++) {
                 if (removed[j]) continue;
                 Detection b = sorted.get(j);
-                // misma clase => nos quedamos solo con la de mayor confianza
-                if (a.className().equals(b.className())) {
+                if (a.className().equals(b.className()) && iou(a, b) > NMS_IOU_THRESHOLD) {
                     removed[j] = true;
                 }
             }
         }
         return result;
+    }
+
+    private static float iou(Detection a, Detection b) {
+        int x1 = Math.max(a.x(), b.x());
+        int y1 = Math.max(a.y(), b.y());
+        int x2 = Math.min(a.x() + a.width(), b.x() + b.width());
+        int y2 = Math.min(a.y() + a.height(), b.y() + b.height());
+        float inter = (float) Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+        float union = (float) a.width() * a.height() + (float) b.width() * b.height() - inter;
+        return union <= 0 ? 0 : inter / union;
     }
 
     private static class Letterbox {
