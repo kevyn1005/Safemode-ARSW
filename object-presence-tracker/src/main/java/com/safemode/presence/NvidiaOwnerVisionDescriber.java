@@ -20,6 +20,11 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Descripcion del dueno con un modelo de vision del catalogo de NVIDIA (API compatible con OpenAI).
@@ -39,6 +44,9 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
     // seguidas), asi que se corta pronto y se reintenta una vez en vez de esperar un minuto.
     static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(20);
     private static final int MAX_ATTEMPTS = 2;
+    // A los 6 s sin respuesta (el doble de lo normal) se lanza una segunda peticion igual; gana la primera que responda.
+    // Solo se paga el doble de tokens en las llamadas lentas.
+    static final Duration DEFAULT_HEDGE_AFTER = Duration.ofSeconds(6);
     // el calentamiento corre aparte y puede tardar lo que tarde en arrancar el modelo
     private static final Duration WARM_UP_TIMEOUT = Duration.ofSeconds(90);
 
@@ -84,16 +92,22 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
     private final String baseUrl;
     private final String model;
     private final Duration timeout;
+    private final Duration hedgeAfter;
 
     public NvidiaOwnerVisionDescriber(String apiKey) {
         this(apiKey, DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_TIMEOUT);
     }
 
     NvidiaOwnerVisionDescriber(String apiKey, String baseUrl, String model, Duration timeout) {
+        this(apiKey, baseUrl, model, timeout, DEFAULT_HEDGE_AFTER);
+    }
+
+    NvidiaOwnerVisionDescriber(String apiKey, String baseUrl, String model, Duration timeout, Duration hedgeAfter) {
         this.apiKey = apiKey;
         this.baseUrl = baseUrl;
         this.model = model;
         this.timeout = timeout;
+        this.hedgeAfter = hedgeAfter;
         // HTTP/1.1 explicito: es lo que se probo a mano (2.9 s por respuesta) antes de integrarlo
         this.http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).connectTimeout(timeout).build();
     }
@@ -115,9 +129,9 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
 
     /**
      * Despierta el modelo en segundo plano con una peticion de solo texto (sin imagenes, ~5 tokens). El servicio
-     * gratuito parece apagar los modelos que no se usan: la primera llamada con imagen de tres corridas seguidas se
-     * colgo 20-60 s y las siguientes tardaban ~3 s (y el modelo 90b, casi sin uso, dio timeout hasta con solo texto).
-     * Asi el arranque ocurre mientras se prepara la escena, y no cuando ya hay un objeto esperando su descripcion.
+     * gratuito puede tener los modelos apagados (el 90b, casi sin uso, dio timeout hasta con solo texto), y asi el
+     * arranque ocurre mientras se prepara la escena. Ojo: NO evita los cuelgues de la primera llamada con imagen (se
+     * vieron con el modelo ya despierto); de esos se encarga la segunda peticion a los 6 s de {@link #send}.
      */
     public void warmUpAsync() {
         Thread thread = new Thread(this::warmUp, "owner-vision-warmup");
@@ -249,7 +263,58 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
                 .header("Accept", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(buildRequestBody(crop, prompt, imgTagStyle)))
                 .build();
-        return http.send(request, HttpResponse.BodyHandlers.ofString());
+
+        CompletableFuture<HttpResponse<String>> first = http.sendAsync(request, HttpResponse.BodyHandlers.ofString());
+        try {
+            return first.get(hedgeAfter.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException slow) {
+            // Una respuesta normal tarda ~3 s, y de vez en cuando el servicio se cuelga 20 s o mas. En vez de esperar,
+            // se lanza una segunda peticion igual (sin cancelar la primera) y se usa la primera que responda.
+            System.err.println("[IA] La respuesta tarda mas de " + hedgeAfter.toSeconds()
+                    + " s; se envia una segunda peticion igual y se usa la primera que responda");
+            return raceWithSecondRequest(first, request);
+        } catch (ExecutionException e) {
+            throw unwrap(e);
+        } catch (InterruptedException e) {
+            first.cancel(true);
+            throw e;
+        }
+    }
+
+    /** La primera peticion ya esta en curso: manda otra igual y devuelve la primera respuesta correcta de las dos. */
+    private HttpResponse<String> raceWithSecondRequest(CompletableFuture<HttpResponse<String>> first, HttpRequest request)
+            throws IOException, InterruptedException {
+        CompletableFuture<HttpResponse<String>> second = http.sendAsync(request, HttpResponse.BodyHandlers.ofString());
+        CompletableFuture<HttpResponse<String>> winner = new CompletableFuture<>();
+        AtomicInteger failures = new AtomicInteger();
+        for (CompletableFuture<HttpResponse<String>> attempt : List.of(first, second)) {
+            attempt.whenComplete((response, error) -> {
+                if (error == null) {
+                    winner.complete(response);
+                } else if (failures.incrementAndGet() == 2) {
+                    winner.completeExceptionally(error); // fallaron las dos
+                }
+            });
+        }
+        try {
+            return winner.get(); // cada peticion tiene su propio limite de espera, asi que esto termina
+        } catch (ExecutionException e) {
+            throw unwrap(e);
+        } finally {
+            first.cancel(true);
+            second.cancel(true);
+        }
+    }
+
+    private static IOException unwrap(ExecutionException e) {
+        Throwable cause = e.getCause();
+        if (cause instanceof IOException io) {
+            return io;
+        }
+        if (cause instanceof RuntimeException re) {
+            throw re;
+        }
+        return new IOException(cause);
     }
 
     private static String secondsSince(long startNanos) {

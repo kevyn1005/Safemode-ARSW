@@ -202,6 +202,37 @@ class NvidiaOwnerVisionDescriberTest {
                 "modelo-de-prueba", Duration.ofSeconds(1));
     }
 
+    /** Espera de 5 s por peticion y segunda peticion a los 0.4 s: el hedging se dispara antes de que venza la espera. */
+    private NvidiaOwnerVisionDescriber hedgingClient() {
+        return new NvidiaOwnerVisionDescriber("clave-de-prueba", "http://127.0.0.1:" + server.getAddress().getPort(),
+                "modelo-de-prueba", Duration.ofSeconds(5), Duration.ofMillis(400));
+    }
+
+    @Test
+    void siLaRespuestaTardaSeEnviaUnaSegundaPeticionYSeUsaLaPrimeraQueResponda() {
+        stallRequests = 1;   // la primera peticion se queda colgada 2.5 s; la segunda responde enseguida
+        responseBody = serviceResponse("{\"ropa_superior\": \"camiseta negra\"}");
+
+        long startedAt = System.nanoTime();
+        String description = hedgingClient().describe(new BufferedImage(50, 100, BufferedImage.TYPE_INT_RGB));
+        long millis = (System.nanoTime() - startedAt) / 1_000_000;
+
+        assertEquals("ropa superior: camiseta negra", description);
+        assertEquals(2, requests.get(), "la peticion original y la segunda");
+        assertTrue(millis < 2000, "no debe esperar a la peticion colgada (tardo " + millis + " ms)");
+    }
+
+    @Test
+    void siLaRespuestaLlegaAtiempoNoSeEnviaLaSegundaPeticion() throws InterruptedException {
+        responseBody = serviceResponse("{\"ropa_superior\": \"camiseta negra\"}");
+
+        assertEquals("ropa superior: camiseta negra",
+                hedgingClient().describe(new BufferedImage(50, 100, BufferedImage.TYPE_INT_RGB)));
+
+        Thread.sleep(800); // por si llegara una segunda peticion tardia
+        assertEquals(1, requests.get(), "una respuesta rapida no gasta una segunda llamada");
+    }
+
     @Test
     void siLaPrimeraLlamadaSeCuelgaSeReintentaYLaSegundaRespondeBien() {
         stallRequests = 1;
