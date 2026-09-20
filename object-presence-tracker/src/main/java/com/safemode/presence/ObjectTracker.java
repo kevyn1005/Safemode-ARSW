@@ -2,6 +2,11 @@ package com.safemode.presence;
 
 import com.safemode.vision.ObjectDetector.Detection;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -29,17 +34,31 @@ public class ObjectTracker {
     private final AtomicLong nextId = new AtomicLong(1);
     private final PresenceEventStore store;
     private final Clock clock;
+    private final Path frameStorageDir;
 
     public ObjectTracker(PresenceEventStore store) {
-        this(store, Clock.systemUTC());
+        this(store, Clock.systemUTC(), Path.of("object-presence-tracker", "data", "frames"));
     }
 
     ObjectTracker(PresenceEventStore store, Clock clock) {
-        this.store = store;
-        this.clock = clock;
+        this(store, clock, Path.of("object-presence-tracker", "data", "frames"));
     }
 
-    public void onFrame(List<Detection> detections) {
+    /** Constructor para pruebas: permite ademas elegir donde se guardan las imagenes (ej. un directorio temporal). */
+    ObjectTracker(PresenceEventStore store, Clock clock, Path frameStorageDir) {
+        this.store = store;
+        this.clock = clock;
+        this.frameStorageDir = frameStorageDir;
+    }
+
+    /**
+     * Procesa las detecciones de un frame. El {@code frame} completo se
+     * recibe para poder guardar una foto exacta del momento cuando un
+     * objeto se registra en reposo o se retira (evidencia para el centro
+     * de alertas). Puede ser {@code null} (por ejemplo en pruebas que no
+     * usan camara real): en ese caso simplemente no se guarda imagen.
+     */
+    public void onFrame(BufferedImage frame, List<Detection> detections) {
         Instant now = clock.instant();
 
         List<Detection> objectDetections = detections.stream()
@@ -72,13 +91,13 @@ public class ObjectTracker {
             System.out.println("[DEBUG]   -> Match con objeto #" + best.getId()
                     + " (estado=" + best.getState() + ", pos anterior=(" + best.getX() + "," + best.getY() + "))"
                     + " nueva pos=(" + det.x() + "," + det.y() + ")");
-            updatePosition(best, det, personDetections, now);
+            updatePosition(best, det, personDetections, now, frame);
         }
 
-        handleUnseenObjects(matchedIds, personDetections, now);
+        handleUnseenObjects(matchedIds, personDetections, now, frame);
     }
 
-    private void handleUnseenObjects(Set<Long> matchedIds, List<Detection> personDetections, Instant now) {
+    private void handleUnseenObjects(Set<Long> matchedIds, List<Detection> personDetections, Instant now, BufferedImage frame) {
         for (TrackedObject t : new ArrayList<>(tracked.values())) {
             if (matchedIds.contains(t.getId())) {
                 continue;
@@ -90,7 +109,7 @@ public class ObjectTracker {
                 continue;
             }
             if (t.getState() == TrackedObject.State.AT_REST) {
-                markRemoved(t, personDetections, now);
+                markRemoved(t, personDetections, now, frame);
             } else {
                 System.out.println("[DEBUG]   -> Objeto #" + t.getId()
                         + " descartado SIN GUARDAR (nunca llegó a AT_REST, estado=" + t.getState() + ")");
@@ -132,7 +151,7 @@ public class ObjectTracker {
         return bestByDistance;
     }
 
-    private void updatePosition(TrackedObject t, Detection det, List<Detection> personDetections, Instant now) {
+    private void updatePosition(TrackedObject t, Detection det, List<Detection> personDetections, Instant now, BufferedImage frame) {
         boolean stillInPlace = Math.abs(det.x() - t.getX()) <= MOVEMENT_TOLERANCE_PX
                 && Math.abs(det.y() - t.getY()) <= MOVEMENT_TOLERANCE_PX;
 
@@ -143,7 +162,7 @@ public class ObjectTracker {
             System.out.println("[DEBUG]   -> Objeto #" + t.getId() + " se movió más de " + MOVEMENT_TOLERANCE_PX
                     + "px, se reinicia el contador de quietud (estado=" + t.getState() + ")");
             if (t.getState() == TrackedObject.State.AT_REST) {
-                markRemoved(t, personDetections, now);
+                markRemoved(t, personDetections, now, frame);
                 tracked.remove(t.getId());
             } else {
                 t.setRestSinceAt(now);
@@ -156,21 +175,45 @@ public class ObjectTracker {
                 + REST_DURATION.toMillis() + "ms)");
 
         if (t.getState() == TrackedObject.State.NEW && quietFor.compareTo(REST_DURATION) >= 0) {
-            markAtRest(t, now);
+            markAtRest(t, now, frame);
         }
     }
 
-    private void markAtRest(TrackedObject t, Instant now) {
+    private void markAtRest(TrackedObject t, Instant now, BufferedImage frame) {
         t.setState(TrackedObject.State.AT_REST);
         System.out.println("[DEBUG]   -> ¡Objeto #" + t.getId() + " marcado EN REPOSO! Guardando en BD...");
-        store.recordRegistered(t.getId(), t.getClassName(), t.getX(), t.getY(), t.getWidth(), t.getHeight(), now);
+        String framePath = saveFrameSnapshot(frame, t.getId(), "REGISTERED_AT_REST", now);
+        store.recordRegistered(t.getId(), t.getClassName(), t.getX(), t.getY(), t.getWidth(), t.getHeight(), now, framePath);
     }
 
-    private void markRemoved(TrackedObject t, List<Detection> personDetections, Instant now) {
+    private void markRemoved(TrackedObject t, List<Detection> personDetections, Instant now, BufferedImage frame) {
         t.setState(TrackedObject.State.REMOVED);
         boolean personNearby = personDetections.stream()
                 .anyMatch(p -> distanceCenters(p, t) <= PERSON_PROXIMITY_PX);
-        store.recordRemoved(t.getId(), t.getClassName(), t.getX(), t.getY(), t.getWidth(), t.getHeight(), now, personNearby);
+        String framePath = saveFrameSnapshot(frame, t.getId(), "REMOVED", now);
+        store.recordRemoved(t.getId(), t.getClassName(), t.getX(), t.getY(), t.getWidth(), t.getHeight(), now, personNearby, framePath);
+    }
+
+    /**
+     * Guarda una copia PNG del frame en {@link #frameStorageDir}, nombrada con el id
+     * del objeto, el tipo de evento y el instante exacto (para no pisar archivos
+     * anteriores). Devuelve la ruta guardada, o {@code null} si no habia frame
+     * disponible (pruebas sin camara) o si la escritura fallo.
+     */
+    private String saveFrameSnapshot(BufferedImage frame, long trackedId, String eventType, Instant now) {
+        if (frame == null) {
+            return null;
+        }
+        try {
+            Files.createDirectories(frameStorageDir);
+            String filename = "obj" + trackedId + "_" + eventType + "_" + now.toEpochMilli() + ".png";
+            Path path = frameStorageDir.resolve(filename);
+            ImageIO.write(frame, "png", path.toFile());
+            return path.toString();
+        } catch (IOException e) {
+            System.err.println("No se pudo guardar la imagen del evento: " + e.getMessage());
+            return null;
+        }
     }
 
     private double distanceCenters(Detection det, TrackedObject obj) {

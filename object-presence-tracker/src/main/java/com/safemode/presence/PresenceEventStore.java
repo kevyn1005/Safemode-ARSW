@@ -19,6 +19,11 @@ import java.time.Instant;
  * en el diagrama de arquitectura es un componente distinto, del Alert
  * Engine (llega mas adelante en el release plan); este store no lo
  * reemplaza ni depende de el.
+ *
+ * Cada evento puede llevar tambien la ruta (frame_path) de una foto PNG
+ * guardada en disco en el momento exacto del evento (ver
+ * ObjectTracker#saveFrameSnapshot): sirve como evidencia visual para el
+ * centro de alertas ("en la camara 1 se retiro la maleta" + foto).
  */
 public class PresenceEventStore implements AutoCloseable {
 
@@ -65,18 +70,19 @@ public class PresenceEventStore implements AutoCloseable {
                     pos_y INT NOT NULL,
                     width INT NOT NULL,
                     height INT NOT NULL,
-                    person_nearby BOOLEAN
+                    person_nearby BOOLEAN,
+                    frame_path VARCHAR(500)
                 )
                 """);
         }
     }
 
-    public void recordRegistered(long trackedId, String className, int x, int y, int w, int h, Instant when) {
-        insert(trackedId, className, "REGISTERED_AT_REST", x, y, w, h, when, null);
+    public void recordRegistered(long trackedId, String className, int x, int y, int w, int h, Instant when, String framePath) {
+        insert(trackedId, className, "REGISTERED_AT_REST", x, y, w, h, when, null, framePath);
     }
 
-    public void recordRemoved(long trackedId, String className, int x, int y, int w, int h, Instant when, boolean personNearby) {
-        insert(trackedId, className, "REMOVED", x, y, w, h, when, personNearby);
+    public void recordRemoved(long trackedId, String className, int x, int y, int w, int h, Instant when, boolean personNearby, String framePath) {
+        insert(trackedId, className, "REMOVED", x, y, w, h, when, personNearby, framePath);
     }
 
     /** Da el valor de person_nearby del ultimo evento de ese tipo (usado en las pruebas). */
@@ -90,6 +96,22 @@ public class PresenceEventStore implements AutoCloseable {
                 }
                 boolean val = rs.getBoolean(1);
                 return rs.wasNull() ? null : val;
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("No se pudo consultar object_presence_event", e);
+        }
+    }
+
+    /** Da la ruta de la imagen (frame_path) del ultimo evento de ese tipo (usado en las pruebas). */
+    String lastFramePath(String eventType) {
+        String sql = "SELECT frame_path FROM object_presence_event WHERE event_type = ? ORDER BY id DESC LIMIT 1";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, eventType);
+            try (var rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    return null;
+                }
+                return rs.getString(1);
             }
         } catch (SQLException e) {
             throw new IllegalStateException("No se pudo consultar object_presence_event", e);
@@ -111,11 +133,11 @@ public class PresenceEventStore implements AutoCloseable {
     }
 
     private void insert(long trackedId, String className, String eventType,
-                         int x, int y, int w, int h, Instant when, Boolean personNearby) {
+                         int x, int y, int w, int h, Instant when, Boolean personNearby, String framePath) {
         String sql = """
             INSERT INTO object_presence_event
-                (tracked_object_id, class_name, event_type, occurred_at, pos_x, pos_y, width, height, person_nearby)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (tracked_object_id, class_name, event_type, occurred_at, pos_x, pos_y, width, height, person_nearby, frame_path)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setLong(1, trackedId);
@@ -131,6 +153,7 @@ public class PresenceEventStore implements AutoCloseable {
             } else {
                 ps.setBoolean(9, personNearby);
             }
+            ps.setString(10, framePath);
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new IllegalStateException("No se pudo guardar el evento de presencia", e);
@@ -138,7 +161,8 @@ public class PresenceEventStore implements AutoCloseable {
 
         String label = "REGISTERED_AT_REST".equals(eventType) ? "registrado en reposo" : "retirado";
         String personInfo = personNearby != null ? " - persona cerca: " + personNearby : "";
-        System.out.println("[" + when + "] Objeto #" + trackedId + " (" + className + ") " + label + personInfo);
+        String frameInfo = framePath != null ? " - foto: " + framePath : "";
+        System.out.println("[" + when + "] Objeto #" + trackedId + " (" + className + ") " + label + personInfo + frameInfo);
     }
 
     @Override

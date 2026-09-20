@@ -12,7 +12,7 @@ import java.util.List;
 // ver ObjectTrackerTest en src/test/java (no necesitan camara).
 public class ObjectPresenceTrackerTest {
     public static void main(String[] args) throws Exception {
-        Rectangle region = new Rectangle(41, 45, 1195, 660);
+        Rectangle region = new Rectangle(0, 0, 2560, 1080);
 
         FrameCapturer capturer = new FrameCapturer(region);
         capturer.start(2); // 2 fps
@@ -35,7 +35,7 @@ public class ObjectPresenceTrackerTest {
                 }
 
                 List<ObjectDetector.Detection> detections = detector.detect(frame);
-                tracker.onFrame(detections);
+                tracker.onFrame(frame, detections);
 
                 Thread.sleep(500);
             }
