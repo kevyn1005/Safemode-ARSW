@@ -22,6 +22,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 
@@ -50,6 +54,9 @@ public class ObjectTracker {
     private final Clock clock;
     private final Path frameStorageDir;
     private final Function<BufferedImage, Keypoint[]> poseFinder;
+    private OwnerVisionDescriber visionDescriber;
+    private Executor aiExecutor;
+    private ExecutorService ownedAiPool;
 
     public ObjectTracker(PresenceEventStore store) {
         this(store, Clock.systemUTC(), Path.of("object-presence-tracker", "data", "frames"));
@@ -234,7 +241,9 @@ public class ObjectTracker {
         String framePath = saveFrameSnapshot(frame, t.getId(), "REGISTERED_AT_REST", now);
         OwnerInfo owner = resolveOwner(t, now);
         t.setOwner(owner);
-        store.recordRegistered(t.getId(), t.getClassName(), t.getX(), t.getY(), t.getWidth(), t.getHeight(), now, framePath, owner);
+        long eventId = store.recordRegistered(t.getId(), t.getClassName(), t.getX(), t.getY(), t.getWidth(), t.getHeight(), now, framePath, owner);
+        t.setRegisteredEventId(eventId);
+        requestAiDescription(t, t.takeOwnerCrop());
     }
 
     private void markRemoved(TrackedObject t, List<Detection> personDetections, Instant now, BufferedImage frame) {
@@ -246,7 +255,73 @@ public class ObjectTracker {
         boolean personNearby = personDetections.stream()
                 .anyMatch(p -> distanceToBox(ox, oy, p) <= PERSON_PROXIMITY_PX);
         String framePath = saveFrameSnapshot(frame, t.getId(), "REMOVED", now);
-        store.recordRemoved(t.getId(), t.getClassName(), t.getX(), t.getY(), t.getWidth(), t.getHeight(), now, personNearby, framePath, t.getOwner());
+        long eventId = store.recordRemoved(t.getId(), t.getClassName(), t.getX(), t.getY(), t.getWidth(), t.getHeight(), now, personNearby, framePath, t.getOwner());
+        String aiDescription = t.registerRemovedEvent(eventId);
+        if (aiDescription != null) {
+            store.updateOwnerAiDescription(eventId, aiDescription);
+        }
+    }
+
+    /** Activa (opcionalmente) la descripcion del dueno con un modelo de vision; devuelve este mismo tracker. */
+    public ObjectTracker withOwnerVisionDescriber(OwnerVisionDescriber describer) {
+        this.visionDescriber = describer;
+        return this;
+    }
+
+    /** Para pruebas: ejecuta las descripciones con un Executor propio (ej. uno sincrono o controlado a mano). */
+    void useAiExecutor(Executor executor) {
+        this.aiExecutor = executor;
+    }
+
+    /** Espera a que terminen las descripciones pendientes; llamar antes de cerrar la base de datos. */
+    public void awaitPendingDescriptions(Duration timeout) {
+        if (ownedAiPool == null) {
+            return;
+        }
+        ownedAiPool.shutdown();
+        try {
+            if (!ownedAiPool.awaitTermination(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
+                System.err.println("[IA] Quedaron descripciones sin terminar; se cancelan.");
+                ownedAiPool.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private synchronized Executor aiExecutor() {
+        if (aiExecutor == null) {
+            // 2 hilos: una llamada lenta al servicio no debe retrasar la descripcion del siguiente dueno
+            ownedAiPool = Executors.newFixedThreadPool(2, r -> {
+                Thread thread = new Thread(r, "owner-vision");
+                thread.setDaemon(true);
+                return thread;
+            });
+            aiExecutor = ownedAiPool;
+        }
+        return aiExecutor;
+    }
+
+    /** Pide la descripcion del dueno en un hilo aparte: puede tardar segundos y no debe frenar los frames. */
+    private void requestAiDescription(TrackedObject t, BufferedImage ownerCrop) {
+        OwnerVisionDescriber describer = visionDescriber;
+        if (describer == null || ownerCrop == null) {
+            return;
+        }
+        aiExecutor().execute(() -> {
+            try {
+                String text = describer.describe(ownerCrop);
+                if (text == null || text.isBlank()) {
+                    return;
+                }
+                for (long eventId : t.attachAiDescription(text)) {
+                    store.updateOwnerAiDescription(eventId, text);
+                }
+                System.out.println("[IA] Objeto #" + t.getId() + " - dueño: " + text);
+            } catch (RuntimeException e) {
+                System.err.println("[IA] No se pudo guardar la descripcion del dueno: " + e.getMessage());
+            }
+        });
     }
 
     /**
@@ -380,6 +455,7 @@ public class ObjectTracker {
                 : writePng(crop, "obj" + t.getId() + "_OWNER_person" + ownerId + "_" + now.toEpochMilli() + ".png");
         Keypoint[] pose = (crop == null || poseFinder == null) ? null : poseFinder.apply(crop);
         String description = PersonDescriber.describe(crop, t.objectInCropOf(ownerId), pose);
+        t.setOwnerCrop(crop);
         t.clearSightings();
         return new OwnerInfo(ownerId, description, cropPath);
     }

@@ -44,6 +44,10 @@ public class TrackedObject {
 
     private final Map<Long, Sighting> nearPersons = new LinkedHashMap<>();
     private OwnerInfo owner;
+    private BufferedImage ownerCrop;
+    private long registeredEventId = -1;
+    private long removedEventId = -1;
+    private String aiDescription;
 
     TrackedObject(long id, String className, int x, int y, int width, int height, Instant now) {
         this.id = id;
@@ -150,6 +154,39 @@ public class TrackedObject {
 
     void clearSightings() {
         nearPersons.clear();
+    }
+
+    /** Recorte del dueno, guardado solo hasta enviarlo a describir (para no retener imagenes). */
+    void setOwnerCrop(BufferedImage crop) {
+        this.ownerCrop = crop;
+    }
+
+    BufferedImage takeOwnerCrop() {
+        BufferedImage crop = ownerCrop;
+        ownerCrop = null;
+        return crop;
+    }
+
+    synchronized void setRegisteredEventId(long eventId) {
+        this.registeredEventId = eventId;
+    }
+
+    /**
+     * Anota el id de la fila de retiro y devuelve la descripcion por IA si ya habia llegado (para
+     * copiarla a esa fila), o null. Junto con {@link #attachAiDescription} garantiza que, llegue
+     * la descripcion antes o despues del retiro, las dos filas la reciban.
+     */
+    synchronized String registerRemovedEvent(long eventId) {
+        this.removedEventId = eventId;
+        return aiDescription;
+    }
+
+    /** Guarda la descripcion por IA y devuelve los ids de las filas ya insertadas que hay que actualizar. */
+    synchronized long[] attachAiDescription(String text) {
+        this.aiDescription = text;
+        return removedEventId >= 0
+                ? new long[]{registeredEventId, removedEventId}
+                : new long[]{registeredEventId};
     }
 
     OwnerInfo getOwner() {

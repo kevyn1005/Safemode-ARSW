@@ -8,6 +8,7 @@ import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 
 // Script de verificacion manual (no es un test automatizado; no usa JUnit).
@@ -36,6 +37,15 @@ public class ObjectPresenceTrackerTest {
         try (PresenceEventStore store = new PresenceEventStore("./object-presence-tracker/data/presence")) {
             ObjectTracker tracker = new ObjectTracker(store, poseEstimator);
 
+            // Descripcion del dueno con IA (opcional): solo si existe la variable de entorno NVIDIA_API_KEY.
+            // OJO privacidad: el recorte con la cara de la persona se envia a un servicio externo.
+            NvidiaOwnerVisionDescriber ai = NvidiaOwnerVisionDescriber.fromEnvironment();
+            if (ai != null) {
+                tracker.withOwnerVisionDescriber(ai);
+            }
+            System.out.println("Descripcion por IA: " + (ai != null ? "NVIDIA " + ai.modelName()
+                    : "desactivada (falta la variable de entorno NVIDIA_API_KEY)"));
+
             Thread.sleep(1000); // esperar el primer frame
 
             long captureSeconds = 30;
@@ -52,6 +62,9 @@ public class ObjectPresenceTrackerTest {
 
                 Thread.sleep(500);
             }
+
+            // las descripciones por IA llegan en segundo plano: esperarlas antes de cerrar la base de datos
+            tracker.awaitPendingDescriptions(Duration.ofSeconds(70));
         } finally {
             capturer.stop();
         }

@@ -79,6 +79,7 @@ public class PresenceEventStore implements AutoCloseable {
             st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS owner_person_id BIGINT");
             st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS owner_description VARCHAR(200)");
             st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS owner_crop_path VARCHAR(500)");
+            st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS owner_ai_description VARCHAR(1000)");
         }
     }
 
@@ -89,12 +90,14 @@ public class PresenceEventStore implements AutoCloseable {
      */
     public record OwnerInfo(Long personId, String description, String cropPath) {}
 
-    public void recordRegistered(long trackedId, String className, int x, int y, int w, int h, Instant when, String framePath, OwnerInfo owner) {
-        insert(trackedId, className, "REGISTERED_AT_REST", x, y, w, h, when, null, framePath, owner);
+    /** Guarda el evento y devuelve el id de la fila. */
+    public long recordRegistered(long trackedId, String className, int x, int y, int w, int h, Instant when, String framePath, OwnerInfo owner) {
+        return insert(trackedId, className, "REGISTERED_AT_REST", x, y, w, h, when, null, framePath, owner);
     }
 
-    public void recordRemoved(long trackedId, String className, int x, int y, int w, int h, Instant when, boolean personNearby, String framePath, OwnerInfo owner) {
-        insert(trackedId, className, "REMOVED", x, y, w, h, when, personNearby, framePath, owner);
+    /** Guarda el evento y devuelve el id de la fila. */
+    public long recordRemoved(long trackedId, String className, int x, int y, int w, int h, Instant when, boolean personNearby, String framePath, OwnerInfo owner) {
+        return insert(trackedId, className, "REMOVED", x, y, w, h, when, personNearby, framePath, owner);
     }
 
     /** Da el valor de person_nearby del ultimo evento de ese tipo (usado en las pruebas). */
@@ -168,7 +171,7 @@ public class PresenceEventStore implements AutoCloseable {
         }
     }
 
-    private void insert(long trackedId, String className, String eventType,
+    private long insert(long trackedId, String className, String eventType,
                          int x, int y, int w, int h, Instant when, Boolean personNearby, String framePath, OwnerInfo owner) {
         String sql = """
             INSERT INTO object_presence_event
@@ -176,7 +179,8 @@ public class PresenceEventStore implements AutoCloseable {
                  owner_person_id, owner_description, owner_crop_path)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
-        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+        long eventId;
+        try (PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setLong(1, trackedId);
             ps.setString(2, className);
             ps.setString(3, eventType);
@@ -199,6 +203,10 @@ public class PresenceEventStore implements AutoCloseable {
             ps.setString(12, owner == null ? null : owner.description());
             ps.setString(13, owner == null ? null : owner.cropPath());
             ps.executeUpdate();
+            try (var keys = ps.getGeneratedKeys()) {
+                keys.next();
+                eventId = keys.getLong(1);
+            }
         } catch (SQLException e) {
             throw new IllegalStateException("No se pudo guardar el evento de presencia", e);
         }
@@ -211,6 +219,36 @@ public class PresenceEventStore implements AutoCloseable {
                         + (owner.description() != null ? " (" + owner.description() + ")" : "")
                 : "";
         System.out.println("[" + when + "] Objeto #" + trackedId + " (" + className + ") " + label + personInfo + frameInfo + ownerInfo);
+        return eventId;
+    }
+
+    /**
+     * Guarda la descripcion del dueno generada por un modelo de vision (llega de forma
+     * asincrona, unos segundos despues de insertar el evento). Se identifica la fila por su
+     * id porque tracked_object_id se reinicia en cada ejecucion del programa.
+     */
+    public void updateOwnerAiDescription(long eventId, String aiDescription) {
+        try (PreparedStatement ps = connection.prepareStatement(
+                "UPDATE object_presence_event SET owner_ai_description = ? WHERE id = ?")) {
+            ps.setString(1, aiDescription);
+            ps.setLong(2, eventId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new IllegalStateException("No se pudo guardar la descripcion del dueno", e);
+        }
+    }
+
+    /** Da la descripcion por IA del ultimo evento de ese tipo, o null (usado en las pruebas). */
+    String lastOwnerAiDescription(String eventType) {
+        String sql = "SELECT owner_ai_description FROM object_presence_event WHERE event_type = ? ORDER BY id DESC LIMIT 1";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, eventType);
+            try (var rs = ps.executeQuery()) {
+                return rs.next() ? rs.getString(1) : null;
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("No se pudo consultar object_presence_event", e);
+        }
     }
 
     @Override

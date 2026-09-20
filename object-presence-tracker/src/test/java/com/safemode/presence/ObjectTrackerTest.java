@@ -287,6 +287,89 @@ class ObjectTrackerTest {
         assertEquals("persona con camisa roja", owner.description());
     }
 
+    private static BufferedImage blankFrame() {
+        return new BufferedImage(400, 400, BufferedImage.TYPE_INT_RGB);
+    }
+
+    private static void registrarConDueno(ObjectTracker tracker, MutableClock clock, BufferedImage frame) {
+        tracker.onFrame(frame, List.of(suitcase(100, 100), person(60, 60)));
+        clock.advance(Duration.ofSeconds(4));
+        tracker.onFrame(frame, List.of(suitcase(100, 100), person(60, 60)));
+    }
+
+    private static void retirar(ObjectTracker tracker, MutableClock clock, BufferedImage frame) {
+        for (int i = 0; i < 3; i++) {
+            clock.advance(Duration.ofMillis(500));
+            tracker.onFrame(frame, List.of());
+        }
+    }
+
+    @Test
+    void guardaLaDescripcionPorIADelDuenoEnLosDosEventos(@TempDir Path tempDir) {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("ia-dos-eventos");
+        ObjectTracker tracker = new ObjectTracker(store, clock, tempDir)
+                .withOwnerVisionDescriber(crop -> "ropa superior: camiseta negra; tatuajes: antebrazo");
+        tracker.useAiExecutor(Runnable::run);
+
+        registrarConDueno(tracker, clock, blankFrame());
+        assertEquals("ropa superior: camiseta negra; tatuajes: antebrazo", store.lastOwnerAiDescription("REGISTERED_AT_REST"));
+
+        retirar(tracker, clock, blankFrame());
+        assertEquals("ropa superior: camiseta negra; tatuajes: antebrazo", store.lastOwnerAiDescription("REMOVED"),
+                "el retiro tambien debe llevar la descripcion del dueno");
+    }
+
+    @Test
+    void siLaDescripcionPorIALlegaDespuesDelRetiroLasDosFilasLaReciben(@TempDir Path tempDir) {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("ia-llega-tarde");
+        java.util.List<Runnable> pendientes = new java.util.ArrayList<>();
+        ObjectTracker tracker = new ObjectTracker(store, clock, tempDir)
+                .withOwnerVisionDescriber(crop -> "ropa superior: camisa roja");
+        tracker.useAiExecutor(pendientes::add); // la IA "todavia no responde"
+
+        registrarConDueno(tracker, clock, blankFrame());
+        retirar(tracker, clock, blankFrame());
+        assertEquals(1, store.countEvents("REMOVED"));
+        assertNull(store.lastOwnerAiDescription("REMOVED"), "aun no llega la respuesta de la IA");
+        assertEquals(1, pendientes.size());
+
+        pendientes.forEach(Runnable::run); // ahora si llega
+
+        assertEquals("ropa superior: camisa roja", store.lastOwnerAiDescription("REGISTERED_AT_REST"));
+        assertEquals("ropa superior: camisa roja", store.lastOwnerAiDescription("REMOVED"));
+    }
+
+    @Test
+    void sinRespuestaDeLaIAElDuenoConservaLaDescripcionLocal(@TempDir Path tempDir) {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("ia-sin-respuesta");
+        ObjectTracker tracker = new ObjectTracker(store, clock, tempDir).withOwnerVisionDescriber(crop -> null);
+        tracker.useAiExecutor(Runnable::run);
+
+        registrarConDueno(tracker, clock, blankFrame());
+
+        assertNull(store.lastOwnerAiDescription("REGISTERED_AT_REST"));
+        assertNotNull(store.lastOwner("REGISTERED_AT_REST").description(), "la descripcion por color sigue ahi");
+    }
+
+    @Test
+    void siLaIALanzaUnaExcepcionElSeguimientoContinua(@TempDir Path tempDir) {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("ia-excepcion");
+        ObjectTracker tracker = new ObjectTracker(store, clock, tempDir).withOwnerVisionDescriber(crop -> {
+            throw new IllegalStateException("servicio caido");
+        });
+        tracker.useAiExecutor(Runnable::run);
+
+        registrarConDueno(tracker, clock, blankFrame());
+        retirar(tracker, clock, blankFrame());
+
+        assertEquals(1, store.countEvents("REGISTERED_AT_REST"));
+        assertEquals(1, store.countEvents("REMOVED"));
+    }
+
     @Test
     void guardaUnaImagenDelFrameCuandoRegistraElObjeto(@TempDir Path tempDir) {
         MutableClock clock = new MutableClock();
