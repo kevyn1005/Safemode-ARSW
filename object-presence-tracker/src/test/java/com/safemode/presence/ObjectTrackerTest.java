@@ -218,6 +218,42 @@ class ObjectTrackerTest {
     }
 
     @Test
+    void variosObjetosDeLaMismaClaseSeRegistranYSeRetiranPorSeparadoCadaUnoConSuDueno() {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("dos-maletas-dos-duenos");
+        ObjectTracker tracker = new ObjectTracker(store, clock);
+
+        // dos maletas y dos personas, cada una junto a su maleta (A -> id 1, B -> id 2)
+        List<Detection> escena = List.of(
+                suitcase(100, 100), suitcase(600, 300),
+                person(60, 60), person(560, 260));
+
+        tracker.onFrame(null, escena);
+        clock.advance(Duration.ofSeconds(4));
+        tracker.onFrame(null, escena);
+
+        assertEquals(2, store.countEvents("REGISTERED_AT_REST"), "cada maleta debe registrarse por separado");
+        assertEquals(2L, store.lastOwner("REGISTERED_AT_REST").personId(),
+                "la segunda maleta (ultimo registro) debe tener como dueno a la persona B");
+
+        // se retira solo la primera maleta; la segunda sigue en su sitio
+        for (int i = 0; i < 3; i++) {
+            clock.advance(Duration.ofMillis(500));
+            tracker.onFrame(null, List.of(suitcase(600, 300), person(560, 260)));
+        }
+        assertEquals(1, store.countEvents("REMOVED"), "solo debe retirarse la maleta que desaparecio");
+        assertEquals(1L, store.lastOwner("REMOVED").personId(), "el retiro debe llevar al dueno de la primera maleta");
+
+        // ahora se retira la segunda
+        for (int i = 0; i < 3; i++) {
+            clock.advance(Duration.ofMillis(500));
+            tracker.onFrame(null, List.of());
+        }
+        assertEquals(2, store.countEvents("REMOVED"));
+        assertEquals(2L, store.lastOwner("REMOVED").personId());
+    }
+
+    @Test
     void guardaUnaImagenDelFrameCuandoRegistraElObjeto(@TempDir Path tempDir) {
         MutableClock clock = new MutableClock();
         PresenceEventStore store = PresenceEventStore.inMemory("guarda-imagen");
