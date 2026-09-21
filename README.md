@@ -10,10 +10,10 @@ de video, organizado como un conjunto de microservicios.
 |---|---|---|
 | `camera-feed-service` | Implementado | Captura de pantalla (simula camara) con `java.awt.Robot`, expone el ultimo frame en memoria. |
 | `vision-detection-service` | Implementado | Deteccion de objetos con YOLOv8 (ONNX Runtime) sobre los frames de `camera-feed-service`. |
-| `object-presence-tracker` | Pendiente | Solo esqueleto Maven, sin codigo todavia. |
-| `alert-engine` | Pendiente | Solo esqueleto Maven, sin codigo todavia. |
-| `realtime-gateway` | Pendiente | Solo esqueleto Maven, sin codigo todavia. |
-| `security-dashboard` | Pendiente | Solo `package.json` placeholder, sin codigo todavia. |
+| `object-presence-tracker` | Implementado | Seguimiento de mochilas, bolsos y maletas: dueno, retiro (por el dueno o por otra persona) y registro en H2 con fotos. |
+| `alert-engine` | Implementado | Convierte los retiros sospechosos en alertas guardadas en H2 y avisa a quien se suscriba. |
+| `realtime-gateway` | Implementado | Servidor WebSocket que empuja cada alerta al panel en cuanto se crea, y servidor HTTP para la pagina y las fotos. |
+| `security-dashboard` | Implementado | Pagina `index.html` (sin build) con el centro de alertas en vivo: severidad, fotos de evidencia y boton de revisada. |
 
 Ver el diagrama en [docs/diagramas/arquitectura-general.md](docs/diagramas/arquitectura-general.md).
 

@@ -39,8 +39,9 @@ arquitectura de software, con varios módulos Maven en un reactor:
   ONNX) y puntos del cuerpo (`PoseEstimator`, YOLOv8-pose en ONNX).
 - `object-presence-tracker` — seguimiento, dueño, retiro y persistencia (foco de casi todo el
   trabajo reciente).
-- `alert-engine`, `realtime-gateway`, `security-dashboard` — carpetas ya existentes en el
-  repo, todavía sin implementar (ver roadmap).
+- `alert-engine` — motor de alertas sobre los retiros (ver roadmap, paso 3).
+- `realtime-gateway` (WebSocket + servidor HTTP) y `security-dashboard` (`index.html`
+  estático) — panel de alertas en vivo (ver roadmap, paso 4).
 
 ## Decisiones clave (y por qué, para no repetir la investigación)
 
@@ -108,6 +109,13 @@ arquitectura de software, con varios módulos Maven en un reactor:
   desplazado más de 25 px en **2 frames seguidos** (`REMOVAL_CONFIRM_FRAMES`). Un solo frame
   desplazado se ignora: una persona que pasa por delante tapa la maleta y la caja del
   detector salta (causó un retiro falso real con la maleta todavía en el sofá).
+- **Verificación por imagen (opcional, `tracker.withRemovalVerification()`)**: antes de dar
+  por retirado un objeto que el detector dejó de ver, se compara la zona donde estaba con
+  cómo se veía la última vez (`RegionFingerprint`: cuadrícula de 24×24 puntos de brillo). Si
+  cambió menos del 15 % (`STILL_THERE_MAX_CHANGE`), se espera (tope de 12 frames extra). Se
+  calibró con fotos reales: retiro falso 0.04, mochila presente 0.05, retiro real (alguien la
+  tapa y levanta) 0.28. Es opcional porque varios tests viejos usan el mismo frame de relleno
+  al asentar y al retirar; `ObjectPresenceTrackerTest` la activa.
 - `onFrame(BufferedImage frame, List<Detection> detections)` recibe el frame completo (puede
   ser `null` en pruebas de lógica pura). En cada evento guarda un PNG del frame.
 
@@ -118,11 +126,16 @@ arquitectura de software, con varios módulos Maven en un reactor:
   (una persona pegada a la cámara recorre cientos de px entre frames). Se olvida a una
   persona tras 5 frames sin verla: **si sale de cuadro y vuelve, recibe otro id**.
 - **Dueño probable**: la persona más frecuente junto al objeto (distancia del centro del
-  objeto a la caja de la persona ≤ 100 px) mientras el objeto está `NEW`. Se guarda id,
+  objeto a la caja de la persona ≤ `max(100 px, 40 % del lado mayor del objeto)`, ver
+  `scaledProximity`) mientras el objeto está `NEW`. Se guarda id,
   descripción por color, y una foto que muestra a la persona **junto al objeto** (unión de
   ambas cajas). El color, la pose y la IA se leen solo del recorte de la persona.
-- **`person_nearby`** (booleano histórico de `REMOVED`): hay alguien a ≤ 80 px de la *caja*
-  de la persona (no del centro) en el frame del retiro.
+- **`person_nearby`** (booleano histórico de `REMOVED`): hay alguien a ≤ `max(80 px, 40 %
+  del lado mayor del objeto)` de la *caja* de la persona (no del centro) en el frame del retiro.
+- **Radios que escalan con el objeto**: con la cámara pegada, una mochila mide 500 px y una
+  persona sentada a su lado quedaba a 127 px, fuera de los 100 px fijos → sin dueño → todo
+  retiro salía `OWNER_UNKNOWN` (alerta baja, no robo). Los 100/80 px son el mínimo; para
+  objetos chicos no cambia nada.
 - **`PersonDescriber`** (color, sin ML): color dominante del torso. Con puntos de pose usa el
   cuadrilátero hombros–caderas encogido al 60 %; si no, una franja fija (25–55 % de la
   altura). Ignora los píxeles del propio objeto y el tono de piel; el negro de una webcam con
@@ -162,12 +175,21 @@ arquitectura de software, con varios módulos Maven en un reactor:
   ~3 s después (hasta ~26 s si el servicio se cuelga): un centro de alertas no debe esperarla.
 - **Consumo de tokens**: cada respuesta trae `usage`; se imprime `[IA] Tokens de esta llamada`
   y `usageSummary()` da el total de la corrida (el script lo muestra al final; no cuenta la
-  segunda petición descartada ni el calentamiento). Sirve para medir el costo real antes de
-  decidir si vale la pena pagar otro proveedor.
+  segunda petición descartada ni el calentamiento). Medido en una corrida real con
+  `meta/llama-3.2-11b-vision-instruct`: la llamada de la persona entera (imagen a 1024 px)
+  gasta **~6.700 tokens de entrada** y la de antebrazos (recorte de 512 px de alto) **~3.400**;
+  la salida es de ~10 a ~70. Es decir, ~10.000 tokens por persona descrita: **la imagen
+  domina el costo, no el texto**. El lado mayor de la imagen enviada se cambia con
+  `NVIDIA_IMAGE_MAX_SIDE` (por defecto 1024; se subió a 1024 cuando el tatuaje se perdía a 640,
+  pero desde que los tatuajes se revisan en el recorte de antebrazos quizá baste menos:
+  pendiente de medir tokens vs. calidad con `NvidiaCropCheck`). Otros proveedores cuentan
+  las imágenes distinto (p. ej. Claude usa aprox. ancho×alto/750 tokens por imagen), así que
+  comparar costos exige comparar precio por token *y* tokens por imagen.
 
 ### Análisis del retiro (`RemovalKind`)
 
-Mientras el objeto está en reposo se anota en cada frame quién está a ≤ 100 px. Al retirarse
+Mientras el objeto está en reposo se anota en cada frame quién está a ≤ 100 px (o el radio
+escalado del objeto, ver arriba). Al retirarse
 cuentan esas personas, las que se acercaron al sitio **mientras desaparecía** (se borran si el
 objeto vuelve a verse) y las que hay junto a él ahora. `removal_kind` en el evento `REMOVED`:
 
@@ -226,8 +248,12 @@ Solo la descripción textual opcional de quien retira la hace la IA externa.
   a llevarse su propia maleta, saldrá `BY_OTHER` (falsa alarma). Falta reidentificar por
   apariencia; hoy solo hay color de ropa.
 - **Retiros falsos por detector**: 3 frames sin verlo se consideran retiro aunque la maleta siga
-  ahí (tapada, baja confianza). Falta verificarlo comparando la imagen de la zona con la del
-  reposo; hay que calibrarlo con fotos reales de retiros (`..._REMOVED_...png`).
+  ahí (tapada, baja confianza). Mitigado con `withRemovalVerification()` (ver arriba), pero
+  falla si quien la tapa lleva ropa de brillo parecido al objeto (solo retrasa el retiro
+  hasta el tope de 12 frames) o si cambia la luz de toda la zona.
+- **Persona nueva con el id de otra**: la persona que entra justo cuando otra sale puede
+  heredar su id (el respaldo por distancia llega a 60 % del tamaño de la caja, cientos de px
+  con cámara pegada). Si la heredera fuera el dueño, un robo saldría `BY_OWNER` sin alerta.
 - **La IA se equivoca en detalles pequeños**: dijo `lentes: ninguno` para alguien con lentes y
   "cabello largo" para alguien de pelo corto; con la persona entera el tatuaje casi no se ve
   (por eso el recorte de antebrazos). Los dibujos concretos de un tatuaje son adivinanzas.
@@ -238,16 +264,37 @@ Solo la descripción textual opcional de quien retira la hace la IA externa.
 
 1. ✅ Guardar frame/imagen en cada evento.
 2. ✅ Dueño probable con foto, color, pose e IA opcional; retiro con quién lo retiró.
-3. ⏭️ **Siguiente paso: motor de alertas** (`alert-engine`). Lógica que observa los eventos
-   `REMOVED` de `PresenceEventStore` y genera registros de alerta según `removal_kind`
-   (`BY_OTHER`, `OWNER_AND_OTHER_NEAR`, `NO_ONE_NEAR` sospechosos; `BY_OWNER` normal), con la
-   evidencia: `frame_path`, `remover_crop_path`, `owner_crop_path` y las descripciones.
-4. **Dashboard / centro de alertas**: tablero visual tipo "en la cámara 1 se retiró la
-   maleta" con la foto. Probablemente `realtime-gateway` y/o `security-dashboard`; sin diseño.
+3. ✅ **Motor de alertas** (`alert-engine`, paquete `com.safemode.alerts`). `AlertEngine`
+   lee los `REMOVED` de `PresenceEventStore` (`findRemovedAfter`, `findById`, `maxEventId`),
+   `AlertRules` decide según `removal_kind` (`BY_OTHER`→`POSSIBLE_THEFT` HIGH,
+   `OWNER_AND_OTHER_NEAR`→`AMBIGUOUS_REMOVAL` MEDIUM, `NO_ONE_NEAR`→`OBJECT_VANISHED` MEDIUM,
+   `OWNER_UNKNOWN`→`UNKNOWN_OWNER_REMOVAL` LOW, `BY_OWNER` sin alerta) y `AlertStore` guarda
+   la tabla `alert` en la misma base H2 (única por `event_id` + hora, porque los ids se
+   reinician al vaciar). `addListener(...)` avisa de cada alerta nueva; `evidenceOf(alert)`
+   trae el evento con fotos y descripciones (la de IA llega unos segundos después). Para
+   correrlo junto al tracker, en otra terminal: `mvn -pl alert-engine exec:java
+   "-Dexec.mainClass=com.safemode.alerts.AlertEngineRunner" "-Dexec.args=120"`.
+4. ✅ **Tiempo real + panel** (lo que pidió el profesor: ver las alertas en vivo desde un
+   panel distinto). `realtime-gateway` (paquete `com.safemode.gateway`, librería
+   `Java-WebSocket` 1.5.6 + `slf4j-nop`): `AlertGateway` es el servidor WebSocket (puerto
+   8090, solo `localhost`); se engancha con `AlertEngine.addListener` y manda `snapshot` al
+   conectar, `alert` por cada alerta nueva y `update` cuando cambia una (llega la IA, o se
+   revisa); el cliente manda `{"action":"ack","id":N}`. Revisa el `Origin` del navegador
+   (solo `http://localhost:8080`) para que una web ajena no pueda leer las alertas.
+   `DashboardHttpServer` (puerto 8080) entrega `security-dashboard/index.html` y las fotos
+   (`/photo/<archivo>`, solo por nombre dentro de `data/frames/`). `security-dashboard/index.html`
+   es una página estática sin build (todo el texto del servidor, incluida la IA, se pinta con
+   `textContent`). Para verlo: terminal 1 el tracker; terminal 2 (raíz del repo, tras
+   `mvn -pl realtime-gateway -am install -DskipTests`)
+   `mvn -pl realtime-gateway exec:java "-Dexec.mainClass=com.safemode.gateway.GatewayRunner"`
+   (ya incluye el motor de alertas, no hace falta `AlertEngineRunner`) y abrir
+   `http://localhost:8080`. **Pendiente**: probar con cámara real y un navegador (los tests
+   cubren el WebSocket con un cliente Java, no la página); docker-compose sigue comentado.
 
 Pendientes menores que el usuario conoce: revisar lentes con un recorte de la cara (necesita
-decisión de privacidad), pista `remover_looks_like_owner` por color de ropa, verificación de
-retiros con diferencia de imagen, y regenerar la clave de NVIDIA.
+decisión de privacidad), pista `remover_looks_like_owner` por color de ropa, y regenerar la
+clave de NVIDIA. La tabla `alert` no se vacía cuando el script del tracker vacía los eventos:
+quedan alertas viejas (con fotos borradas) hasta marcarlas como revisadas.
 
 ## Notas operativas / gotchas
 
