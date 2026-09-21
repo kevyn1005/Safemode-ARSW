@@ -51,8 +51,11 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
     // el calentamiento corre aparte y puede tardar lo que tarde en arrancar el modelo
     private static final Duration WARM_UP_TIMEOUT = Duration.ofSeconds(90);
 
-    // 1024: con 640 un tatuaje en el antebrazo quedaba tan pequeno que el modelo respondia "no se ve"
-    private static final int MAX_IMAGE_SIDE_PX = 1024;
+    // Lado mayor maximo de la imagen enviada. 1024 costaba ~6.700 tokens de entrada por llamada (la imagen domina el costo,
+    // no el texto). Se subio a 1024 porque con 640 el tatuaje del antebrazo se perdia, pero ahora los tatuajes se
+    // revisan en un recorte aparte, asi que se puede probar un valor menor con NVIDIA_IMAGE_MAX_SIDE.
+    static final int DEFAULT_MAX_IMAGE_SIDE_PX = 1024;
+    private static final int MIN_MAX_IMAGE_SIDE_PX = 256;
     private static final int MAX_FIELD_CHARS = 120;
     private static final int MAX_DESCRIPTION_CHARS = 900;
 
@@ -94,6 +97,7 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
     private final String model;
     private final Duration timeout;
     private final Duration hedgeAfter;
+    private final int maxImageSide;
     // consumo acumulado segun el campo "usage" que devuelve el servicio (solo cuenta la respuesta que se uso)
     private final AtomicLong promptTokens = new AtomicLong();
     private final AtomicLong completionTokens = new AtomicLong();
@@ -108,6 +112,12 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
     }
 
     NvidiaOwnerVisionDescriber(String apiKey, String baseUrl, String model, Duration timeout, Duration hedgeAfter) {
+        this(apiKey, baseUrl, model, timeout, hedgeAfter, DEFAULT_MAX_IMAGE_SIDE_PX);
+    }
+
+    NvidiaOwnerVisionDescriber(String apiKey, String baseUrl, String model, Duration timeout, Duration hedgeAfter,
+                               int maxImageSide) {
+        this.maxImageSide = Math.max(MIN_MAX_IMAGE_SIDE_PX, maxImageSide);
         this.apiKey = apiKey;
         this.baseUrl = baseUrl;
         this.model = model;
@@ -125,7 +135,25 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
         }
         String model = System.getenv("NVIDIA_VISION_MODEL");
         return new NvidiaOwnerVisionDescriber(key.trim(), DEFAULT_BASE_URL,
-                model == null || model.isBlank() ? DEFAULT_MODEL : model.trim(), DEFAULT_TIMEOUT);
+                model == null || model.isBlank() ? DEFAULT_MODEL : model.trim(), DEFAULT_TIMEOUT, DEFAULT_HEDGE_AFTER,
+                parseMaxImageSide(System.getenv("NVIDIA_IMAGE_MAX_SIDE")));
+    }
+
+    /** Lado mayor maximo pedido por variable de entorno (NVIDIA_IMAGE_MAX_SIDE); si falta o no es un numero, el de siempre. */
+    static int parseMaxImageSide(String value) {
+        if (value == null || value.isBlank()) {
+            return DEFAULT_MAX_IMAGE_SIDE_PX;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            System.err.println("[IA] NVIDIA_IMAGE_MAX_SIDE no es un numero (\"" + value + "\"): se usa " + DEFAULT_MAX_IMAGE_SIDE_PX);
+            return DEFAULT_MAX_IMAGE_SIDE_PX;
+        }
+    }
+
+    public int maxImageSide() {
+        return maxImageSide;
     }
 
     public String modelName() {
@@ -362,7 +390,7 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
 
     /** imgTagStyle=false: formato estandar de mensajes con partes texto/imagen; true: la imagen como &lt;img&gt; dentro del texto. */
     String buildRequestBody(BufferedImage crop, String prompt, boolean imgTagStyle) throws IOException {
-        String dataUri = "data:image/jpeg;base64," + encodeJpegBase64(crop);
+        String dataUri = "data:image/jpeg;base64," + encodeJpegBase64(crop, maxImageSide);
 
         JsonObject message = new JsonObject();
         message.addProperty("role", "user");
@@ -396,9 +424,13 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
         return body.toString();
     }
 
-    /** Reduce el recorte (max. 1024 px por lado) y lo codifica en JPEG base64: la foto original no sale entera. */
     static String encodeJpegBase64(BufferedImage src) throws IOException {
-        double scale = Math.min(1.0, (double) MAX_IMAGE_SIDE_PX / Math.max(src.getWidth(), src.getHeight()));
+        return encodeJpegBase64(src, DEFAULT_MAX_IMAGE_SIDE_PX);
+    }
+
+    /** Reduce el recorte (lado mayor maximo maxSide) y lo codifica en JPEG base64: la foto original no sale entera. */
+    static String encodeJpegBase64(BufferedImage src, int maxSide) throws IOException {
+        double scale = Math.min(1.0, (double) maxSide / Math.max(src.getWidth(), src.getHeight()));
         int w = Math.max(1, (int) Math.round(src.getWidth() * scale));
         int h = Math.max(1, (int) Math.round(src.getHeight() * scale));
         BufferedImage rgb = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);

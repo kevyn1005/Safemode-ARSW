@@ -31,7 +31,8 @@ public class NvidiaCropCheck {
             System.out.println("No se pudo leer la imagen: " + args[0]);
             return;
         }
-        System.out.println("Modelo: " + ai.modelName() + " - imagen " + crop.getWidth() + "x" + crop.getHeight());
+        System.out.println("Modelo: " + ai.modelName() + " - imagen " + crop.getWidth() + "x" + crop.getHeight()
+                + " (se envia con lado mayor maximo de " + ai.maxImageSide() + " px; cambiar con NVIDIA_IMAGE_MAX_SIDE)");
 
         System.out.println("\n--- 1) Descripcion de la persona ---");
         long startedAt = System.nanoTime();
@@ -77,5 +78,6 @@ public class NvidiaCropCheck {
         System.out.printf("Respuesta en %.1f s%n", seconds);
         System.out.println("Texto crudo del modelo: " + rawArms.replaceAll("\\s+", " ").trim());
         System.out.println("Tatuajes que se guardarian: " + (tattoos != null ? tattoos : "(sin dato)"));
+        System.out.println(ai.usageSummary());
     }
 }

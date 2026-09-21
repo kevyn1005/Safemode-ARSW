@@ -433,6 +433,37 @@ class NvidiaOwnerVisionDescriberTest {
         assertNull(sinServidor.describe(new BufferedImage(50, 100, BufferedImage.TYPE_INT_RGB)));
     }
 
+    private static java.awt.image.BufferedImage decodeJpeg(String base64) throws IOException {
+        return javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(java.util.Base64.getDecoder().decode(base64)));
+    }
+
+    @Test
+    void elLadoMayorMaximoDeLaImagenEnviadaSeRespeta() throws IOException {
+        BufferedImage wide = new BufferedImage(2560, 1080, BufferedImage.TYPE_INT_RGB);
+
+        java.awt.image.BufferedImage at640 = decodeJpeg(NvidiaOwnerVisionDescriber.encodeJpegBase64(wide, 640));
+        assertEquals(640, at640.getWidth());
+        assertEquals(270, at640.getHeight(), "conserva la proporcion");
+
+        java.awt.image.BufferedImage byDefault = decodeJpeg(NvidiaOwnerVisionDescriber.encodeJpegBase64(wide));
+        assertEquals(1024, byDefault.getWidth(), "sin indicar nada se usa el valor de siempre");
+
+        BufferedImage small = new BufferedImage(300, 200, BufferedImage.TYPE_INT_RGB);
+        assertEquals(300, decodeJpeg(NvidiaOwnerVisionDescriber.encodeJpegBase64(small, 640)).getWidth(),
+                "una imagen pequena no se agranda");
+    }
+
+    @Test
+    void elLadoMaximoSeLeeDeLaVariableDeEntornoConUnValorPorDefecto() {
+        assertEquals(1024, NvidiaOwnerVisionDescriber.parseMaxImageSide(null));
+        assertEquals(1024, NvidiaOwnerVisionDescriber.parseMaxImageSide("  "));
+        assertEquals(1024, NvidiaOwnerVisionDescriber.parseMaxImageSide("mucho"));
+        assertEquals(640, NvidiaOwnerVisionDescriber.parseMaxImageSide("640"));
+        assertEquals(768, NvidiaOwnerVisionDescriber.parseMaxImageSide(" 768 "));
+        assertEquals(256, new NvidiaOwnerVisionDescriber("k", "http://x", "m", Duration.ofSeconds(1),
+                Duration.ofSeconds(1), 50).maxImageSide(), "un valor absurdo se sube al minimo");
+    }
+
     @Test
     void laImagenSeReduceAntesDeEnviarse() throws IOException {
         String small = NvidiaOwnerVisionDescriber.encodeJpegBase64(new BufferedImage(100, 200, BufferedImage.TYPE_INT_RGB));
