@@ -302,7 +302,13 @@ Solo la descripción textual opcional de quien retira la hace la IA externa.
    `mvn -pl realtime-gateway -am install -DskipTests`)
    `mvn -pl realtime-gateway exec:java "-Dexec.mainClass=com.safemode.gateway.GatewayRunner"`
    (ya incluye el motor de alertas, no hace falta `AlertEngineRunner`) y abrir
-   `http://localhost:8080`. **Pendiente**: probar con cámara real y un navegador (los tests
+   `http://localhost:8080`. **Con Docker** (ver `docs/adr/0002-...md`): `docker compose up --build h2-db
+   realtime-gateway` (base H2 en modo servidor + gateway) y el tracker en el computador con
+   `$env:SAFEMODE_DB_URL = "jdbc:h2:tcp://localhost:9093/presence"` (`PresenceEventStore/AlertStore.fromEnvironment`;
+   sin la variable usan el archivo local como siempre). El tracker no va en Docker (necesita `Robot`, modelos y la
+   clave). Puertos solo en `127.0.0.1`; el gateway escucha en `0.0.0.0` dentro del contenedor (`SAFEMODE_BIND_HOST`).
+   Se publica la base en 9093 porque la consola web de H2 ya usa el 9092. Si se corre el tracker SIN `SAFEMODE_DB_URL`
+   con el panel en Docker, las alertas no llegan (son dos bases distintas). **Pendiente**: probar con cámara real y un navegador (los tests
    cubren el WebSocket con un cliente Java, no la página); docker-compose sigue comentado.
 
 Pendientes menores que el usuario conoce: revisar lentes con un recorte de la cara (necesita

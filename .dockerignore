@@ -1,5 +1,14 @@
+# Lo que NO debe entrar al contexto de build de Docker (se envia entero al construir cada imagen).
 **/target/
 .git/
 .idea/
 *.iml
 node_modules/
+
+# Agregado con el gateway (ADR 0002): datos locales del tracker (base H2, fotos de personas, modelos de ~200 MB),
+# modelos PyTorch, logs, secretos y el editor.
+object-presence-tracker/data
+*.pt
+*.log
+.env
+.vscode

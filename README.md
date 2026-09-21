@@ -33,6 +33,25 @@ real que capturar, ver [ADR 0001](docs/adr/0001-contenerizacion-servicios-captur
 docker-compose up --build camera-feed-service vision-detection-service
 ```
 
+### Centro de alertas en vivo (Docker)
+
+La base de datos y el gateway con el panel corren en contenedores; el tracker corre en el computador (necesita la
+pantalla real, los modelos y la clave de NVIDIA) y se conecta a la base del contenedor:
+
+```
+docker compose up --build h2-db realtime-gateway        # y abrir http://localhost:8080
+```
+
+En otra terminal (PowerShell), el tracker apuntando a esa base (puerto `9093`):
+
+```
+$env:SAFEMODE_DB_URL = "jdbc:h2:tcp://localhost:9093/presence"
+mvn -pl object-presence-tracker exec:java "-Dexec.mainClass=com.safemode.presence.ObjectPresenceTrackerTest"
+```
+
+Sin Docker sigue funcionando como antes (no definir `SAFEMODE_DB_URL`; ver la lista de pasos en `CLAUDE.md`).
+Detalles y motivos en [ADR 0002](docs/adr/0002-docker-compose-gateway-y-base-de-datos.md).
+
 ## Notas
 
 - El modelo `vision-detection-service/src/main/resources/models/yolov8n.onnx`

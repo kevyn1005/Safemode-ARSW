@@ -13,33 +13,50 @@ services:
     ports:
       - "8082:8080"
 
-  # Los servicios de abajo todavia no tienen codigo (solo el pom.xml /
-  # package.json base, ver README). Un contenedor para ellos arrancaria
-  # sin Main-Class / app real y fallaria de inmediato, asi que quedan
-  # comentados hasta que el equipo los implemente.
+  # ---- Centro de alertas en tiempo real -------------------------------------------------------------------------
+  # Levantar solo esto:  docker compose up --build h2-db realtime-gateway   y abrir http://localhost:8080
+  # (ver docs/adr/0002-docker-compose-gateway-y-base-de-datos.md)
 
-  # object-presence-tracker:
-  #   build:
-  #     context: .
-  #     dockerfile: object-presence-tracker/Dockerfile
-  #   ports:
-  #     - "8083:8080"
+  # Base de datos H2 en modo servidor: la comparten el tracker (que corre en el computador) y el gateway (contenedor).
+  h2-db:
+    build:
+      context: .
+      dockerfile: h2-db/Dockerfile
+    ports:
+      # solo en 127.0.0.1: la base contiene las alertas y las rutas de las fotos, no debe verse desde la red.
+      # 9093 en el computador (no 9092) porque la consola web de H2 (org.h2.tools.Console) ya usa el 9092.
+      - "127.0.0.1:9093:9092"
+    volumes:
+      - h2-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9092'"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
 
-  # alert-engine:
-  #   build:
-  #     context: .
-  #     dockerfile: alert-engine/Dockerfile
-  #   ports:
-  #     - "8084:8080"
+  # Motor de alertas + WebSocket + pagina del panel (alert-engine y security-dashboard no llevan contenedor propio:
+  # el motor corre dentro del gateway y el panel es un index.html que el gateway entrega).
+  realtime-gateway:
+    build:
+      context: .
+      dockerfile: realtime-gateway/Dockerfile
+    depends_on:
+      h2-db:
+        condition: service_healthy
+    environment:
+      SAFEMODE_DB_URL: jdbc:h2:tcp://h2-db:9092/presence
+    ports:
+      - "127.0.0.1:8080:8080"   # pagina del panel y fotos
+      - "127.0.0.1:8090:8090"   # alertas en tiempo real (WebSocket)
+    volumes:
+      # fotos que guarda el tracker en el computador (solo lectura)
+      - ./object-presence-tracker/data/frames:/workspace/object-presence-tracker/data/frames:ro
+    restart: unless-stopped
 
-  # realtime-gateway:
-  #   build:
-  #     context: .
-  #     dockerfile: realtime-gateway/Dockerfile
-  #   ports:
-  #     - "8085:8080"
+  # object-presence-tracker NO va en Docker: captura la pantalla real con java.awt.Robot (un contenedor no tiene pantalla),
+  # usa modelos de ~200 MB que no estan en el repo y la clave de NVIDIA. Se corre en el computador y se conecta a h2-db:
+  #   PowerShell:  $env:SAFEMODE_DB_URL = "jdbc:h2:tcp://localhost:9093/presence"
+  #                mvn -pl object-presence-tracker exec:java "-Dexec.mainClass=com.safemode.presence.ObjectPresenceTrackerTest"
 
-  # security-dashboard:
-  #   build: ./security-dashboard
-  #   ports:
-  #     - "3000:3000"
+volumes:
+  h2-data:
