@@ -1,6 +1,9 @@
 package com.safemode.presence;
 
+import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
+import java.util.Collection;
+import java.util.List;
 
 /**
  * Huella barata de una region de un frame: el brillo de una cuadricula de puntos (cada uno promediado con sus vecinos
@@ -15,10 +18,22 @@ final class RegionFingerprint {
     private static final int CHANGED_LEVEL = 45;
 
     private final int[] brightness;
+    // region efectivamente muestreada (recortada al frame): sirve para saber donde cae cada punto de la cuadricula
+    private final int x0;
+    private final int y0;
+    private final int x1;
+    private final int y1;
 
-    private RegionFingerprint(int[] brightness) {
+    private RegionFingerprint(int[] brightness, int x0, int y0, int x1, int y1) {
         this.brightness = brightness;
+        this.x0 = x0;
+        this.y0 = y0;
+        this.x1 = x1;
+        this.y1 = y1;
     }
+
+    /** Cuanto cambio la zona (entre los puntos que se podian comparar) y que parte de la zona se pudo comparar. */
+    record Comparison(double changedFraction, double visibleFraction) {}
 
     /** Huella de esa region (recortada a los bordes del frame), o null si no hay frame o la region queda fuera. */
     static RegionFingerprint of(BufferedImage frame, int x, int y, int width, int height) {
@@ -35,12 +50,18 @@ final class RegionFingerprint {
         int[] values = new int[GRID * GRID];
         for (int j = 0; j < GRID; j++) {
             for (int i = 0; i < GRID; i++) {
-                int px = x0 + (int) ((i + 0.5) * (x1 - x0) / GRID);
-                int py = y0 + (int) ((j + 0.5) * (y1 - y0) / GRID);
-                values[j * GRID + i] = averageBrightness(frame, px, py);
+                values[j * GRID + i] = averageBrightness(frame, sampleX(x0, x1, i), sampleY(y0, y1, j));
             }
         }
-        return new RegionFingerprint(values);
+        return new RegionFingerprint(values, x0, y0, x1, y1);
+    }
+
+    private static int sampleX(int x0, int x1, int i) {
+        return x0 + (int) ((i + 0.5) * (x1 - x0) / GRID);
+    }
+
+    private static int sampleY(int y0, int y1, int j) {
+        return y0 + (int) ((j + 0.5) * (y1 - y0) / GRID);
     }
 
     private static int averageBrightness(BufferedImage frame, int cx, int cy) {
@@ -60,12 +81,30 @@ final class RegionFingerprint {
 
     /** Fraccion (0 a 1) de puntos cuyo brillo cambio de forma clara respecto a la otra huella. */
     double changedFraction(RegionFingerprint other) {
+        return compare(other, List.of()).changedFraction();
+    }
+
+    /**
+     * Compara con otra huella de la misma zona ignorando los puntos que caen dentro de {@code covered} (por ejemplo las
+     * cajas de las personas, que tapan el objeto sin que este se haya movido): el brazo de alguien que pasa por delante
+     * no cuenta como cambio. Si casi toda la zona esta tapada, {@code visibleFraction} sale baja y no se puede concluir nada.
+     */
+    Comparison compare(RegionFingerprint other, Collection<Rectangle> covered) {
+        int compared = 0;
         int changed = 0;
-        for (int i = 0; i < brightness.length; i++) {
-            if (Math.abs(brightness[i] - other.brightness[i]) > CHANGED_LEVEL) {
-                changed++;
+        for (int j = 0; j < GRID; j++) {
+            for (int i = 0; i < GRID; i++) {
+                int px = sampleX(x0, x1, i);
+                int py = sampleY(y0, y1, j);
+                if (covered.stream().anyMatch(r -> r.contains(px, py))) {
+                    continue;
+                }
+                compared++;
+                if (Math.abs(brightness[j * GRID + i] - other.brightness[j * GRID + i]) > CHANGED_LEVEL) {
+                    changed++;
+                }
             }
         }
-        return (double) changed / brightness.length;
+        return new Comparison(compared == 0 ? 0 : (double) changed / compared, (double) compared / brightness.length);
     }
 }

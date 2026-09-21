@@ -83,10 +83,22 @@ class RemovalVerificationTest {
     }
 
     private void unseenFrames(ObjectTracker tracker, int count, BufferedImage frame) {
+        unseenFrames(tracker, count, frame, List.of());
+    }
+
+    private void unseenFrames(ObjectTracker tracker, int count, BufferedImage frame, List<Detection> detections) {
         for (int i = 0; i < count; i++) {
             clock.advance(Duration.ofMillis(500));
-            tracker.onFrame(frame, List.of());
+            tracker.onFrame(frame, detections);
         }
+    }
+
+    /** Pinta una persona (ropa clara) tapando el tramo horizontal [fromX, toX) de la escena. */
+    private static void paintPerson(BufferedImage image, int fromX, int toX) {
+        Graphics2D g = image.createGraphics();
+        g.setColor(new Color(235, 235, 235));
+        g.fillRect(fromX, 0, toX - fromX, 600);
+        g.dispose();
     }
 
     @Test
@@ -112,6 +124,44 @@ class RemovalVerificationTest {
         ObjectTracker tracker = registeredBag(true);
 
         unseenFrames(tracker, 3, scene(false));
+
+        assertEquals(1, store.countEvents("REMOVED"));
+    }
+
+    @Test
+    void elBrazoDeUnaPersonaQueTapaUnaParteDelObjetoNoCuentaComoQueSeFue() {
+        ObjectTracker tracker = registeredBag(true);
+        // la mochila ocupa x 100-300: una persona (caja 220-500) tapa el ultimo 40 % y el detector deja de ver la mochila
+        Detection person = new Detection("person", 0.9f, 220, 0, 280, 600);
+        BufferedImage frame = scene(true);
+        paintPerson(frame, 220, 500);
+
+        unseenFrames(tracker, 6, frame, List.of(person));
+
+        assertEquals(0, store.countEvents("REMOVED"), "lo que queda a la vista de la zona sigue igual: la mochila sigue ahi");
+    }
+
+    @Test
+    void siLaPersonaTapaCasiTodaLaZonaNoSePuedeComprobarYSeDecideComoSiempre() {
+        ObjectTracker tracker = registeredBag(true);
+        Detection person = new Detection("person", 0.9f, 90, 0, 400, 600);
+        BufferedImage frame = scene(true);
+        paintPerson(frame, 90, 490);
+
+        unseenFrames(tracker, 3, frame, List.of(person));
+
+        assertEquals(1, store.countEvents("REMOVED"), "quien se lleva el objeto suele taparlo: sin ver la zona no se espera");
+    }
+
+    @Test
+    void siLaParteVisibleDeLaZonaCambioSeRetiraAunqueUnaPersonaTapeOtraParte() {
+        ObjectTracker tracker = registeredBag(true);
+        // una persona tapa el ultimo 40 % de la zona, pero en el 60 % visible la mochila ya no esta
+        Detection person = new Detection("person", 0.9f, 220, 0, 280, 600);
+        BufferedImage frame = scene(false);
+        paintPerson(frame, 220, 500);
+
+        unseenFrames(tracker, 3, frame, List.of(person));
 
         assertEquals(1, store.countEvents("REMOVED"));
     }

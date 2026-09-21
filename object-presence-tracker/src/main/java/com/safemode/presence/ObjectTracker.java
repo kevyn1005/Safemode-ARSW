@@ -54,6 +54,10 @@ public class ObjectTracker {
     // retiro real (alguien lo tapa y lo levanta) 0.28. Tope de frames de espera para no dejar un retiro real sin declarar.
     private static final double STILL_THERE_MAX_CHANGE = 0.15;
     private static final int MAX_VERIFIED_UNSEEN_FRAMES = 12;
+    // Los puntos de la zona que cubre una persona no se comparan (su brazo o su ropa no son un cambio del objeto). Si queda
+    // menos de esta fraccion de la zona a la vista, no se puede concluir nada y se decide como si no hubiera verificacion.
+    // Con fotos reales: un cinturon con un brazo por delante daba 35 % de cambio sin excluir la persona y 0 % excluyendola.
+    private static final double MIN_VISIBLE_FRACTION = 0.35;
     // Un objeto en reposo que aparece desplazado mas de MOVEMENT_TOLERANCE_PX solo se da por retirado si sigue desplazado
     // en este numero de frames seguidos: una persona que pasa por delante lo tapa y la caja del detector salta de sitio.
     private static final int REMOVAL_CONFIRM_FRAMES = 2;
@@ -213,7 +217,7 @@ public class ObjectTracker {
             if (t.getFramesUnseen() < MAX_FRAMES_UNSEEN) {
                 continue;
             }
-            if (t.getState() == TrackedObject.State.AT_REST && stillLooksInPlace(t, frame)) {
+            if (t.getState() == TrackedObject.State.AT_REST && stillLooksInPlace(t, frame, personDetections)) {
                 continue;
             }
             if (t.getState() == TrackedObject.State.AT_REST) {
@@ -231,7 +235,7 @@ public class ObjectTracker {
      * alguien lo tapa un momento o el detector fallo. Solo se espera un numero limitado de frames; sin imagen no se puede
      * comprobar y se decide como siempre.
      */
-    private boolean stillLooksInPlace(TrackedObject t, BufferedImage frame) {
+    private boolean stillLooksInPlace(TrackedObject t, BufferedImage frame, List<Detection> personDetections) {
         if (t.getFramesUnseen() >= MAX_FRAMES_UNSEEN + MAX_VERIFIED_UNSEEN_FRAMES) {
             return false;
         }
@@ -243,10 +247,17 @@ public class ObjectTracker {
         if (atRest == null || now == null) {
             return false;
         }
-        double change = atRest.changedFraction(now);
-        boolean stillThere = change < STILL_THERE_MAX_CHANGE;
-        System.out.println("[DEBUG]   -> Objeto #" + t.getId() + " sin verse " + t.getFramesUnseen() + " frames; su zona cambio "
-                + Math.round(change * 100) + "%: " + (stillThere ? "sigue ahi (tapado o mal detectado), no se da por retirado"
+        List<Rectangle> coveredByPeople = personDetections.stream()
+                .map(p -> new Rectangle(p.x(), p.y(), p.width(), p.height())).toList();
+        RegionFingerprint.Comparison comparison = atRest.compare(now, coveredByPeople);
+        if (comparison.visibleFraction() < MIN_VISIBLE_FRACTION) {
+            System.out.println("[DEBUG]   -> Objeto #" + t.getId() + " sin verse " + t.getFramesUnseen() + " frames; una persona tapa "
+                    + Math.round((1 - comparison.visibleFraction()) * 100) + "% de su zona: no se puede comprobar, se da por retirado");
+            return false;
+        }
+        boolean stillThere = comparison.changedFraction() < STILL_THERE_MAX_CHANGE;
+        System.out.println("[DEBUG]   -> Objeto #" + t.getId() + " sin verse " + t.getFramesUnseen() + " frames; la parte visible de su zona cambio "
+                + Math.round(comparison.changedFraction() * 100) + "%: " + (stillThere ? "sigue ahi (tapado o mal detectado), no se da por retirado"
                         : "ya no esta, se da por retirado"));
         return stillThere;
     }

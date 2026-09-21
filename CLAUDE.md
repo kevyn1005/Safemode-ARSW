@@ -112,7 +112,11 @@ arquitectura de software, con varios módulos Maven en un reactor:
 - **Verificación por imagen (opcional, `tracker.withRemovalVerification()`)**: antes de dar
   por retirado un objeto que el detector dejó de ver, se compara la zona donde estaba con
   cómo se veía la última vez (`RegionFingerprint`: cuadrícula de 24×24 puntos de brillo). Si
-  cambió menos del 15 % (`STILL_THERE_MAX_CHANGE`), se espera (tope de 12 frames extra). Se
+  cambió menos del 15 % (`STILL_THERE_MAX_CHANGE`), se espera (tope de 12 frames extra). **Los
+  puntos que cubre la caja de una persona no se comparan** (un brazo por delante no es un cambio
+  del objeto: un cinturón con un brazo encima daba 35 % sin excluir y 0 % excluyendo); si la
+  persona tapa más del 65 % de la zona (`MIN_VISIBLE_FRACTION` 0.35) no se puede concluir y se
+  decide como sin verificación (quien se lleva el objeto suele taparlo). Se
   calibró con fotos reales: retiro falso 0.04, mochila presente 0.05, retiro real (alguien la
   tapa y levanta) 0.28. Es opcional porque varios tests viejos usan el mismo frame de relleno
   al asentar y al retirar; `ObjectPresenceTrackerTest` la activa.
