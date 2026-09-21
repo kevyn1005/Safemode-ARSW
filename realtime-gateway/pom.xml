@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
@@ -15,5 +15,29 @@
     <name>realtime-gateway</name>
 
     <dependencies>
+        <!-- recibe las alertas nuevas (AlertEngine.addListener); trae tracker, H2 y Gson de forma transitiva -->
+        <dependency>
+            <groupId>com.safemode</groupId>
+            <artifactId>alert-engine</artifactId>
+            <version>1.0.0-SNAPSHOT</version>
+        </dependency>
+        <!-- servidor WebSocket -->
+        <dependency>
+            <groupId>org.java-websocket</groupId>
+            <artifactId>Java-WebSocket</artifactId>
+            <version>1.5.6</version>
+        </dependency>
+        <!-- la libreria registra con slf4j; sin un proveedor imprime un aviso al arrancar -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-nop</artifactId>
+            <version>2.0.13</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>
