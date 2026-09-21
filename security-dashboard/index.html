@@ -36,6 +36,8 @@
   figure img { display: block; width: 100%; max-height: 220px; object-fit: contain; background: #0002; border-radius: 6px; }
   figcaption { font-size: 13px; color: var(--muted); margin-top: 4px; }
   figcaption b { color: var(--text); }
+  figcaption .ai { color: var(--text); margin-top: 2px; }
+  figcaption .pending, figcaption .estimate { font-size: 12px; font-style: italic; margin-top: 2px; }
   button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; }
   button:hover { background: var(--accent); color: #fff; }
   .actions { margin-top: 10px; }
@@ -77,10 +79,16 @@
       var img = el('img'); img.src = photo; img.alt = title; img.loading = 'lazy';
       link.appendChild(img); fig.appendChild(link);
     }
+    // La descripcion de la IA es la confiable; el color por pixeles es una estimacion que puede equivocarse (fondo, luz),
+    // asi que va aparte y marcada como aproximada.
     var caption = el('figcaption');
     caption.appendChild(el('b', null, title));
-    if (description) caption.appendChild(el('div', null, description));
-    if (aiDescription) caption.appendChild(el('div', null, 'IA: ' + aiDescription));
+    if (aiDescription) {
+      caption.appendChild(el('div', 'ai', aiDescription));
+    } else {
+      caption.appendChild(el('div', 'pending', 'Descripción por IA: pendiente o no disponible'));
+    }
+    if (description) caption.appendChild(el('div', 'estimate', 'Color estimado por imagen: ' + description));
     fig.appendChild(caption);
     return fig;
   }

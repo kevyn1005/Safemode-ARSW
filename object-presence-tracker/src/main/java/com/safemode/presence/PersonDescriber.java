@@ -32,6 +32,12 @@ final class PersonDescriber {
         }
     }
 
+    /**
+     * Cuando hay puntos del cuerpo confiables pero el objeto tapa todo el torso no queda ropa que leer, y la franja fija
+     * solo lee el fondo (un respaldo negro daba "camisa negra" para una sudadera beige): mejor decir que no se sabe.
+     */
+    static final String CLOTHING_HIDDEN = "persona con ropa de color no determinado (el objeto tapa el torso)";
+
     private static final int SAMPLES_PER_AXIS = 12;
     private static final float MIN_KEYPOINT_CONFIDENCE = 0.5f;
     private static final double TORSO_INSET = 0.6;
@@ -64,10 +70,23 @@ final class PersonDescriber {
             return null;
         }
         ColorName color = pose == null ? null : colorInsideTorso(personCrop, excluded, pose);
+        if (color == null && pose != null && excluded != null && torsoHiddenBy(personCrop, excluded, pose)) {
+            return CLOTHING_HIDDEN;
+        }
         if (color == null) {
             color = dominantTorsoColor(personCrop, excluded);
         }
         return "persona con camisa " + color.label;
+    }
+
+    /** El torso (segun los puntos del cuerpo) queda dentro de la imagen pero el objeto lo cubre entero. */
+    private static boolean torsoHiddenBy(BufferedImage crop, Rectangle excluded, Keypoint[] pose) {
+        Polygon torso = torsoPolygon(pose);
+        if (torso == null) {
+            return false;
+        }
+        Rectangle visible = torso.getBounds().intersection(new Rectangle(0, 0, crop.getWidth(), crop.getHeight()));
+        return !visible.isEmpty() && excluded.contains(visible);
     }
 
     /** Color dominante dentro del cuadrilatero hombros-caderas, o null si los puntos no sirven o no queda ningun pixel util. */

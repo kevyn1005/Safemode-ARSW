@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AlertRulesTest {
@@ -23,8 +24,7 @@ class AlertRulesTest {
         assertEquals(AlertType.POSSIBLE_THEFT, d.type());
         assertEquals(Severity.HIGH, d.severity());
         assertTrue(d.message().contains("maleta"));
-        assertTrue(d.message().contains("persona con camisa azul"));
-        assertTrue(d.message().contains("persona con camisa roja"));
+        assertFalse(d.message().contains("camisa"), "el titular no repite colores aproximados: van en las tarjetas del panel");
     }
 
     @Test

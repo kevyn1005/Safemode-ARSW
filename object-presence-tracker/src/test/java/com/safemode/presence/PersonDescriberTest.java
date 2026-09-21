@@ -128,6 +128,29 @@ class PersonDescriberTest {
     }
 
     @Test
+    void siElObjetoTapaTodoElTorsoSegunLosPuntosDelCuerpoNoAdivinaElColorDelFondo() {
+        // torso rojo a la izquierda, fondo negro a la derecha: la franja fija leeria el fondo y diria "negra"
+        BufferedImage img = solid(Color.BLACK, 150, 120);
+        Graphics2D g = img.createGraphics();
+        g.setColor(Color.RED);
+        g.fillRect(5, 30, 40, 40);
+        g.dispose();
+        Keypoint[] torso = pose(0.9f, 8, 32, 42, 32, 10, 68, 40, 68);
+
+        assertEquals(PersonDescriber.CLOTHING_HIDDEN, PersonDescriber.describe(img, new Rectangle(0, 20, 60, 80), torso));
+        assertEquals("persona con camisa roja", PersonDescriber.describe(img, null, torso),
+                "sin objeto que la tape, el torso se lee como siempre");
+    }
+
+    @Test
+    void siElObjetoSoloTapaUnaParteDelTorsoSeLeeLoQueQueda() {
+        BufferedImage img = personaConTorsoRojoALaIzquierda();
+        Keypoint[] torso = pose(0.9f, 8, 32, 42, 32, 10, 68, 40, 68);
+
+        assertEquals("persona con camisa roja", PersonDescriber.describe(img, new Rectangle(0, 50, 30, 40), torso));
+    }
+
+    @Test
     void conPuntosDeBajaConfianzaUsaLaFranjaCentralComoAntes() {
         BufferedImage img = personaConTorsoRojoALaIzquierda();
         Keypoint[] dudosos = pose(0.2f, 8, 32, 42, 32, 10, 68, 40, 68);

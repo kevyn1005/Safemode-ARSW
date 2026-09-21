@@ -141,6 +141,13 @@ arquitectura de software, con varios módulos Maven en un reactor:
   altura). Ignora los píxeles del propio objeto y el tono de piel; el negro de una webcam con
   tinte (brillo < 0.35 y saturación < 0.55) sigue siendo negro. Falla con ropa clara o
   estampada (pijama rosa → "gris"/"blanca").
+  Si hay pose confiable pero el objeto (su caja) tapa todo el torso, devuelve
+  `CLOTHING_HIDDEN` ("ropa de color no determinado") en vez de caer en la franja fija: con
+  la mochila sobre el pecho la franja leía el respaldo negro de la cama y una sudadera beige
+  salía "camisa negra". Además `PIEL` (beige/rosado claro de una sudadera) se ignora a
+  propósito para que brazos y cara no cuenten como ropa; por eso el color local es solo una
+  estimación y **la descripción de la IA es la confiable**: el panel la muestra primero y
+  marca el color como "estimado por imagen"; el titular de la alerta ya no repite colores.
 - **Pose** (`PoseEstimator`, en `vision-detection-service`): 17 puntos COCO sobre el recorte
   del dueño, una vez por evento (~300 ms). Opcional: `new ObjectTracker(store, poseEstimator)`.
 

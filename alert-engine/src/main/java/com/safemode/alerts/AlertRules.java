@@ -8,7 +8,8 @@ import java.util.Optional;
 
 /**
  * Decide si un evento de presencia merece una alerta. Solo los retiros (REMOVED) pueden generarla, y el retiro normal
- * por el dueno no. La descripcion de quien se llevo el objeto viene del tracker; aqui solo se traduce a una frase.
+ * por el dueno no. La frase dice que ocurrio, sin describir a las personas: la alerta se crea al instante y el color
+ * local puede ser aproximado (o faltar) hasta que llega la descripcion por IA; el dashboard las muestra aparte, con la foto.
  */
 public final class AlertRules {
 
@@ -32,27 +33,17 @@ public final class AlertRules {
             return Optional.empty();
         }
         String object = CLASS_NAMES_ES.getOrDefault(event.className(), event.className());
-        String owner = event.ownerDescription() != null ? " (dueño: " + event.ownerDescription() + ")" : "";
-        String remover = describeRemover(event);
-
         return switch (kind) {
             case BY_OWNER -> Optional.empty();
             case BY_OTHER -> Optional.of(decision(AlertType.POSSIBLE_THEFT, Severity.HIGH,
-                    "Posible robo: la " + object + " fue retirada por alguien distinto del dueño" + remover + owner));
+                    "Posible robo: la " + object + " fue retirada por alguien distinto del dueño"));
             case OWNER_AND_OTHER_NEAR -> Optional.of(decision(AlertType.AMBIGUOUS_REMOVAL, Severity.MEDIUM,
-                    "Retiro ambiguo: la " + object + " se retiró con el dueño y otra persona cerca" + remover + owner));
+                    "Retiro ambiguo: la " + object + " se retiró con el dueño y otra persona cerca"));
             case NO_ONE_NEAR -> Optional.of(decision(AlertType.OBJECT_VANISHED, Severity.MEDIUM,
-                    "La " + object + " desapareció sin nadie cerca" + owner));
+                    "La " + object + " desapareció sin nadie cerca"));
             case OWNER_UNKNOWN -> Optional.of(decision(AlertType.UNKNOWN_OWNER_REMOVAL, Severity.LOW,
-                    "Retiraron una " + object + " que no tenía dueño registrado" + remover));
+                    "Retiraron una " + object + " que no tenía dueño registrado"));
         };
-    }
-
-    private static String describeRemover(StoredEvent event) {
-        if (event.removerDescription() == null) {
-            return "";
-        }
-        return ": " + event.removerDescription();
     }
 
     private static Decision decision(AlertType type, Severity severity, String message) {
