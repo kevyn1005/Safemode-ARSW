@@ -251,9 +251,16 @@ Solo la descripción textual opcional de quien retira la hace la IA externa.
   ahí (tapada, baja confianza). Mitigado con `withRemovalVerification()` (ver arriba), pero
   falla si quien la tapa lleva ropa de brillo parecido al objeto (solo retrasa el retiro
   hasta el tope de 12 frames) o si cambia la luz de toda la zona.
-- **Persona nueva con el id de otra**: la persona que entra justo cuando otra sale puede
-  heredar su id (el respaldo por distancia llega a 60 % del tamaño de la caja, cientos de px
-  con cámara pegada). Si la heredera fuera el dueño, un robo saldría `BY_OWNER` sin alerta.
+- **Persona nueva con el id de otra** (mitigado con `PersonAppearance`): quien entraba justo
+  cuando otra persona salía heredaba su id (el respaldo por distancia llega a 60 % del tamaño
+  de la caja, cientos de px con cámara pegada), y un robo salía `BY_OWNER` sin alerta. Ahora
+  se compara el color medio del torso: una persona que no se veía en el frame anterior solo
+  conserva su id si la ropa se parece (distancia RGB ≤ 80), y un emparejamiento solo por
+  cercanía la exige siempre. Calibrado con pocas fotos reales (misma persona 29–68, personas
+  distintas 84–144), así que el margen es corto. Falla si las dos personas visten parecido; y
+  si la misma persona cambia mucho de color (luz, movimiento) puede recibir un id nuevo y su
+  propio retiro saldría `BY_OTHER`. Sin imagen (tests) el comportamiento es el de antes.
+  No se usan UUID: el problema era la lógica de emparejamiento, no el formato del id.
 - **La IA se equivoca en detalles pequeños**: dijo `lentes: ninguno` para alguien con lentes y
   "cabello largo" para alguien de pelo corto; con la persona entera el tatuaje casi no se ve
   (por eso el recorte de antebrazos). Los dibujos concretos de un tatuaje son adivinanzas.

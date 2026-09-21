@@ -13,6 +13,7 @@ class TrackedPerson {
     private int width;
     private int height;
     private int framesUnseen = 0;
+    private PersonAppearance appearance;
 
     TrackedPerson(long id, int x, int y, int width, int height) {
         this.id = id;
@@ -48,6 +49,15 @@ class TrackedPerson {
         this.y = y;
         this.width = width;
         this.height = height;
+    }
+
+    /** Como se vio a esta persona por ultima vez (null si no hay imagen). */
+    PersonAppearance getAppearance() {
+        return appearance;
+    }
+
+    void setAppearance(PersonAppearance appearance) {
+        this.appearance = appearance;
     }
 
     void resetFramesUnseen() {

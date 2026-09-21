@@ -143,7 +143,7 @@ public class ObjectTracker {
                 + personDetections.size() + " persona(s) detectadas. Objetos rastreados actualmente: "
                 + tracked.size());
 
-        List<Long> personIds = matchPersons(personDetections);
+        List<Long> personIds = matchPersons(personDetections, frame);
         Set<Long> matchedIds = new HashSet<>();
 
         // Paso 1: cada deteccion con un objeto de su misma clase.
@@ -660,19 +660,25 @@ public class ObjectTracker {
      * Asigna un id estable a cada persona detectada en este frame (IoU, con
      * respaldo por distancia entre centros). Devuelve una lista de ids alineada
      * por indice con {@code personDetections}. Las personas que no se ven se
-     * descartan tras {@link #MAX_PERSON_FRAMES_UNSEEN} frames.
+     * descartan tras {@link #MAX_PERSON_FRAMES_UNSEEN} frames. Si hay imagen, una persona nueva solo hereda el id de
+     * alguien que salio de cuadro cuando la ropa de las dos se parece (ver {@link PersonAppearance}): si no, quien entra
+     * justo despues de quien se fue quedaba con su id, y un robo se leia como retiro del dueno.
      */
-    private List<Long> matchPersons(List<Detection> personDetections) {
+    private List<Long> matchPersons(List<Detection> personDetections, BufferedImage frame) {
         List<Long> ids = new ArrayList<>();
         Set<Long> matched = new HashSet<>();
 
         for (Detection det : personDetections) {
-            TrackedPerson person = findBestPersonMatch(det, matched);
+            PersonAppearance appearance = PersonAppearance.of(frame, det.x(), det.y(), det.width(), det.height());
+            TrackedPerson person = findBestPersonMatch(det, matched, appearance);
             if (person == null) {
                 person = new TrackedPerson(nextPersonId.getAndIncrement(), det.x(), det.y(), det.width(), det.height());
                 trackedPersons.put(person.getId(), person);
             } else {
                 person.setPosition(det.x(), det.y(), det.width(), det.height());
+            }
+            if (appearance != null) {
+                person.setAppearance(appearance);
             }
             person.resetFramesUnseen();
             matched.add(person.getId());
@@ -691,11 +697,26 @@ public class ObjectTracker {
         return ids;
     }
 
-    private TrackedPerson findBestPersonMatch(Detection det, Set<Long> alreadyMatched) {
+    /**
+     * Puede la persona detectada ser esta persona rastreada? Con solape entre frames consecutivos basta la posicion; si la
+     * persona rastreada no se veia en el frame anterior (salio de cuadro), o el emparejamiento es solo por cercania (evidencia
+     * debil), tambien tiene que parecerse su ropa. Sin imagen no se puede comparar y se decide como siempre.
+     */
+    private static boolean sameLooking(TrackedPerson tracked, PersonAppearance seen, boolean weakEvidence) {
+        if (seen == null || tracked.getAppearance() == null) {
+            return true;
+        }
+        if (!weakEvidence && tracked.getFramesUnseen() == 0) {
+            return true;
+        }
+        return seen.looksLike(tracked.getAppearance());
+    }
+
+    private TrackedPerson findBestPersonMatch(Detection det, Set<Long> alreadyMatched, PersonAppearance appearance) {
         TrackedPerson bestByIou = null;
         double bestIou = MATCH_IOU_THRESHOLD;
         for (TrackedPerson p : trackedPersons.values()) {
-            if (alreadyMatched.contains(p.getId())) {
+            if (alreadyMatched.contains(p.getId()) || !sameLooking(p, appearance, false)) {
                 continue;
             }
             double iou = iou(p.getX(), p.getY(), p.getWidth(), p.getHeight(),
@@ -714,7 +735,7 @@ public class ObjectTracker {
         TrackedPerson bestByDistance = null;
         double bestRatio = 1.0; // distancia / limite de esa persona; solo cuentan las de ratio < 1
         for (TrackedPerson p : trackedPersons.values()) {
-            if (alreadyMatched.contains(p.getId())) {
+            if (alreadyMatched.contains(p.getId()) || !sameLooking(p, appearance, true)) {
                 continue;
             }
             double distance = Math.hypot(
