@@ -1,0 +1,84 @@
+package com.safemode.presence;
+
+import com.safemode.presence.PresenceEventStore.OwnerInfo;
+import com.safemode.presence.PresenceEventStore.RemovalInfo;
+import com.safemode.presence.PresenceEventStore.StoredEvent;
+import org.junit.jupiter.api.Test;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class PresenceEventStoreQueryTest {
+
+    private static PresenceEventStore newStore() {
+        return PresenceEventStore.inMemory("query_" + UUID.randomUUID().toString().replace("-", ""));
+    }
+
+    @Test
+    void findRemovedAfterDevuelveSoloLosRetirosPosterioresEnOrden() {
+        try (PresenceEventStore store = newStore()) {
+            Instant now = Instant.now();
+            store.recordRegistered(1, "backpack", 10, 20, 30, 40, now, "a.png", null);
+            long first = store.recordRemoved(1, "backpack", 10, 20, 30, 40, now, false, "b.png", null,
+                    new RemovalInfo("NO_ONE_NEAR", null, null, null));
+            long second = store.recordRemoved(2, "handbag", 1, 2, 3, 4, now, true, null, null,
+                    new RemovalInfo("BY_OTHER", 5L, "persona con camisa azul", "c.png"));
+
+            assertEquals(List.of(first, second), store.findRemovedAfter(0).stream().map(StoredEvent::id).toList());
+            assertEquals(List.of(second), store.findRemovedAfter(first).stream().map(StoredEvent::id).toList());
+            assertTrue(store.findRemovedAfter(second).isEmpty());
+        }
+    }
+
+    @Test
+    void findByIdDevuelveTodosLosCamposIncluidosLosNulos() {
+        try (PresenceEventStore store = newStore()) {
+            Instant now = Instant.parse("2026-03-04T05:06:07Z");
+            long id = store.recordRemoved(9, "suitcase", 11, 22, 33, 44, now, true, "frame.png",
+                    new OwnerInfo(3L, "persona con camisa roja", "owner.png"),
+                    new RemovalInfo("BY_OTHER", 4L, "persona con camisa azul", "remover.png"));
+            store.updateRemoverAiDescription(id, "hombre alto");
+
+            StoredEvent event = store.findById(id).orElseThrow();
+
+            assertEquals(9, event.trackedObjectId());
+            assertEquals("suitcase", event.className());
+            assertEquals("REMOVED", event.eventType());
+            assertEquals(now, event.occurredAt());
+            assertEquals(11, event.x());
+            assertEquals(44, event.height());
+            assertEquals(Boolean.TRUE, event.personNearby());
+            assertEquals("frame.png", event.framePath());
+            assertEquals(3L, event.ownerPersonId());
+            assertEquals("persona con camisa roja", event.ownerDescription());
+            assertEquals("BY_OTHER", event.removalKind());
+            assertEquals(4L, event.removerPersonId());
+            assertEquals("hombre alto", event.removerAiDescription());
+
+            long registered = store.recordRegistered(9, "suitcase", 1, 2, 3, 4, now, null, null);
+            StoredEvent bare = store.findById(registered).orElseThrow();
+            assertNull(bare.personNearby());
+            assertNull(bare.ownerPersonId());
+            assertNull(bare.removalKind());
+            assertNull(bare.removerPersonId());
+            assertTrue(store.findById(9999).isEmpty());
+        }
+    }
+
+    @Test
+    void maxEventIdEsCeroSinEventosYSeReiniciaAlVaciar() {
+        try (PresenceEventStore store = newStore()) {
+            assertEquals(0, store.maxEventId());
+            store.recordRegistered(1, "backpack", 0, 0, 1, 1, Instant.now(), null, null);
+            store.recordRegistered(2, "backpack", 0, 0, 1, 1, Instant.now(), null, null);
+            assertEquals(2, store.maxEventId());
+            store.clearAllEvents();
+            assertEquals(0, store.maxEventId());
+        }
+    }
+}

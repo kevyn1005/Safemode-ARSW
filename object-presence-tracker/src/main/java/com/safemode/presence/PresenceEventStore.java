@@ -8,6 +8,9 @@ import java.sql.Statement;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 
 /**
  * Persistencia de los eventos "objeto registrado en reposo" y "objeto
@@ -38,8 +41,11 @@ public class PresenceEventStore implements AutoCloseable {
         }
     }
 
-    /** Constructor para pruebas: base de datos H2 en memoria, aislada por nombre. */
-    static PresenceEventStore inMemory(String name) {
+    /**
+     * Base de datos H2 en memoria, aislada por nombre (para pruebas). Otro componente puede abrir la MISMA base con la
+     * URL {@code jdbc:h2:mem:<name>;DB_CLOSE_DELAY=-1} (asi lo hace el alert-engine en sus pruebas).
+     */
+    public static PresenceEventStore inMemory(String name) {
         try {
             Connection conn = DriverManager.getConnection("jdbc:h2:mem:" + name + ";DB_CLOSE_DELAY=-1");
             return new PresenceEventStore(conn);
@@ -128,6 +134,68 @@ public class PresenceEventStore implements AutoCloseable {
         } catch (SQLException e) {
             throw new IllegalStateException("No se pudo consultar object_presence_event", e);
         }
+    }
+
+    /** Un evento tal como esta guardado, con todo lo que otros componentes (alert-engine, dashboard) necesitan leer. */
+    public record StoredEvent(long id, long trackedObjectId, String className, String eventType, Instant occurredAt,
+                              int x, int y, int width, int height, Boolean personNearby, String framePath,
+                              Long ownerPersonId, String ownerDescription, String ownerCropPath, String ownerAiDescription,
+                              String removalKind, Long removerPersonId, String removerDescription, String removerCropPath,
+                              String removerAiDescription) {}
+
+    private static final String EVENT_COLUMNS = "id, tracked_object_id, class_name, event_type, occurred_at, pos_x, pos_y, "
+            + "width, height, person_nearby, frame_path, owner_person_id, owner_description, owner_crop_path, "
+            + "owner_ai_description, removal_kind, remover_person_id, remover_description, remover_crop_path, "
+            + "remover_ai_description";
+
+    /** Eventos REMOVED con id mayor que el dado, del mas viejo al mas nuevo: asi se lee lo que falta por procesar. */
+    public List<StoredEvent> findRemovedAfter(long lastEventId) {
+        return query("event_type = 'REMOVED' AND id > ?", lastEventId);
+    }
+
+    /** El id mas alto guardado (0 si no hay eventos): sirve para detectar que la tabla se vacio y los ids se reiniciaron. */
+    public long maxEventId() {
+        try (var st = connection.createStatement(); var rs = st.executeQuery("SELECT COALESCE(MAX(id), 0) FROM object_presence_event")) {
+            rs.next();
+            return rs.getLong(1);
+        } catch (SQLException e) {
+            throw new IllegalStateException("No se pudo leer object_presence_event", e);
+        }
+    }
+
+    /** El evento con ese id, con los datos actuales (la descripcion por IA se completa unos segundos despues). */
+    public Optional<StoredEvent> findById(long id) {
+        return query("id = ?", id).stream().findFirst();
+    }
+
+    private List<StoredEvent> query(String where, long param) {
+        String sql = "SELECT " + EVENT_COLUMNS + " FROM object_presence_event WHERE " + where + " ORDER BY id";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, param);
+            try (var rs = ps.executeQuery()) {
+                List<StoredEvent> events = new ArrayList<>();
+                while (rs.next()) {
+                    events.add(new StoredEvent(rs.getLong(1), rs.getLong(2), rs.getString(3), rs.getString(4),
+                            rs.getTimestamp(5).toInstant(), rs.getInt(6), rs.getInt(7), rs.getInt(8), rs.getInt(9),
+                            nullableBoolean(rs, 10), rs.getString(11), nullableLong(rs, 12), rs.getString(13),
+                            rs.getString(14), rs.getString(15), rs.getString(16), nullableLong(rs, 17), rs.getString(18),
+                            rs.getString(19), rs.getString(20)));
+                }
+                return events;
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("No se pudo leer object_presence_event", e);
+        }
+    }
+
+    private static Long nullableLong(java.sql.ResultSet rs, int column) throws SQLException {
+        long value = rs.getLong(column);
+        return rs.wasNull() ? null : value;
+    }
+
+    private static Boolean nullableBoolean(java.sql.ResultSet rs, int column) throws SQLException {
+        boolean value = rs.getBoolean(column);
+        return rs.wasNull() ? null : value;
     }
 
     /** Da el valor de person_nearby del ultimo evento de ese tipo (usado en las pruebas). */
