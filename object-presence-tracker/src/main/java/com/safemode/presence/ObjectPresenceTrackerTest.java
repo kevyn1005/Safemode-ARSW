@@ -42,6 +42,8 @@ public class ObjectPresenceTrackerTest {
             System.out.println("Filas de la corrida anterior borradas: " + store.clearAllEvents());
 
             ObjectTracker tracker = new ObjectTracker(store, poseEstimator);
+            // si el detector pierde la mochila un momento (alguien se cruza) pero la zona sigue igual, no se da por retirada
+            tracker.withRemovalVerification();
 
             // Descripcion del dueno con IA (opcional): solo si existe la variable de entorno NVIDIA_API_KEY.
             // OJO privacidad: el recorte con la cara de la persona se envia a un servicio externo.

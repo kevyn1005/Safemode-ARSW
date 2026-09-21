@@ -36,6 +36,7 @@ public class TrackedObject {
     private State state = State.NEW;
     private Instant restSinceAt;
     private int framesUnseen = 0;
+    private RegionFingerprint restFingerprint;
 
     private static final class Sighting {
         int frames;
@@ -134,6 +135,15 @@ public class TrackedObject {
 
     void setRestSinceAt(Instant restSinceAt) {
         this.restSinceAt = restSinceAt;
+    }
+
+    /** Como se veia la zona del objeto la ultima vez que se lo vio quieto en reposo (null si no hay imagen). */
+    void setRestFingerprint(RegionFingerprint fingerprint) {
+        this.restFingerprint = fingerprint;
+    }
+
+    RegionFingerprint getRestFingerprint() {
+        return restFingerprint;
     }
 
     void resetFramesUnseen() {

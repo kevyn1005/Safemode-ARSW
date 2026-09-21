@@ -46,6 +46,14 @@ public class ObjectTracker {
     private static final double OWNER_PROXIMITY_PX = 100;
     // Quien esta "junto" al objeto en reposo (para atribuir un retiro): distancia del centro del objeto a la caja de la persona.
     private static final double REMOVAL_PROXIMITY_PX = 100;
+    // Con la camara pegada al objeto todo se ve enorme (una mochila de 500 px): "cerca" crece con el tamano del objeto.
+    // Los radios de arriba son el minimo; para objetos pequenos no cambia nada.
+    private static final double PROXIMITY_PER_OBJECT_SIZE = 0.4;
+    // Si el detector deja de ver un objeto en reposo pero su zona se ve casi igual que antes (menos de esta fraccion de
+    // puntos cambio), se asume que sigue ahi tapado o mal detectado. Calibrado con fotos reales: retiro falso 0.04,
+    // retiro real (alguien lo tapa y lo levanta) 0.28. Tope de frames de espera para no dejar un retiro real sin declarar.
+    private static final double STILL_THERE_MAX_CHANGE = 0.15;
+    private static final int MAX_VERIFIED_UNSEEN_FRAMES = 12;
     // Un objeto en reposo que aparece desplazado mas de MOVEMENT_TOLERANCE_PX solo se da por retirado si sigue desplazado
     // en este numero de frames seguidos: una persona que pasa por delante lo tapa y la caja del detector salta de sitio.
     private static final int REMOVAL_CONFIRM_FRAMES = 2;
@@ -63,6 +71,8 @@ public class ObjectTracker {
     private final Path frameStorageDir;
     private final Function<BufferedImage, Keypoint[]> poseFinder;
     private OwnerVisionDescriber visionDescriber;
+    // opcional: comparar la imagen de la zona antes de dar por retirado un objeto que el detector dejo de ver
+    private boolean verifyRemovalByImage;
     // persona -> dato de tatuajes ya obtenido de sus antebrazos en esta corrida (ver tattoosFromArms)
     private final Map<Long, String> tattooCheckByPerson = new java.util.concurrent.ConcurrentHashMap<>();
     private Executor aiExecutor;
@@ -203,6 +213,9 @@ public class ObjectTracker {
             if (t.getFramesUnseen() < MAX_FRAMES_UNSEEN) {
                 continue;
             }
+            if (t.getState() == TrackedObject.State.AT_REST && stillLooksInPlace(t, frame)) {
+                continue;
+            }
             if (t.getState() == TrackedObject.State.AT_REST) {
                 markRemoved(t, personDetections, personIds, now, frame);
             } else {
@@ -211,6 +224,31 @@ public class ObjectTracker {
             }
             tracked.remove(t.getId());
         }
+    }
+
+    /**
+     * El detector no ve el objeto, pero la zona donde estaba en reposo se ve casi igual que la ultima vez que se lo vio:
+     * alguien lo tapa un momento o el detector fallo. Solo se espera un numero limitado de frames; sin imagen no se puede
+     * comprobar y se decide como siempre.
+     */
+    private boolean stillLooksInPlace(TrackedObject t, BufferedImage frame) {
+        if (t.getFramesUnseen() >= MAX_FRAMES_UNSEEN + MAX_VERIFIED_UNSEEN_FRAMES) {
+            return false;
+        }
+        if (!verifyRemovalByImage) {
+            return false;
+        }
+        RegionFingerprint atRest = t.getRestFingerprint();
+        RegionFingerprint now = RegionFingerprint.of(frame, t.getX(), t.getY(), t.getWidth(), t.getHeight());
+        if (atRest == null || now == null) {
+            return false;
+        }
+        double change = atRest.changedFraction(now);
+        boolean stillThere = change < STILL_THERE_MAX_CHANGE;
+        System.out.println("[DEBUG]   -> Objeto #" + t.getId() + " sin verse " + t.getFramesUnseen() + " frames; su zona cambio "
+                + Math.round(change * 100) + "%: " + (stillThere ? "sigue ahi (tapado o mal detectado), no se da por retirado"
+                        : "ya no esta, se da por retirado"));
+        return stillThere;
     }
 
     /** Objeto sin emparejar de OTRA clase que se solapa con la deteccion (el detector le cambio la clase), o null. */
@@ -303,6 +341,9 @@ public class ObjectTracker {
         if (t.getState() == TrackedObject.State.AT_REST) {
             // quien esta junto al objeto ahora: si desaparece o se lo llevan, es a quien se le atribuye el retiro
             t.setLastNearPersons(collectNearPersons(t.getX(), t.getY(), t.getWidth(), t.getHeight(), personDetections, personIds, frame));
+            if (verifyRemovalByImage) {
+                t.setRestFingerprint(RegionFingerprint.of(frame, t.getX(), t.getY(), t.getWidth(), t.getHeight()));
+            }
         }
 
         Duration quietFor = Duration.between(t.getRestSinceAt(), now);
@@ -316,6 +357,9 @@ public class ObjectTracker {
 
     private void markAtRest(TrackedObject t, Instant now, BufferedImage frame) {
         t.setState(TrackedObject.State.AT_REST);
+        if (verifyRemovalByImage) {
+            t.setRestFingerprint(RegionFingerprint.of(frame, t.getX(), t.getY(), t.getWidth(), t.getHeight()));
+        }
         System.out.println("[DEBUG]   -> ¡Objeto #" + t.getId() + " marcado EN REPOSO! Guardando en BD...");
         String framePath = saveFrameSnapshot(frame, t.getId(), "REGISTERED_AT_REST", now);
         OwnerInfo owner = resolveOwner(t, now);
@@ -331,8 +375,9 @@ public class ObjectTracker {
         // objeto tiene una caja enorme y su centro queda lejos aunque este tocandolo
         double ox = t.getX() + t.getWidth() / 2.0;
         double oy = t.getY() + t.getHeight() / 2.0;
+        double personRadius = scaledProximity(PERSON_PROXIMITY_PX, t.getWidth(), t.getHeight());
         boolean personNearby = personDetections.stream()
-                .anyMatch(p -> distanceToBox(ox, oy, p) <= PERSON_PROXIMITY_PX);
+                .anyMatch(p -> distanceToBox(ox, oy, p) <= personRadius);
         String framePath = saveFrameSnapshot(frame, t.getId(), "REMOVED", now);
         RemovalAnalysis analysis = analyzeRemoval(t, personDetections, personIds, frame, now);
         long eventId = store.recordRemoved(t.getId(), t.getClassName(), t.getX(), t.getY(), t.getWidth(), t.getHeight(), now,
@@ -351,7 +396,7 @@ public class ObjectTracker {
     private record RemovalAnalysis(RemovalInfo info, RemovalKind kind, TrackedObject.NearPerson remover, Keypoint[] pose) {}
 
     /**
-     * Personas junto al objeto (dentro de {@link #REMOVAL_PROXIMITY_PX}), con su recorte y la foto que las muestra
+     * Personas junto al objeto (dentro de {@link #REMOVAL_PROXIMITY_PX} o del radio escalado), con su recorte y la foto que las muestra
      * junto al objeto. La clave es el id de persona; el mas cercano se puede elegir por {@code distance}.
      */
     private Map<Long, TrackedObject.NearPerson> collectNearPersons(int ox, int oy, int ow, int oh, List<Detection> persons,
@@ -359,10 +404,11 @@ public class ObjectTracker {
         double cx = ox + ow / 2.0;
         double cy = oy + oh / 2.0;
         Map<Long, TrackedObject.NearPerson> near = new LinkedHashMap<>();
+        double radius = scaledProximity(REMOVAL_PROXIMITY_PX, ow, oh);
         for (int i = 0; i < persons.size(); i++) {
             Detection person = persons.get(i);
             double distance = distanceToBox(cx, cy, person);
-            if (distance > REMOVAL_PROXIMITY_PX) {
+            if (distance > radius) {
                 continue;
             }
             Rectangle objectInCrop = new Rectangle(ox - Math.max(0, person.x()), oy - Math.max(0, person.y()), ow, oh);
@@ -435,6 +481,16 @@ public class ObjectTracker {
             }
         }
         return best;
+    }
+
+    /**
+     * Activa (opcionalmente) la verificacion por imagen del retiro: si el detector deja de ver un objeto en reposo pero
+     * su zona se ve casi igual, se espera en vez de declararlo retirado (una persona que se cruza lo tapa). Necesita que
+     * onFrame reciba el frame real; con frames null no hace nada. Devuelve este mismo tracker.
+     */
+    public ObjectTracker withRemovalVerification() {
+        this.verifyRemovalByImage = true;
+        return this;
     }
 
     /** Activa (opcionalmente) la descripcion del dueno con un modelo de vision; devuelve este mismo tracker. */
@@ -681,7 +737,7 @@ public class ObjectTracker {
         double oy = objDet.y() + objDet.height() / 2.0;
 
         int nearestIdx = -1;
-        double nearest = OWNER_PROXIMITY_PX;
+        double nearest = scaledProximity(OWNER_PROXIMITY_PX, objDet.width(), objDet.height());
         for (int i = 0; i < persons.size(); i++) {
             double d = distanceToBox(ox, oy, persons.get(i));
             if (d <= nearest) {
@@ -702,6 +758,11 @@ public class ObjectTracker {
             t.recordNearPerson(personIds.get(nearestIdx), cropRegion(frame, person.x(), person.y(), person.width(), person.height()),
                     objectInCrop, cropRegion(frame, ux, uy, ux2 - ux, uy2 - uy));
         }
+    }
+
+    /** Radio de "cerca" para un objeto de ese tamano: el minimo dado, o una fraccion de su lado mayor si eso es mas. */
+    static double scaledProximity(double minimumPx, int objectWidth, int objectHeight) {
+        return Math.max(minimumPx, PROXIMITY_PER_OBJECT_SIZE * Math.max(objectWidth, objectHeight));
     }
 
     /** Distancia de un punto a un rectangulo (0 si el punto queda dentro). */
