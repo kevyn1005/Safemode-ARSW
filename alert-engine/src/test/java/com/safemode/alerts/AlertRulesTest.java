@@ -65,6 +65,27 @@ class AlertRulesTest {
         assertTrue(AlertRules.evaluate(removed("ALGO_NUEVO", null, null)).isEmpty());
     }
 
+    private static StoredEvent removedObject(String className, String kind) {
+        return new StoredEvent(1, 1, className, "REMOVED", Instant.now(), 0, 0, 10, 10, false, null,
+                null, null, null, null, kind, null, null, null, null);
+    }
+
+    @Test
+    void elArticuloYElParticipioConcuerdanConElGeneroDelObjeto() {
+        assertEquals("Posible robo: el bolso fue retirado por alguien distinto del dueño",
+                AlertRules.evaluate(removedObject("handbag", "BY_OTHER")).orElseThrow().message());
+        assertEquals("Posible robo: la maleta fue retirada por alguien distinto del dueño",
+                AlertRules.evaluate(removedObject("suitcase", "BY_OTHER")).orElseThrow().message());
+        assertEquals("Retiraron un bolso que no tenía dueño registrado",
+                AlertRules.evaluate(removedObject("handbag", "OWNER_UNKNOWN")).orElseThrow().message());
+        assertEquals("Retiraron una mochila que no tenía dueño registrado",
+                AlertRules.evaluate(removedObject("backpack", "OWNER_UNKNOWN")).orElseThrow().message());
+        assertEquals("La mochila desapareció sin nadie cerca",
+                AlertRules.evaluate(removedObject("backpack", "NO_ONE_NEAR")).orElseThrow().message());
+        assertEquals("El bolso desapareció sin nadie cerca",
+                AlertRules.evaluate(removedObject("handbag", "NO_ONE_NEAR")).orElseThrow().message());
+    }
+
     @Test
     void nombraLaClaseEnEspanolYConservaLasDesconocidas() {
         StoredEvent backpack = new StoredEvent(1, 1, "backpack", "REMOVED", Instant.now(), 0, 0, 10, 10, false, null,
