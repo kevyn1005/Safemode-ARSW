@@ -334,14 +334,21 @@ public class ObjectTracker {
         boolean personNearby = personDetections.stream()
                 .anyMatch(p -> distanceToBox(ox, oy, p) <= PERSON_PROXIMITY_PX);
         String framePath = saveFrameSnapshot(frame, t.getId(), "REMOVED", now);
-        RemovalInfo removal = analyzeRemoval(t, personDetections, personIds, frame, now);
+        RemovalAnalysis analysis = analyzeRemoval(t, personDetections, personIds, frame, now);
         long eventId = store.recordRemoved(t.getId(), t.getClassName(), t.getX(), t.getY(), t.getWidth(), t.getHeight(), now,
-                personNearby, framePath, t.getOwner(), removal);
+                personNearby, framePath, t.getOwner(), analysis.info());
         String aiDescription = t.registerRemovedEvent(eventId);
         if (aiDescription != null) {
             store.updateOwnerAiDescription(eventId, aiDescription);
         }
+        // Solo en retiros sospechosos con una persona a quien atribuirselo: pocas llamadas y donde mas ayuda al vigilante
+        if (analysis.kind().worthDescribingRemover() && analysis.remover() != null) {
+            requestRemoverAiDescription(t, eventId, analysis.remover().crop, analysis.pose(), analysis.remover().personId);
+        }
     }
+
+    /** Resultado del analisis de un retiro: lo que se guarda, mas lo que hace falta para describir a quien lo retiro. */
+    private record RemovalAnalysis(RemovalInfo info, RemovalKind kind, TrackedObject.NearPerson remover, Keypoint[] pose) {}
 
     /**
      * Personas junto al objeto (dentro de {@link #REMOVAL_PROXIMITY_PX}), con su recorte y la foto que las muestra
@@ -375,8 +382,8 @@ public class ObjectTracker {
      * que se vio quieto y tambien las que estan junto a el ahora (quien se lo lleva suele aparecer justo al levantarlo,
      * y para cuando el objeto desaparece quiza ya se alejo).
      */
-    private RemovalInfo analyzeRemoval(TrackedObject t, List<Detection> personDetections, List<Long> personIds,
-                                       BufferedImage frame, Instant now) {
+    private RemovalAnalysis analyzeRemoval(TrackedObject t, List<Detection> personDetections, List<Long> personIds,
+                                           BufferedImage frame, Instant now) {
         Map<Long, TrackedObject.NearPerson> near = new LinkedHashMap<>(t.getLastNearPersons());
         near.putAll(t.getDisappearanceNear());
         near.putAll(collectNearPersons(t.getX(), t.getY(), t.getWidth(), t.getHeight(), personDetections, personIds, frame));
@@ -385,7 +392,7 @@ public class ObjectTracker {
         RemovalKind kind = classifyRemoval(ownerId, near.keySet());
         TrackedObject.NearPerson remover = pickRemover(kind, ownerId, near);
         if (remover == null) {
-            return new RemovalInfo(kind.name(), null, null, null);
+            return new RemovalAnalysis(new RemovalInfo(kind.name(), null, null, null), kind, null, null);
         }
 
         String cropPath = remover.crop == null ? null
@@ -393,7 +400,7 @@ public class ObjectTracker {
                         "obj" + t.getId() + "_REMOVER_person" + remover.personId + "_" + now.toEpochMilli() + ".png");
         Keypoint[] pose = (remover.crop == null || poseFinder == null) ? null : poseFinder.apply(remover.crop);
         String description = PersonDescriber.describe(remover.crop, remover.objectInCrop, pose);
-        return new RemovalInfo(kind.name(), remover.personId, description, cropPath);
+        return new RemovalAnalysis(new RemovalInfo(kind.name(), remover.personId, description, cropPath), kind, remover, pose);
     }
 
     /** Tipo de retiro segun el dueno del objeto (puede ser null) y las personas que estaban junto a el. */
@@ -537,6 +544,40 @@ public class ObjectTracker {
         return result;
     }
 
+    /**
+     * Descripcion por IA de una persona a partir de su recorte. Segunda llamada (solo antebrazos) si la primera
+     * respondio pero no confirmo tatuajes: falto el dato o dijo "ninguno". Si la primera fallo del todo, el servicio
+     * probablemente no responde: no se insiste. Devuelve null si no se pudo describir.
+     */
+    private String describePerson(OwnerVisionDescriber describer, TrackedObject t, BufferedImage crop, Keypoint[] pose,
+                                  Long personId) {
+        String text = describer.describe(crop);
+        if (text != null && pose != null && !reportsTattoos(text)) {
+            text = mergeTattoos(text, tattoosFromArms(describer, t, crop, pose, personId));
+        }
+        return text;
+    }
+
+    /** Descripcion por IA de quien se llevo el objeto, en segundo plano; se guarda en la fila REMOVED. */
+    private void requestRemoverAiDescription(TrackedObject t, long eventId, BufferedImage crop, Keypoint[] pose, Long personId) {
+        OwnerVisionDescriber describer = visionDescriber;
+        if (describer == null || crop == null) {
+            return;
+        }
+        aiExecutor().execute(() -> {
+            try {
+                String text = describePerson(describer, t, crop, pose, personId);
+                if (text == null || text.isBlank()) {
+                    return;
+                }
+                store.updateRemoverAiDescription(eventId, text);
+                System.out.println("[IA] Objeto #" + t.getId() + " - quien lo retiro (persona #" + personId + "): " + text);
+            } catch (RuntimeException e) {
+                System.err.println("[IA] No se pudo guardar la descripcion de quien retiro el objeto: " + e.getMessage());
+            }
+        });
+    }
+
     /** Pide la descripcion del dueno en un hilo aparte: puede tardar segundos y no debe frenar los frames. */
     private void requestAiDescription(TrackedObject t, BufferedImage ownerCrop, Keypoint[] pose, Long ownerId) {
         OwnerVisionDescriber describer = visionDescriber;
@@ -545,12 +586,7 @@ public class ObjectTracker {
         }
         aiExecutor().execute(() -> {
             try {
-                String text = describer.describe(ownerCrop);
-                // Segunda llamada (solo antebrazos) si la primera respondio pero no confirmo tatuajes: falto el dato
-                // o dijo "ninguno". Si la primera fallo del todo, el servicio probablemente no responde: no se insiste.
-                if (text != null && pose != null && !reportsTattoos(text)) {
-                    text = mergeTattoos(text, tattoosFromArms(describer, t, ownerCrop, pose, ownerId));
-                }
+                String text = describePerson(describer, t, ownerCrop, pose, ownerId);
                 if (text == null || text.isBlank()) {
                     return;
                 }

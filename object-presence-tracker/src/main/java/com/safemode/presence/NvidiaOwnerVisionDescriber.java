@@ -25,6 +25,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Descripcion del dueno con un modelo de vision del catalogo de NVIDIA (API compatible con OpenAI).
@@ -93,6 +94,10 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
     private final String model;
     private final Duration timeout;
     private final Duration hedgeAfter;
+    // consumo acumulado segun el campo "usage" que devuelve el servicio (solo cuenta la respuesta que se uso)
+    private final AtomicLong promptTokens = new AtomicLong();
+    private final AtomicLong completionTokens = new AtomicLong();
+    private final AtomicInteger callsWithUsage = new AtomicInteger();
 
     public NvidiaOwnerVisionDescriber(String apiKey) {
         this(apiKey, DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_TIMEOUT);
@@ -232,6 +237,7 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
                             + " s: " + snippet(response.body()));
                     return null;
                 }
+                recordUsage(response.body());
                 return extractContent(response.body());
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -315,6 +321,31 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
             throw re;
         }
         return new IOException(cause);
+    }
+
+    /** Anota los tokens que informa el servicio en "usage" (entrada y salida) y los muestra; sin ese campo no hace nada. */
+    private void recordUsage(String responseBody) {
+        try {
+            JsonObject usage = JsonParser.parseString(responseBody).getAsJsonObject().getAsJsonObject("usage");
+            if (usage == null || !usage.has("prompt_tokens") || !usage.has("completion_tokens")) {
+                return;
+            }
+            long in = usage.get("prompt_tokens").getAsLong();
+            long out = usage.get("completion_tokens").getAsLong();
+            promptTokens.addAndGet(in);
+            completionTokens.addAndGet(out);
+            callsWithUsage.incrementAndGet();
+            System.out.println("[IA] Tokens de esta llamada: entrada " + in + ", salida " + out);
+        } catch (RuntimeException e) {
+            // el consumo es solo informativo: una respuesta con otro formato no debe romper la descripcion
+        }
+    }
+
+    /** Resumen del consumo de la corrida, para imprimirlo al final. */
+    public String usageSummary() {
+        return "[IA] Consumo de la corrida: " + callsWithUsage.get() + " llamada(s) con dato de uso, "
+                + promptTokens.get() + " tokens de entrada y " + completionTokens.get() + " de salida"
+                + " (no cuenta una segunda peticion descartada ni el calentamiento)";
     }
 
     private static String secondsSince(long startNanos) {

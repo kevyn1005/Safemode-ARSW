@@ -85,6 +85,7 @@ public class PresenceEventStore implements AutoCloseable {
             st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS remover_person_id BIGINT");
             st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS remover_description VARCHAR(200)");
             st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS remover_crop_path VARCHAR(500)");
+            st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS remover_ai_description VARCHAR(1000)");
         }
     }
 
@@ -292,6 +293,28 @@ public class PresenceEventStore implements AutoCloseable {
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new IllegalStateException("No se pudo guardar la descripcion del dueno", e);
+        }
+    }
+
+    /** Guarda la descripcion por IA de quien retiro el objeto (llega unos segundos despues del evento REMOVED). */
+    public void updateRemoverAiDescription(long eventId, String aiDescription) {
+        try (PreparedStatement ps = connection.prepareStatement(
+                "UPDATE object_presence_event SET remover_ai_description = ? WHERE id = ?")) {
+            ps.setString(1, aiDescription);
+            ps.setLong(2, eventId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new IllegalStateException("No se pudo guardar la descripcion de quien retiro el objeto", e);
+        }
+    }
+
+    /** Da la descripcion por IA de quien retiro el objeto en el ultimo evento REMOVED, o null (usado en las pruebas). */
+    String lastRemoverAiDescription() {
+        String sql = "SELECT remover_ai_description FROM object_presence_event WHERE event_type = 'REMOVED' ORDER BY id DESC LIMIT 1";
+        try (var st = connection.createStatement(); var rs = st.executeQuery(sql)) {
+            return rs.next() ? rs.getString(1) : null;
+        } catch (SQLException e) {
+            throw new IllegalStateException("No se pudo consultar object_presence_event", e);
         }
     }
 

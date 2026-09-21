@@ -903,6 +903,133 @@ class ObjectTrackerTest {
         assertTrue(Files.exists(Path.of(removal.cropPath())), "la foto de quien se la llevo debe existir en disco");
     }
 
+    // ---- Descripcion por IA de quien se lleva el objeto (solo retiros sospechosos) ----
+
+    private static BufferedImage redFrame() {
+        BufferedImage frame = new BufferedImage(400, 400, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = frame.createGraphics();
+        g.setColor(Color.RED);
+        g.fillRect(0, 0, 400, 400);
+        g.dispose();
+        return frame;
+    }
+
+    /** La maleta queda con el dueno (persona #1) al lado y luego otra persona (#2) se la lleva; todos los frames con imagen. */
+    private static void retiroPorOtraPersonaConImagen(ObjectTracker tracker, MutableClock clock) {
+        BufferedImage frame = redFrame();
+        tracker.onFrame(frame, List.of(suitcase(100, 100), DUENO));
+        clock.advance(Duration.ofSeconds(4));
+        tracker.onFrame(frame, List.of(suitcase(100, 100), DUENO));
+        for (int i = 0; i < 6; i++) {
+            clock.advance(Duration.ofSeconds(1));
+            tracker.onFrame(frame, List.of(suitcase(100, 100)));
+        }
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onFrame(frame, List.of(suitcase(100, 100), OTRA));
+        for (int i = 0; i < 3; i++) {
+            clock.advance(Duration.ofSeconds(1));
+            tracker.onFrame(frame, List.of(OTRA));
+        }
+    }
+
+    @Test
+    void enUnRetiroSospechosoSeDescribeConIaAQuienSeLlevoElObjeto(@TempDir Path tempDir) {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("ia-quien-retiro");
+        java.util.List<String> llamadas = new java.util.ArrayList<>();
+        ObjectTracker tracker = new ObjectTracker(store, clock, tempDir).withOwnerVisionDescriber(crop -> {
+            llamadas.add("describe");
+            return "ropa superior: camisa roja; tatuajes: brazo";
+        });
+        tracker.useAiExecutor(Runnable::run);
+
+        retiroPorOtraPersonaConImagen(tracker, clock);
+
+        assertEquals(RemovalKind.BY_OTHER.name(), store.lastRemoval().kind());
+        assertEquals(2, llamadas.size(), "una para el dueno al registrar y otra para quien se llevo el objeto");
+        assertEquals("ropa superior: camisa roja; tatuajes: brazo", store.lastRemoverAiDescription());
+    }
+
+    @Test
+    void enUnRetiroNormalPorElDuenoNoSeGastaUnaLlamadaParaDescribirloDeNuevo(@TempDir Path tempDir) {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("ia-retiro-normal");
+        java.util.List<String> llamadas = new java.util.ArrayList<>();
+        ObjectTracker tracker = new ObjectTracker(store, clock, tempDir).withOwnerVisionDescriber(crop -> {
+            llamadas.add("describe");
+            return "ropa superior: camisa roja; tatuajes: brazo";
+        });
+        tracker.useAiExecutor(Runnable::run);
+        BufferedImage frame = redFrame();
+
+        tracker.onFrame(frame, List.of(suitcase(100, 100), DUENO));
+        clock.advance(Duration.ofSeconds(4));
+        tracker.onFrame(frame, List.of(suitcase(100, 100), DUENO));
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onFrame(frame, List.of(suitcase(100, 100), DUENO));
+        for (int i = 0; i < 3; i++) {
+            clock.advance(Duration.ofSeconds(1));
+            tracker.onFrame(frame, List.of(DUENO));
+        }
+
+        assertEquals(RemovalKind.BY_OWNER.name(), store.lastRemoval().kind());
+        assertEquals(1, llamadas.size(), "solo la del dueno al registrar: un retiro normal se queda con el color y la foto");
+        assertNull(store.lastRemoverAiDescription());
+    }
+
+    @Test
+    void siNadieEstabaCercaNoHayANadieAQuienDescribir(@TempDir Path tempDir) {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("ia-nadie-cerca");
+        java.util.List<String> llamadas = new java.util.ArrayList<>();
+        ObjectTracker tracker = new ObjectTracker(store, clock, tempDir).withOwnerVisionDescriber(crop -> {
+            llamadas.add("describe");
+            return "ropa superior: camisa roja; tatuajes: brazo";
+        });
+        tracker.useAiExecutor(Runnable::run);
+        BufferedImage frame = redFrame();
+
+        tracker.onFrame(frame, List.of(suitcase(100, 100), DUENO));
+        clock.advance(Duration.ofSeconds(4));
+        tracker.onFrame(frame, List.of(suitcase(100, 100), DUENO));
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onFrame(frame, List.of(suitcase(100, 100)));   // el dueno ya no esta
+        for (int i = 0; i < 3; i++) {
+            clock.advance(Duration.ofSeconds(1));
+            tracker.onFrame(frame, List.of());
+        }
+
+        assertEquals(RemovalKind.NO_ONE_NEAR.name(), store.lastRemoval().kind());
+        assertEquals(1, llamadas.size());
+        assertNull(store.lastRemoverAiDescription());
+    }
+
+    @Test
+    void siLaIaNoRespondeParaQuienRetiroSeConservanElColorYLaFoto(@TempDir Path tempDir) {
+        MutableClock clock = new MutableClock();
+        PresenceEventStore store = PresenceEventStore.inMemory("ia-quien-retiro-sin-respuesta");
+        java.util.concurrent.atomic.AtomicInteger n = new java.util.concurrent.atomic.AtomicInteger();
+        ObjectTracker tracker = new ObjectTracker(store, clock, tempDir).withOwnerVisionDescriber(
+                crop -> n.incrementAndGet() == 1 ? "ropa superior: camisa roja; tatuajes: brazo" : null);
+        tracker.useAiExecutor(Runnable::run);
+
+        retiroPorOtraPersonaConImagen(tracker, clock);
+
+        PresenceEventStore.RemovalInfo removal = store.lastRemoval();
+        assertEquals("persona con camisa roja", removal.description());
+        assertNotNull(removal.cropPath());
+        assertNull(store.lastRemoverAiDescription(), "la IA no respondio: no queda descripcion por IA, sin error");
+    }
+
+    @Test
+    void soloLosRetirosSospechososConPersonaMerecenDescripcionPorIa() {
+        assertTrue(RemovalKind.BY_OTHER.worthDescribingRemover());
+        assertTrue(RemovalKind.OWNER_AND_OTHER_NEAR.worthDescribingRemover());
+        assertTrue(RemovalKind.OWNER_UNKNOWN.worthDescribingRemover());
+        assertFalse(RemovalKind.BY_OWNER.worthDescribingRemover());
+        assertFalse(RemovalKind.NO_ONE_NEAR.worthDescribingRemover());
+    }
+
     @Test
     void classifyRemovalCubreTodosLosCasos() {
         assertEquals(RemovalKind.NO_ONE_NEAR, ObjectTracker.classifyRemoval(1L, java.util.Set.of()));

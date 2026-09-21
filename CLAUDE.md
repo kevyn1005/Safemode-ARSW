@@ -153,6 +153,17 @@ arquitectura de software, con varios módulos Maven en un reactor:
   calentamiento de solo texto al inicio (`warmUpAsync`) NO evita esos cuelgues.
 - Resultado en `owner_ai_description` de las filas `REGISTERED_AT_REST` y `REMOVED` (se
   actualiza por id de fila, porque `tracked_object_id` se reinicia en cada ejecución).
+- **Quien retira el objeto también se describe con IA, pero solo en retiros sospechosos**
+  (`RemovalKind.worthDescribingRemover()`: `BY_OTHER`, `OWNER_AND_OTHER_NEAR`, `OWNER_UNKNOWN`,
+  y solo si hay una persona a quien atribuirlo). Va a `remover_ai_description` de la fila
+  `REMOVED`, en segundo plano, con el mismo flujo que el dueño (incluida la revisión de
+  antebrazos, cacheada por persona). En `BY_OWNER` y `NO_ONE_NEAR` no se gasta ninguna
+  llamada: bastan el color y la foto. El evento se guarda al instante y la IA lo completa
+  ~3 s después (hasta ~26 s si el servicio se cuelga): un centro de alertas no debe esperarla.
+- **Consumo de tokens**: cada respuesta trae `usage`; se imprime `[IA] Tokens de esta llamada`
+  y `usageSummary()` da el total de la corrida (el script lo muestra al final; no cuenta la
+  segunda petición descartada ni el calentamiento). Sirve para medir el costo real antes de
+  decidir si vale la pena pagar otro proveedor.
 
 ### Análisis del retiro (`RemovalKind`)
 
@@ -168,18 +179,22 @@ objeto vuelve a verse) y las que hay junto a él ahora. `removal_kind` en el eve
 | `NO_ONE_NEAR` | nadie cerca | desapareció solo / fuera de cámara |
 | `OWNER_UNKNOWN` | sin dueño registrado y alguien cerca | revisar |
 
-Además `remover_person_id`, `remover_description` (color) y `remover_crop_path` (foto de quien
-se lo llevó junto al objeto). El log imprime `RETIRO BY_OTHER por persona #N (...)`.
+Además `remover_person_id`, `remover_description` (color, local) y `remover_crop_path` (foto de
+quien se lo llevó junto al objeto), y `remover_ai_description` (IA, solo retiros sospechosos).
+El log imprime `RETIRO BY_OTHER por persona #N (...)`. **El análisis del retiro (quién estaba
+cerca y el tipo) es lógica local en Java con las cajas del detector YOLO: no usa NVIDIA.**
+Solo la descripción textual opcional de quien retira la hace la IA externa.
 
 ### Base de datos (`PresenceEventStore`, tabla `object_presence_event`)
 
 `id`, `tracked_object_id`, `class_name`, `event_type` (`REGISTERED_AT_REST` | `REMOVED`),
 `occurred_at`, `pos_x`, `pos_y`, `width`, `height`, `person_nearby`, `frame_path`,
 `owner_person_id`, `owner_description`, `owner_crop_path`, `owner_ai_description`,
-`removal_kind`, `remover_person_id`, `remover_description`, `remover_crop_path`.
+`removal_kind`, `remover_person_id`, `remover_description`, `remover_crop_path`,
+`remover_ai_description`.
 `recordRegistered`/`recordRemoved` devuelven el id de la fila. Helpers de prueba:
 `countEvents`, `lastPersonNearby`, `lastFramePath`, `lastOwner`, `lastOwnerAiDescription`,
-`lastRemoval`, `lastTrackedObjectId`. `clearAllEvents()` es solo para el script manual.
+`lastRemoval`, `lastRemoverAiDescription`, `lastTrackedObjectId`. `clearAllEvents()` es solo para el script manual.
 
 ### `vision-detection-service`
 

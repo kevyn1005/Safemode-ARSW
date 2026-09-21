@@ -74,6 +74,9 @@ public class ObjectPresenceTrackerTest {
 
             // las descripciones por IA llegan en segundo plano: esperarlas antes de cerrar la base de datos
             tracker.awaitPendingDescriptions(Duration.ofSeconds(70));
+            if (ai != null) {
+                System.out.println(ai.usageSummary());
+            }
         } finally {
             capturer.stop();
         }

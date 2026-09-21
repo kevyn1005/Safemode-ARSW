@@ -15,5 +15,13 @@ public enum RemovalKind {
     /** Nadie estaba junto al objeto: desaparecio solo (o se lo llevaron fuera de camara). */
     NO_ONE_NEAR,
     /** El objeto no tenia dueno registrado, pero alguien estaba cerca al retirarse. */
-    OWNER_UNKNOWN
+    OWNER_UNKNOWN;
+
+    /**
+     * Si vale la pena describir con IA a quien se lo llevo: solo en los retiros sospechosos donde hay una persona a
+     * quien atribuirselo. En un retiro normal (BY_OWNER) bastan el color y la foto, y asi se ahorran llamadas.
+     */
+    public boolean worthDescribingRemover() {
+        return this == BY_OTHER || this == OWNER_AND_OTHER_NEAR || this == OWNER_UNKNOWN;
+    }
 }

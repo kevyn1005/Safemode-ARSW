@@ -304,6 +304,40 @@ class NvidiaOwnerVisionDescriberTest {
         assertEquals(1, requests.get());
     }
 
+    /** Respuesta con el campo "usage" que informa cuantos tokens se gastaron. */
+    private static String serviceResponseWithUsage(String modelText, int promptTokens, int completionTokens) {
+        JsonObject root = JsonParser.parseString(serviceResponse(modelText)).getAsJsonObject();
+        JsonObject usage = new JsonObject();
+        usage.addProperty("prompt_tokens", promptTokens);
+        usage.addProperty("completion_tokens", completionTokens);
+        usage.addProperty("total_tokens", promptTokens + completionTokens);
+        root.add("usage", usage);
+        return root.toString();
+    }
+
+    @Test
+    void elConsumoDeTokensSeAcumulaConLoQueInformaElServicio() {
+        responseBody = serviceResponseWithUsage("{\"ropa_superior\": \"camiseta negra\"}", 1200, 60);
+        NvidiaOwnerVisionDescriber describer = client();
+
+        describer.describe(new BufferedImage(50, 100, BufferedImage.TYPE_INT_RGB));
+        describer.describe(new BufferedImage(50, 100, BufferedImage.TYPE_INT_RGB));
+
+        String summary = describer.usageSummary();
+        assertTrue(summary.contains("2 llamada(s)"), summary);
+        assertTrue(summary.contains("2400 tokens de entrada"), summary);
+        assertTrue(summary.contains("120 de salida"), summary);
+    }
+
+    @Test
+    void sinCampoUsageElResumenQuedaEnCeroYNadaFalla() {
+        responseBody = serviceResponse("{\"ropa_superior\": \"camiseta negra\"}");
+        NvidiaOwnerVisionDescriber describer = client();
+
+        assertEquals("ropa superior: camiseta negra", describer.describe(new BufferedImage(50, 100, BufferedImage.TYPE_INT_RGB)));
+        assertTrue(describer.usageSummary().contains("0 llamada(s)"), describer.usageSummary());
+    }
+
     @Test
     void siElModeloRespondeEnTextoLibreSePideDeNuevoYSeUsaLaSegundaRespuesta() {
         responseBody = serviceResponse(TEXTO_LIBRE);
