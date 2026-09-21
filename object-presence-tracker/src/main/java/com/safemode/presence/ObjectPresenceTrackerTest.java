@@ -37,7 +37,8 @@ public class ObjectPresenceTrackerTest {
         PoseEstimator poseEstimator = Files.exists(poseModel) ? new PoseEstimator(poseModel.toString()) : null;
         System.out.println("Modelo de pose: " + (poseEstimator != null ? poseModel : "ninguno (se usa la franja central)"));
 
-        try (PresenceEventStore store = new PresenceEventStore("./object-presence-tracker/data/presence")) {
+        // Sin variable SAFEMODE_DB_URL usa el archivo local; con ella (ej. jdbc:h2:tcp://localhost:9092/presence) la base de docker-compose.
+        try (PresenceEventStore store = PresenceEventStore.fromEnvironment("./object-presence-tracker/data/presence")) {
             // Cada corrida de prueba empieza tambien con la tabla vacia (las fotos ya se borraron arriba).
             System.out.println("Filas de la corrida anterior borradas: " + store.clearAllEvents());
 

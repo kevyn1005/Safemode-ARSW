@@ -30,6 +30,9 @@ import java.util.Optional;
  */
 public class PresenceEventStore implements AutoCloseable {
 
+    /** Variable de entorno con la URL JDBC de la base (por ejemplo la del servicio H2 de docker-compose). */
+    public static final String DB_URL_ENV = "SAFEMODE_DB_URL";
+
     private final Connection connection;
 
     public PresenceEventStore(String dbFilePath) {
@@ -38,6 +41,28 @@ public class PresenceEventStore implements AutoCloseable {
             createSchema();
         } catch (SQLException e) {
             throw new IllegalStateException("No se pudo abrir la base de datos H2 en " + dbFilePath, e);
+        }
+    }
+
+    /**
+     * URL JDBC a usar: la de la variable de entorno {@link #DB_URL_ENV} si tiene valor (base en otro contenedor, por
+     * ejemplo {@code jdbc:h2:tcp://localhost:9092/presence}); si no, el archivo local de siempre.
+     */
+    public static String jdbcUrlFor(String envValue, String defaultFilePath) {
+        return envValue == null || envValue.isBlank() ? "jdbc:h2:file:" + defaultFilePath + ";AUTO_SERVER=TRUE" : envValue.trim();
+    }
+
+    /** Abre la base indicada por {@link #DB_URL_ENV}, o el archivo local {@code defaultFilePath} si no esta definida. */
+    public static PresenceEventStore fromEnvironment(String defaultFilePath) {
+        return forUrl(jdbcUrlFor(System.getenv(DB_URL_ENV), defaultFilePath));
+    }
+
+    /** Abre la base H2 de esa URL JDBC (archivo, memoria o servidor TCP). */
+    public static PresenceEventStore forUrl(String jdbcUrl) {
+        try {
+            return new PresenceEventStore(DriverManager.getConnection(jdbcUrl));
+        } catch (SQLException e) {
+            throw new IllegalStateException("No se pudo abrir la base de datos H2 en " + jdbcUrl, e);
         }
     }
 

@@ -71,6 +71,31 @@ class PresenceEventStoreQueryTest {
     }
 
     @Test
+    void laUrlDeLaBaseVieneDeLaVariableDeEntornoOEsElArchivoLocal() {
+        assertEquals("jdbc:h2:file:./datos/presence;AUTO_SERVER=TRUE", PresenceEventStore.jdbcUrlFor(null, "./datos/presence"));
+        assertEquals("jdbc:h2:file:./datos/presence;AUTO_SERVER=TRUE", PresenceEventStore.jdbcUrlFor("   ", "./datos/presence"));
+        assertEquals("jdbc:h2:tcp://localhost:9092/presence",
+                PresenceEventStore.jdbcUrlFor(" jdbc:h2:tcp://localhost:9092/presence ", "./datos/presence"));
+    }
+
+    @Test
+    void forUrlAbreLaBaseIndicadaYDosConexionesVenLosMismosDatos() {
+        String url = "jdbc:h2:mem:byurl_" + UUID.randomUUID().toString().replace("-", "") + ";DB_CLOSE_DELAY=-1";
+        try (PresenceEventStore writer = PresenceEventStore.forUrl(url); PresenceEventStore reader = PresenceEventStore.forUrl(url)) {
+            long id = writer.recordRegistered(1, "backpack", 0, 0, 1, 1, Instant.now(), null, null);
+
+            assertTrue(reader.findById(id).isPresent());
+        }
+    }
+
+    @Test
+    void unaUrlInvalidaDaUnErrorQueDiceCualEra() {
+        IllegalStateException error = org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> PresenceEventStore.forUrl("jdbc:h2:tcp://localhost:1/no-existe"));
+        assertTrue(error.getMessage().contains("jdbc:h2:tcp://localhost:1/no-existe"));
+    }
+
+    @Test
     void maxEventIdEsCeroSinEventosYSeReiniciaAlVaciar() {
         try (PresenceEventStore store = newStore()) {
             assertEquals(0, store.maxEventId());

@@ -50,7 +50,12 @@ public class AlertGateway extends WebSocketServer {
      *                       los clientes sin cabecera Origin (no navegadores) se aceptan
      */
     public AlertGateway(AlertEngine engine, AlertStore alerts, int port, Set<String> allowedOrigins) {
-        super(new InetSocketAddress("localhost", port));
+        this(engine, alerts, "localhost", port, allowedOrigins);
+    }
+
+    /** Igual, pero en la direccion dada: dentro de un contenedor hay que escuchar en 0.0.0.0 para que el puerto publicado llegue. */
+    public AlertGateway(AlertEngine engine, AlertStore alerts, String host, int port, Set<String> allowedOrigins) {
+        super(new InetSocketAddress(host, port));
         this.engine = engine;
         this.alerts = alerts;
         this.allowedOrigins = allowedOrigins;

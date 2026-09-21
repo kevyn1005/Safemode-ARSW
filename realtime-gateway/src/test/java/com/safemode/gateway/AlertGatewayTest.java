@@ -212,5 +212,7 @@ class AlertGatewayTest {
         assertNull(AlertJson.photoUrl(null));
         assertNull(AlertJson.photoUrl("  "));
         assertEquals("/photo/a.png", AlertJson.photoUrl("C:/Users/Home/secreto/a.png"));
+        assertEquals("/photo/a.png", AlertJson.photoUrl("object-presence-tracker\\data\\frames\\a.png"),
+                "una ruta de Windows guardada por el tracker se lee bien tambien desde Linux");
     }
 }

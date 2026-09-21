@@ -5,7 +5,6 @@ import com.google.gson.JsonObject;
 import com.safemode.alerts.Alert;
 import com.safemode.presence.PresenceEventStore.StoredEvent;
 
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 
@@ -59,12 +58,15 @@ final class AlertJson {
         return message;
     }
 
-    /** URL relativa de la foto, o null si no hay ruta. Solo se usa el nombre del archivo, nunca la ruta del disco. */
+    /**
+     * URL relativa de la foto, o null si no hay ruta. Solo se usa el nombre del archivo, nunca la ruta del disco. La ruta
+     * la guardo el tracker en su sistema (barras de Windows) y aqui puede leerla un Linux (contenedor): se corta en ambas.
+     */
     static String photoUrl(String storedPath) {
         if (storedPath == null || storedPath.isBlank()) {
             return null;
         }
-        Path fileName = Path.of(storedPath).getFileName();
-        return fileName == null ? null : PHOTO_PREFIX + fileName;
+        String fileName = storedPath.substring(Math.max(storedPath.lastIndexOf('/'), storedPath.lastIndexOf('\\')) + 1);
+        return fileName.isBlank() ? null : PHOTO_PREFIX + fileName;
     }
 }

@@ -12,8 +12,8 @@ public class AlertEngineRunner {
 
     public static void main(String[] args) throws InterruptedException {
         int seconds = args.length > 0 ? Integer.parseInt(args[0]) : 120;
-        try (PresenceEventStore events = new PresenceEventStore(DB_PATH);
-             AlertStore alerts = AlertStore.forFile(DB_PATH);
+        try (PresenceEventStore events = PresenceEventStore.fromEnvironment(DB_PATH);
+             AlertStore alerts = AlertStore.fromEnvironment(DB_PATH);
              AlertEngine engine = new AlertEngine(events, alerts)) {
             engine.addListener(alert -> System.out.println("[ALERTA " + alert.severity() + "] " + alert.type() + " - "
                     + alert.message() + (alert.framePath() != null ? " - foto: " + alert.framePath() : "")));

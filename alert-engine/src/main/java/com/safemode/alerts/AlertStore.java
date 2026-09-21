@@ -1,5 +1,7 @@
 package com.safemode.alerts;
 
+import com.safemode.presence.PresenceEventStore;
+
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -49,6 +51,11 @@ public class AlertStore implements AutoCloseable {
     /** Abre (o crea) la base H2 en ese archivo; usar la misma ruta que PresenceEventStore para compartir la base. */
     public static AlertStore forFile(String dbFilePath) {
         return open("jdbc:h2:file:" + dbFilePath + ";AUTO_SERVER=TRUE");
+    }
+
+    /** Abre la base indicada por SAFEMODE_DB_URL (p. ej. el servicio H2 de docker-compose), o el archivo local si no esta definida. */
+    public static AlertStore fromEnvironment(String defaultFilePath) {
+        return open(PresenceEventStore.jdbcUrlFor(System.getenv(PresenceEventStore.DB_URL_ENV), defaultFilePath));
     }
 
     /** Base en memoria con ese nombre; PresenceEventStore.inMemory(mismoNombre) apunta a la misma base. */

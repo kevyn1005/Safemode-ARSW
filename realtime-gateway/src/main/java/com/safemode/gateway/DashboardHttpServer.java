@@ -20,9 +20,14 @@ public class DashboardHttpServer {
     private final Path photosDir;
 
     public DashboardHttpServer(int port, Path dashboardDir, Path photosDir) throws IOException {
+        this("localhost", port, dashboardDir, photosDir);
+    }
+
+    /** Igual, pero en la direccion dada (0.0.0.0 dentro de un contenedor). */
+    public DashboardHttpServer(String host, int port, Path dashboardDir, Path photosDir) throws IOException {
         this.dashboardDir = dashboardDir.toAbsolutePath().normalize();
         this.photosDir = photosDir.toAbsolutePath().normalize();
-        this.server = HttpServer.create(new InetSocketAddress("localhost", port), 0);
+        this.server = HttpServer.create(new InetSocketAddress(host, port), 0);
         server.createContext("/", this::handle);
     }
 
