@@ -246,8 +246,18 @@ Solo la descripción textual opcional de quien retira la hace la IA externa.
 - **`ObjectPresenceTrackerTest`** (`src/main/java`, no es JUnit): prueba manual con cámara.
   Captura **60 s por defecto** (`"-Dexec.args=30"` para otro valor). **Al empezar borra los
   `.png` de `data/frames/` y vacía la tabla de eventos**; carga `yolov8m` y la pose si
-  existen, y activa la IA si existe `NVIDIA_API_KEY`. Su `Rectangle region` es un valor local
-  del monitor de quien prueba — **no es portable, no se sube tal cual al repo compartido**.
+  existen, y activa la IA si existe `NVIDIA_API_KEY`. Captura solo la **mitad izquierda** de
+  la pantalla (`leftHalfOfScreen()`, calculada del tamaño real del monitor con
+  `Toolkit.getScreenSize()`, no un número fijo — sí es portable, a diferencia del viejo
+  `Rectangle` hallado a mano por monitor) para poder tener el panel de alertas abierto en la
+  otra mitad sin romper la detección: `Robot` captura literalmente lo que hay en esos píxeles,
+  así que si el panel (u otra ventana) tapa la zona capturada, el detector "ve" esa ventana en
+  vez de la escena. En Windows: `Win`+flecha-izquierda sobre la ventana de la cámara,
+  `Win`+flecha-derecha sobre el navegador con el panel. Si la cámara no ocupa toda esa mitad
+  (otra resolución, otro acomodo), ajustar `leftHalfOfScreen()` (`MousePositionFinder` sigue
+  disponible para hallar un recorte distinto a mano). No hay forma real de "segundo plano" —
+  minimizada o tapada, la ventana de la cámara deja de capturarse bien —: es un límite del
+  enfoque de captura de pantalla, no algo que se arregle con más código (ver decisión 1).
 - **`NvidiaCropCheck`**: sin cámara, envía un recorte guardado a NVIDIA y muestra el texto
   crudo del modelo y la frase resultante (y prueba los antebrazos).
 - Verificado end-to-end con cámara real: dos maletas a la vez, cada una con su dueño, IA de

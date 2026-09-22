@@ -5,6 +5,7 @@ import com.safemode.vision.ObjectDetector;
 import com.safemode.vision.PoseEstimator;
 
 import java.awt.Rectangle;
+import java.awt.Toolkit;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -19,7 +20,10 @@ public class ObjectPresenceTrackerTest {
     public static void main(String[] args) throws Exception {
         clearPreviousRunPhotos();
 
-        Rectangle region = new Rectangle(0, 0, 2560, 1080);
+        // Solo la mitad izquierda de la pantalla: se captura esa zona (no toda), asi se puede tener el panel de
+        // alertas (http://localhost:8080) abierto en la otra mitad sin que el detector lo confunda con la escena.
+        // En Windows: Win+flecha-izquierda sobre la ventana de la camara, Win+flecha-derecha sobre el navegador.
+        Rectangle region = leftHalfOfScreen();
 
         FrameCapturer capturer = new FrameCapturer(region);
         capturer.start(2); // 2 fps
@@ -83,6 +87,17 @@ public class ObjectPresenceTrackerTest {
         } finally {
             capturer.stop();
         }
+    }
+
+    /**
+     * Mitad izquierda de la pantalla (ancho total / 2, alto completo): se calcula del tamano real de la pantalla en
+     * vez de tener un numero fijo, para que funcione en cualquier monitor. Coincide con lo que Windows deja al acoplar
+     * una ventana con Win+flecha-izquierda, asi que no hace falta calcular esquinas a mano con MousePositionFinder.
+     * Si la camara no ocupa toda esa mitad (otra resolucion, otro acomodo de ventanas), ajustar aqui.
+     */
+    private static Rectangle leftHalfOfScreen() {
+        var screen = Toolkit.getDefaultToolkit().getScreenSize();
+        return new Rectangle(0, 0, screen.width / 2, screen.height);
     }
 
     // Cada corrida de prueba empieza con la carpeta de fotos vacia: cada PNG pesa ~3 MB y se acumulan rapido.
