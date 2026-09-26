@@ -16,3 +16,8 @@ build/
 .env
 *.log
 object-presence-tracker/data/
+
+# Claude Code y Skills locales
+.claude/skills/
+.agents/
+skills-lock.json
