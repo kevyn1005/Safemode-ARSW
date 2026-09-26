@@ -333,12 +333,20 @@ Solo la descripción textual opcional de quien retira la hace la IA externa.
    sonó en un retiro `BY_OTHER` y correctamente no sonó en uno `BY_OWNER`.
 
 Pendientes menores que el usuario conoce: revisar lentes con un recorte de la cara (necesita
-decisión de privacidad), pista `remover_looks_like_owner` por color de ropa, y confirmar que la
-descripción de la IA llega con la clave de NVIDIA nueva (regenerada el 25-sep-2026 tras quedar
-expuesta en el chat; ver decisión 7 — recordar seguir pidiéndole al usuario que la regenere él
-mismo y la ponga con `setx` si vuelve a pegarla). La tabla `alert` no se vacía cuando el script
-del tracker vacía los eventos: quedan alertas viejas (con fotos borradas) hasta marcarlas como
-revisadas.
+decisión de privacidad) y pista `remover_looks_like_owner` por color de ropa. La tabla `alert`
+no se vacía cuando el script del tracker vacía los eventos: quedan alertas viejas (con fotos
+borradas) hasta marcarlas como revisadas.
+
+✅ **Clave de NVIDIA nueva confirmada** (25-sep-2026): regenerada tras quedar expuesta en el chat
+y guardada por el usuario como variable de usuario de Windows (`NVIDIA_API_KEY`, 70 caracteres),
+sin pegarla en el chat (ver decisión 7 — si vuelve a pegarla, pedirle que la regenere otra vez).
+Corrida real con cámara: la IA describió bien al dueño ("sudadera naranja; pantalones grises",
+3.8 s) y a quien se llevó la mochila en un retiro `BY_OTHER` correcto ("camisa blanca con
+patrones; pantalones cortos verdes"), con revisión de antebrazos. Consumo: 3 llamadas, 13.512
+tokens de entrada y 146 de salida (6.666 dueño, 3.464 quien retira, 3.382 antebrazos). En esa
+misma corrida el color local dijo "camisa negra" para ambas personas (naranja claro cae en
+`PIEL` y se ignora; blanco estampado tampoco sale): confirma que la descripción confiable es la
+de la IA.
 
 ## Notas operativas / gotchas
 
