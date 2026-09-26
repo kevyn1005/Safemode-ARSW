@@ -42,12 +42,18 @@
   button:hover { background: var(--accent); color: #fff; }
   .actions { margin-top: 10px; }
   label { font-size: 13px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+  #unlockSound { border-color: var(--high); color: var(--high); font-weight: 700; }
+  #unlockSound:hover { background: var(--high); color: #fff; }
+  #unlockSound.blink { animation: blink .5s step-start 0s 6; }
+  @keyframes blink { 50% { background: var(--high); color: #fff; } }
 </style>
 </head>
 <body>
 <header>
   <h1>Safemode - Centro de alertas</h1>
   <label><input type="checkbox" id="showDone"> ver revisadas</label>
+  <label><input type="checkbox" id="soundToggle"> sonido de alarma</label>
+  <button id="unlockSound" hidden>🔇 Activar sonido</button>
   <div class="status"><span class="dot" id="dot"></span><span id="statusText">Conectando...</span></div>
 </header>
 <main id="list"></main>
@@ -62,6 +68,77 @@
   var socket = null;
   var list = document.getElementById('list');
   var showDone = document.getElementById('showDone');
+  var soundToggle = document.getElementById('soundToggle');
+
+  // Alarma sonora al llegar una alerta NUEVA. Se genera con la Web Audio API (sin
+  // archivo de audio) para no depender de nada extra en esta página estática.
+  var SOUND_KEY = 'safemode-alert-sound';
+  var soundEnabled = true;
+  try { soundEnabled = localStorage.getItem(SOUND_KEY) !== 'off'; } catch (e) { /* almacenamiento bloqueado: se ignora */ }
+  soundToggle.checked = soundEnabled;
+  soundToggle.addEventListener('change', function () {
+    soundEnabled = soundToggle.checked;
+    try { localStorage.setItem(SOUND_KEY, soundEnabled ? 'on' : 'off'); } catch (e) { /* almacenamiento bloqueado: se ignora */ }
+    if (soundEnabled) ensureAudioContext();
+    updateUnlockButton();
+  });
+
+  var unlockSound = document.getElementById('unlockSound');
+  var audioCtx = null;
+  function ensureAudioContext() {
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    if (!audioCtx) {
+      audioCtx = new Ctx();
+      audioCtx.onstatechange = updateUnlockButton;
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+  function audioReady() { return audioCtx !== null && audioCtx.state === 'running'; }
+  // Los navegadores bloquean el audio hasta que el usuario hace clic o pulsa una tecla en la
+  // página. Mientras siga bloqueado se muestra el botón "Activar sonido" para que se haga ese
+  // clic al abrir el panel, y no justo al revisar la primera alerta.
+  function updateUnlockButton() { unlockSound.hidden = !soundEnabled || audioReady(); }
+  function unlockOnInteraction() {
+    ensureAudioContext();
+    if (audioReady()) {
+      document.removeEventListener('click', unlockOnInteraction);
+      document.removeEventListener('keydown', unlockOnInteraction);
+    }
+  }
+  document.addEventListener('click', unlockOnInteraction);
+  document.addEventListener('keydown', unlockOnInteraction);
+  updateUnlockButton();
+
+  function playAlarm() {
+    if (!soundEnabled) return;
+    var ctx = ensureAudioContext();
+    if (!ctx) return;
+    // Con el audio aún bloqueado el sonido quedaría en cola y saldría con el siguiente clic
+    // (p. ej. al pulsar "ya lo revisé"): mejor no programarlo y avisar con el botón.
+    if (ctx.state !== 'running') {
+      unlockSound.classList.remove('blink');
+      void unlockSound.offsetWidth; // reinicia la animación
+      unlockSound.classList.add('blink');
+      return;
+    }
+    var now = ctx.currentTime;
+    [0, 0.35].forEach(function (offset) {
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(880, now + offset);
+      osc.frequency.setValueAtTime(660, now + offset + 0.15);
+      gain.gain.setValueAtTime(0.0001, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.25, now + offset + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.28);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.3);
+    });
+  }
 
   // Todo lo que viene del servidor (incluido el texto de la IA) se inserta con textContent, nunca como HTML.
   function el(tag, className, text) {
@@ -152,6 +229,9 @@
         message.alerts.forEach(function (a) { alerts.set(a.id, a); });
       } else if (message.alert) {
         alerts.set(message.alert.id, message.alert);
+        // Solo suena con una alerta nueva ('alert'); una 'update' (p.ej. llegó la
+        // descripción de la IA unos segundos después) no debe volver a sonar.
+        if (message.type === 'alert') playAlarm();
       }
       render();
     };
