@@ -322,13 +322,23 @@ Solo la descripción textual opcional de quien retira la hace la IA externa.
    sin la variable usan el archivo local como siempre). El tracker no va en Docker (necesita `Robot`, modelos y la
    clave). Puertos solo en `127.0.0.1`; el gateway escucha en `0.0.0.0` dentro del contenedor (`SAFEMODE_BIND_HOST`).
    Se publica la base en 9093 porque la consola web de H2 ya usa el 9092. Si se corre el tracker SIN `SAFEMODE_DB_URL`
-   con el panel en Docker, las alertas no llegan (son dos bases distintas). **Pendiente**: probar con cámara real y un navegador (los tests
-   cubren el WebSocket con un cliente Java, no la página); docker-compose sigue comentado.
+   con el panel en Docker, las alertas no llegan (son dos bases distintas). ✅ **Probado con cámara real y navegador**
+   (25-sep-2026, sin Docker: tracker + `GatewayRunner` en local, panel en `http://localhost:8080`); docker-compose
+   sigue comentado y sin ese último probing con Docker de por medio.
+   **Alarma sonora en el panel** (`security-dashboard/index.html`): checkbox "sonido de alarma" (con preferencia en
+   `localStorage`, encendido por defecto) y un beep de dos tonos generado con la Web Audio API (sin archivo de
+   audio). Suena solo con mensajes `type: 'alert'` (alerta nueva) — no con `snapshot` (al conectar) ni con `update`
+   (cuando llega la descripción de la IA unos segundos después). El navegador bloquea el audio hasta el primer
+   clic/tecla en la página; se desbloquea con un listener `once` en `click`/`keydown`. Probado con cámara real:
+   sonó en un retiro `BY_OTHER` y correctamente no sonó en uno `BY_OWNER`.
 
 Pendientes menores que el usuario conoce: revisar lentes con un recorte de la cara (necesita
-decisión de privacidad), pista `remover_looks_like_owner` por color de ropa, y regenerar la
-clave de NVIDIA. La tabla `alert` no se vacía cuando el script del tracker vacía los eventos:
-quedan alertas viejas (con fotos borradas) hasta marcarlas como revisadas.
+decisión de privacidad), pista `remover_looks_like_owner` por color de ropa, y confirmar que la
+descripción de la IA llega con la clave de NVIDIA nueva (regenerada el 25-sep-2026 tras quedar
+expuesta en el chat; ver decisión 7 — recordar seguir pidiéndole al usuario que la regenere él
+mismo y la ponga con `setx` si vuelve a pegarla). La tabla `alert` no se vacía cuando el script
+del tracker vacía los eventos: quedan alertas viejas (con fotos borradas) hasta marcarlas como
+revisadas.
 
 ## Notas operativas / gotchas
 
