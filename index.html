@@ -1,0 +1,1104 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Safemode · Centro de Alertas</title>
+<meta name="description" content="Safemode: visión perimetral y detección de desaparición de objetos con IA, con centro de alertas en vivo.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root {
+  --bg: #0B0F13;
+  --bg-2: #0E1216;
+  --surface: #151B21;
+  --surface-dim: #11161B;
+  --feed: #0A0E12;
+  --line: #232D36;
+  --line-2: #2A343E;
+  --line-soft: #1F2830;
+  --text: #E6EBEF;
+  --text-2: #C3CCD3;
+  --muted: #9AA7B2;
+  --muted-2: #8D99A5;
+  --accent: #4FD1C5;
+  --accent-2: #6FE0D5;
+  --accent-hi: #A5F0E8;
+  --accent-bg: #12312F;
+  --accent-line: #2E6B66;
+  --rec: #FF7A68;
+  --high: #FF9A8B;
+  --high-bg: #3B1714;
+  --high-line: #7A2E26;
+  --med: #F5C065;
+  --med-bg: #3A2A0E;
+  --med-line: #6B4E17;
+  --low: #9CC7F2;
+  --low-bg: #152A40;
+  --low-line: #2C4A68;
+  --sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --nav-h: 64px;
+  --radius: 12px;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: calc(var(--nav-h) + 16px); }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); line-height: 1.5; -webkit-font-smoothing: antialiased; }
+a { color: var(--accent-2); }
+a:hover { color: var(--accent-hi); }
+button, input { font: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mono { font-family: var(--mono); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.wrap { width: min(1200px, 100% - 32px); margin-inline: auto; }
+[hidden] { display: none !important; }
+
+/* ---------- Botones ---------- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--line-2); background: transparent; color: var(--text-2); font-size: 14px; font-weight: 500; text-decoration: none; white-space: nowrap; transition: background .15s, border-color .15s, color .15s; }
+.btn:hover { border-color: var(--accent); color: var(--text); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #0B1215; font-weight: 600; }
+.btn-primary:hover { background: #7FE3D9; border-color: #7FE3D9; color: #0B1215; }
+.btn-ghost-accent { border-color: var(--accent-line); background: var(--accent-bg); color: #CFF7F2; font-weight: 600; }
+.btn-ghost-accent:hover { border-color: var(--accent); color: #fff; }
+.btn svg { flex-shrink: 0; }
+
+/* ---------- Navbar ---------- */
+.nav { position: fixed; inset: 0 0 auto 0; z-index: 50; height: var(--nav-h); background: rgba(14, 18, 22, .96); border-bottom: 1px solid var(--line-soft); }
+.nav-inner { height: 100%; display: flex; align-items: center; gap: 20px; }
+.brand { display: inline-flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; }
+.brand:hover { color: var(--text); }
+.brand-mark { display: inline-flex; width: 36px; height: 36px; border-radius: 10px; background: var(--accent-bg); color: var(--accent); align-items: center; justify-content: center; }
+.brand-name { font-size: 18px; font-weight: 700; letter-spacing: .01em; }
+.live { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 12px; letter-spacing: .06em; color: var(--muted); }
+.live-dot { position: relative; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.live-dot::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--accent); animation: ping 1.8s ease-out infinite; }
+@keyframes ping { 0% { transform: scale(1); opacity: .7; } 100% { transform: scale(3); opacity: 0; } }
+.nav-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.operator { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-2); }
+
+/* ---------- Hero ---------- */
+.hero { position: relative; min-height: 100vh; min-height: 100svh; display: flex; align-items: center; padding: calc(var(--nav-h) + 48px) 0 96px; overflow: hidden; }
+.hero::before { content: ""; position: absolute; inset: 0; background-image: linear-gradient(var(--line-soft) 1px, transparent 1px), linear-gradient(90deg, var(--line-soft) 1px, transparent 1px); background-size: 56px 56px; opacity: .35; mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, #000 20%, transparent 75%); -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, #000 20%, transparent 75%); pointer-events: none; }
+.hero-inner { position: relative; display: flex; flex-direction: column; gap: 28px; max-width: 920px; }
+.eyebrow { display: inline-flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent-2); }
+.eyebrow::before { content: ""; width: 28px; height: 1px; background: var(--accent); }
+.hero h1 { margin: 0; font-size: clamp(34px, 5.6vw, 68px); line-height: 1.04; font-weight: 700; letter-spacing: -.015em; }
+.hero h1 .accent { color: var(--accent); }
+.hero-sub { margin: 0; max-width: 680px; font-size: clamp(16px, 1.6vw, 19px); color: var(--text-2); }
+.hero-ctas { display: flex; flex-wrap: wrap; gap: 12px; }
+.hero-ctas .btn { min-height: 48px; padding: 0 22px; font-size: 15px; }
+.spec-row { display: flex; flex-wrap: wrap; gap: 10px; padding: 0; margin: 8px 0 0; list-style: none; }
+.spec-row li { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: rgba(21, 27, 33, .6); font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.spec-row li b { color: var(--text); font-weight: 500; }
+.scroll-hint { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; letter-spacing: .1em; color: var(--muted-2); text-transform: uppercase; }
+.scroll-hint span { width: 1px; height: 36px; background: linear-gradient(var(--accent), transparent); animation: drip 1.8s ease-in-out infinite; transform-origin: top; }
+@keyframes drip { 0% { transform: scaleY(0); } 50% { transform: scaleY(1); } 100% { transform: scaleY(1); opacity: 0; } }
+
+/* ---------- Sección 3D con video ---------- */
+.lens { position: relative; height: 400vh; }
+.lens-sticky { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; }
+/* Fondo a pantalla completa: el video cubre el viewport de borde a borde */
+.lens-bg { position: absolute; inset: 0; background: var(--feed); will-change: transform; transform: translateZ(0); }
+.lens-bg video, .lens-bg canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.lens-bg video { display: none; }
+.lens-bg.video-mode video { display: block; }
+.lens-bg.video-mode canvas { display: none; }
+.lens-overlay { position: absolute; inset: 0; z-index: 1; background: linear-gradient(90deg, rgba(11, 15, 19, .85) 0%, rgba(11, 15, 19, .4) 50%, rgba(11, 15, 19, .7) 100%); }
+.lens-overlay::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, var(--bg) 0%, transparent 14%, transparent 86%, var(--bg) 100%), repeating-linear-gradient(0deg, rgba(255, 255, 255, .025) 0 1px, transparent 1px 3px); }
+.lens-content { position: relative; z-index: 10; height: 100%; display: flex; align-items: center; padding-top: var(--nav-h); }
+.lens-copy { position: relative; width: min(460px, 100%); min-height: 400px; }
+.phase { position: absolute; inset: 0 0 auto 0; z-index: 10; display: flex; flex-direction: column; gap: 16px; padding: 28px; border-radius: 16px; background: rgba(18, 26, 33, .9); border: 1px solid rgba(255, 255, 255, .1); box-shadow: 0 24px 60px -24px rgba(0, 0, 0, .7); opacity: 0; will-change: transform, opacity; transform: translateZ(0); }
+.phase-num { font-family: var(--mono); font-size: 12px; letter-spacing: .1em; color: var(--accent-2); }
+.phase h2 { margin: 0; font-size: clamp(24px, 2.6vw, 32px); line-height: 1.15; font-weight: 700; }
+.phase p { margin: 0; font-size: 15.5px; color: var(--text-2); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.chips li { padding: 4px 10px; border-radius: 6px; background: var(--accent-bg); color: var(--accent-2); font-family: var(--mono); font-size: 12px; }
+.threat-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.threat-list li { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--text-2); }
+.threat-list .sev { margin-left: auto; font-family: var(--mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.steps { position: absolute; left: 0; right: 0; bottom: -64px; display: flex; align-items: center; gap: 14px; }
+.steps-bar { position: relative; flex-grow: 1; height: 2px; background: var(--line-2); border-radius: 2px; overflow: hidden; }
+.steps-fill { position: absolute; inset: 0; background: var(--accent); transform-origin: left; transform: scaleX(0); }
+.steps-label { font-family: var(--mono); font-size: 12px; color: var(--muted); min-width: 44px; text-align: right; }
+
+.corner { position: absolute; z-index: 2; width: 22px; height: 22px; border-color: var(--accent); border-style: solid; border-width: 0; opacity: .8; }
+.corner.tl { top: 14px; left: 14px; border-top-width: 2px; border-left-width: 2px; }
+.corner.tr { top: 14px; right: 14px; border-top-width: 2px; border-right-width: 2px; }
+.corner.bl { bottom: 14px; left: 14px; border-bottom-width: 2px; border-left-width: 2px; }
+.corner.br { bottom: 14px; right: 14px; border-bottom-width: 2px; border-right-width: 2px; }
+.hud { position: absolute; z-index: 2; padding: 3px 8px; border-radius: 4px; background: rgba(10, 14, 18, .72); font-family: var(--mono); font-size: 12px; letter-spacing: .08em; color: var(--text-2); }
+/* Marco de cámara sobre el fondo (debajo de la barra fija) */
+.lens-bg .corner { z-index: 2; width: 28px; height: 28px; }
+.lens-bg .corner.tl { top: calc(var(--nav-h) + 20px); left: 24px; }
+.lens-bg .corner.tr { top: calc(var(--nav-h) + 20px); right: 24px; }
+.lens-bg .corner.bl { bottom: 24px; left: 24px; }
+.lens-bg .corner.br { bottom: 24px; right: 24px; }
+.hud.top { top: calc(var(--nav-h) + 24px); right: 60px; display: flex; align-items: center; gap: 8px; }
+.hud.bottom { bottom: 28px; left: 60px; color: var(--muted); }
+.hud.right { bottom: 28px; right: 60px; color: var(--accent-2); }
+.rec-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--rec); animation: rec 1.6s step-start infinite; }
+@keyframes rec { 50% { opacity: .25; } }
+.video-fallback { position: absolute; inset: 0; z-index: 3; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; text-align: center; color: #51606D; }
+.video-fallback span { font-size: 13px; color: var(--muted-2); }
+.lens-bg.no-video .video-fallback { display: flex; }
+.lens-bg.no-video video { display: none; }
+
+/* ---------- Consola de alertas ---------- */
+.console { position: relative; padding: 120px 0 96px; border-top: 1px solid var(--line-soft); background: linear-gradient(180deg, var(--bg-2), var(--bg) 320px); }
+.section-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; margin-bottom: 28px; }
+.section-head h2 { margin: 0; font-size: clamp(28px, 3.4vw, 40px); line-height: 1.1; font-weight: 700; }
+.section-head p { margin: 6px 0 0; color: var(--muted); max-width: 620px; }
+.demo-tag { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 6px; border: 1px dashed var(--line-2); font-family: var(--mono); font-size: 11px; letter-spacing: .08em; color: var(--muted); text-transform: uppercase; }
+
+.app { border-radius: 16px; border: 1px solid var(--line); background: var(--bg); overflow: hidden; }
+.app-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 12px 20px; background: var(--bg-2); border-bottom: 1px solid var(--line-soft); }
+.status-pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: #121A21; border: 1px solid var(--line); font-size: 13px; color: var(--text-2); }
+.status-pill .dot { background: var(--accent); }
+.rec-line { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 12px; letter-spacing: .06em; color: var(--muted); }
+.controls { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; }
+.switch { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; font-size: 13px; color: var(--text-2); cursor: pointer; user-select: none; }
+.switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.switch .track { position: relative; width: 36px; height: 20px; border-radius: 999px; background: var(--line-2); transition: background .15s; flex-shrink: 0; }
+.switch .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--text-2); transition: transform .15s, background .15s; }
+.switch input:checked + .track { background: var(--accent-line); }
+.switch input:checked + .track::after { transform: translateX(16px); background: var(--accent); }
+.switch input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn-unlock { border-color: var(--high); color: var(--high); font-weight: 600; min-height: 36px; font-size: 13px; }
+.btn-unlock:hover { border-color: var(--high); color: #FFC2B8; }
+.btn-unlock.blink { animation: blink .6s step-start 0s 6; }
+@keyframes blink { 50% { background: var(--high); color: #1A0B09; } }
+
+.app-body { display: flex; flex-direction: column; gap: 20px; padding: 24px; }
+.metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.metric { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); }
+.metric-label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.metric-value { font-family: var(--mono); font-size: 30px; font-weight: 500; line-height: 1.2; }
+.metric-value.bump { animation: bump .35s ease-out; }
+@keyframes bump { 40% { transform: scale(1.18); } }
+
+.list-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; padding-top: 4px; }
+.list-head h3 { margin: 0; font-size: 20px; font-weight: 600; }
+.list-head .note { margin-left: auto; font-size: 12px; color: var(--muted-2); }
+
+.empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 56px 24px; border-radius: 16px; border: 1px dashed var(--line-2); text-align: center; }
+.empty h4 { margin: 0; font-size: 22px; font-weight: 600; }
+.empty p { margin: 0; max-width: 460px; font-size: 14px; color: var(--muted); }
+
+.feed-list { display: flex; flex-direction: column; gap: 20px; }
+.alert { display: flex; flex-direction: column; gap: 14px; padding: 20px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); transition: background .25s, border-color .25s, opacity .25s; }
+.alert.is-new { animation: pulse 1.8s ease-in-out 4; }
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 122, 104, 0); } 50% { box-shadow: 0 0 0 5px rgba(255, 122, 104, .28); } }
+.alert.acked { background: var(--surface-dim); border-color: var(--line-soft) !important; }
+.alert-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
+.alert-type { font-size: 17px; font-weight: 600; }
+.tag-new { padding: 2px 8px; border-radius: 6px; background: var(--rec); color: #1A0B09; font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+.tag-done { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px; background: var(--accent-bg); color: var(--accent-2); font-size: 11px; font-weight: 600; letter-spacing: .06em; }
+.alert-meta { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.alert-msg { margin: 0; font-size: 15px; color: #D5DDE3; }
+.alert.acked .alert-msg { color: var(--muted); }
+.shots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.shot { margin: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.cam { position: relative; display: block; width: 100%; aspect-ratio: 16 / 10; padding: 0; border: 1px solid #25303A; border-radius: 8px; background: var(--feed); color: #51606D; cursor: zoom-in; overflow: hidden; transition: border-color .15s; }
+.cam:hover { border-color: var(--accent); color: #6B7B88; }
+.cam::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, rgba(255, 255, 255, .025) 0 1px, transparent 1px 3px); pointer-events: none; }
+.cam .corner { width: 14px; height: 14px; opacity: .7; }
+.cam .corner.tl { top: 8px; left: 8px; } .cam .corner.tr { top: 8px; right: 8px; }
+.cam .corner.bl { bottom: 8px; left: 8px; } .cam .corner.br { bottom: 8px; right: 8px; }
+.cam-label { position: absolute; top: 10px; left: 30px; font-family: var(--mono); font-size: 10px; letter-spacing: .08em; color: var(--muted); }
+.cam-time { position: absolute; bottom: 10px; left: 30px; font-family: var(--mono); font-size: 10px; color: var(--muted-2); }
+.cam-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
+.cam-center small { font-size: 11px; color: #7C8995; }
+.shot-title { font-size: 13px; font-weight: 600; }
+.ai-box { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; background: #0F1A1C; border: 1px solid #1F3A3A; }
+.ai-title { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent-2); }
+.ai-fields { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; margin: 0; font-size: 12.5px; line-height: 1.45; }
+.ai-fields dt { color: #8FA3AE; }
+.ai-fields dd { margin: 0; color: var(--text); }
+.sk { display: block; height: 8px; border-radius: 4px; background: #1E3033; animation: sk 1.4s ease-in-out infinite; }
+@keyframes sk { 0%, 100% { opacity: .35; } 50% { opacity: .85; } }
+.ai-none { padding: 10px 12px; border-radius: 8px; border: 1px dashed var(--line-2); font-size: 12px; color: var(--muted); }
+.estimate { font-size: 12px; line-height: 1.45; color: var(--muted-2); }
+.estimate b { font-weight: 400; color: #B4BFC8; }
+.alert-actions { display: flex; justify-content: flex-end; }
+.alert-actions .btn { min-height: 44px; }
+
+.locked { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 72px 24px; text-align: center; }
+.locked h3 { margin: 0; font-size: 22px; }
+.locked p { margin: 0; color: var(--muted); max-width: 420px; }
+
+/* ---------- Diálogos ---------- */
+dialog { padding: 0; border: 0; color: var(--text); background: transparent; max-width: none; max-height: none; }
+dialog::backdrop { background: rgba(6, 9, 12, .88); }
+.lightbox { width: min(900px, 100% - 32px); }
+.lightbox-inner { display: flex; flex-direction: column; gap: 12px; }
+.lightbox-head { display: flex; align-items: center; gap: 12px; }
+.lightbox-head strong { font-size: 16px; }
+.icon-btn { margin-left: auto; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; flex-shrink: 0; border-radius: 8px; border: 1px solid var(--line-2); background: var(--surface); color: var(--text); }
+.icon-btn:hover { border-color: var(--accent); }
+.lightbox .cam { cursor: default; border-radius: 10px; }
+.lightbox .cam .corner { width: 22px; height: 22px; }
+.lightbox .cam .corner.tl { top: 14px; left: 14px; } .lightbox .cam .corner.tr { top: 14px; right: 14px; }
+.lightbox .cam .corner.bl { bottom: 14px; left: 14px; } .lightbox .cam .corner.br { bottom: 14px; right: 14px; }
+.lightbox .cam-label { top: 18px; left: 46px; font-size: 12px; }
+.lightbox .cam-time { bottom: 18px; left: 46px; font-size: 12px; }
+.lightbox .cam-center small { font-size: 13px; }
+
+/* 100% y no 100vw: 100vw incluye la barra de scroll vertical y dejaba una barra horizontal */
+.login { inset: 0; width: 100%; height: 100%; margin: 0; overflow: hidden; }
+.login::backdrop { background: var(--bg); }
+.login-scene { position: absolute; inset: -16px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 6px; filter: blur(2.5px); opacity: .7; }
+.tile { position: relative; background: #121A21; overflow: hidden; }
+.tile svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.tile-label { position: absolute; top: 14px; left: 16px; font-family: var(--mono); font-size: 13px; letter-spacing: .08em; color: var(--muted-2); }
+.tile .rec-dot { position: absolute; top: 18px; right: 18px; }
+.login-veil { position: absolute; inset: 0; background: rgba(9, 12, 15, .66) repeating-linear-gradient(0deg, rgba(255, 255, 255, .03) 0 1px, transparent 1px 3px); }
+.login-center { position: relative; height: 100%; display: flex; align-items: center; justify-content: center; padding: 16px; overflow-y: auto; }
+.login-card { position: relative; width: min(400px, 100%); display: flex; flex-direction: column; gap: 28px; padding: 40px; border-radius: 16px; background: rgba(21, 27, 33, .94); border: 1px solid var(--line-2); }
+.login-card .icon-btn { position: absolute; top: 12px; right: 12px; width: 40px; height: 40px; }
+.login-brand { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
+.login-brand .brand-mark { width: 56px; height: 56px; border-radius: 16px; }
+.login-brand h2 { margin: 0; font-size: 26px; font-weight: 700; }
+.login-brand p { margin: 0; font-size: 14px; color: var(--muted); }
+.login-form { display: flex; flex-direction: column; gap: 16px; margin: 0; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label { font-size: 13px; color: var(--text-2); }
+.field input { height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--bg-2); color: var(--text); font-size: 15px; }
+.field input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+.form-error { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: 8px; background: #2A1A18; border: 1px solid #5A2D27; color: #FFC2B8; font-size: 13px; line-height: 1.45; }
+.login-form .btn-primary { height: 46px; margin-top: 4px; font-size: 15px; }
+.login-foot { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; color: var(--muted-2); }
+.login-hint { margin: -12px 0 0; text-align: center; font-size: 12px; color: var(--muted-2); }
+
+footer { padding: 32px 0 48px; border-top: 1px solid var(--line-soft); color: var(--muted-2); font-size: 13px; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: center; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 980px) {
+  .shots { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .nav .live, .operator .op-name { display: none; }
+  .nav-inner { gap: 12px; }
+  .nav-actions .btn { padding: 0 12px; }
+  /* En celular las tarjetas van abajo y el velo oscurece de abajo hacia arriba */
+  .lens-content { align-items: flex-end; padding-bottom: 96px; }
+  .lens-copy { min-height: 360px; }
+  .lens-overlay { background: linear-gradient(180deg, rgba(11, 15, 19, .35) 0%, rgba(11, 15, 19, .55) 45%, rgba(11, 15, 19, .9) 100%); }
+  .steps { bottom: -48px; }
+  .hud.bottom { display: none; }
+  .phase { padding: 20px; gap: 12px; }
+  .phase p { font-size: 14.5px; }
+  .shots { grid-template-columns: minmax(0, 1fr); }
+  .app-body { padding: 16px; }
+  .app-bar { padding: 12px 16px; }
+  .controls { margin-left: 0; }
+  .alert { padding: 16px; }
+  .alert-meta { margin-left: 0; width: 100%; }
+  .login-card { padding: 32px 24px; }
+  .demo-tag { margin-left: 0; }
+}
+@media (max-width: 420px) {
+  .brand-name { display: none; }
+  .metric-value { font-size: 26px; }
+}
+
+/* ---------- Movimiento reducido ----------
+   El video ligado al scroll se mantiene (lo mueve el propio usuario con la rueda, no es una animación
+   automática, y Windows activa esta preferencia al apagar los "efectos de animación"); solo se quitan
+   las animaciones decorativas y el desplazamiento de las tarjetas (ver paintPhases). */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- ============ A. Navbar ============ -->
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="#inicio" aria-label="Safemode, ir al inicio">
+      <span class="brand-mark"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z"/><circle cx="12" cy="11" r="2.5"/></svg></span>
+      <span class="brand-name">Safemode</span>
+    </a>
+    <span class="live"><span class="live-dot" aria-hidden="true"></span>REC · CAM 01 · EN VIVO</span>
+    <nav class="nav-actions" aria-label="Principal">
+      <span class="operator" id="navOperator" hidden>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>
+        <span class="op-name" id="navOperatorName">Operador</span>
+      </span>
+      <a class="btn btn-ghost-accent" href="#consola">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        Consola de Alertas
+      </a>
+      <button type="button" class="btn" id="authBtn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h4v16h-4"/><path d="M10 8l-4 4 4 4"/><path d="M6 12h10"/></svg>
+        <span id="authLabel">Iniciar sesión</span>
+      </button>
+    </nav>
+  </div>
+</header>
+
+<main>
+<!-- ============ B. Hero ============ -->
+<section class="hero" id="inicio">
+  <div class="wrap hero-inner">
+    <span class="eyebrow">Proyecto Safemode · ARSW</span>
+    <h1>Safemode: <span class="accent">Visión Perimetral</span> y Detección de Desaparición de Objetos</h1>
+    <p class="hero-sub">Monitoreo por IA de retiros de objetos: detecta cuándo alguien se lleva una mochila, un bolso o una maleta, lo correlaciona con su dueño probable y avisa al instante al centro de alertas. Si el servicio de descripción por IA se cae, la alerta llega igual: la IA solo la completa segundos después.</p>
+    <div class="hero-ctas">
+      <a class="btn btn-primary" href="#consola">Abrir la consola de alertas</a>
+      <a class="btn" href="#lente">Ver cómo funciona</a>
+    </div>
+    <ul class="spec-row" aria-label="Datos técnicos">
+      <li><b>YOLOv8</b> ONNX local</li>
+      <li><b>3 s</b> quieto para registrar</li>
+      <li><b>5</b> tipos de retiro</li>
+      <li><b>WebSocket</b> en vivo</li>
+    </ul>
+  </div>
+  <div class="scroll-hint" aria-hidden="true">Desliza<span></span></div>
+</section>
+
+<!-- ============ C. Scroll 3D con video ============ -->
+<section class="lens" id="lente" aria-label="Cómo funciona Safemode">
+  <div class="lens-sticky">
+    <!-- Fondo: video a pantalla completa, velo para legibilidad y HUD de cámara -->
+    <div class="lens-bg" id="lensFrame">
+      <!-- Secuencia de cuadros (lens-frames/): dibujar una imagen ya decodificada es instantáneo,
+           mientras que saltar dentro de un MP4 obliga a decodificar desde el último cuadro clave. -->
+      <canvas id="lensCanvas" width="1280" height="720" aria-hidden="true"></canvas>
+      <!-- Respaldo: solo se descarga si faltan los cuadros -->
+      <video id="lensVideo" muted playsinline preload="none" aria-label="Recorrido de la cámara hacia el núcleo de IA, sincronizado con el desplazamiento">
+        <source src="safemode-lens.mp4" type="video/mp4">
+        <source src="Camera_pushing_into_AI_core_20260926081000.mp4" type="video/mp4">
+      </video>
+      <div class="video-fallback">
+        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7l12-3 1.5 5L4.5 12z"/><path d="M16.5 8.5l4-1v5l-4 1"/><path d="M7 11.5l1 4H4"/></svg>
+        <span>Video no encontrado: coloca <code>safemode-lens.mp4</code> junto a este archivo.</span>
+      </div>
+      <div class="lens-overlay" aria-hidden="true"></div>
+      <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+      <span class="hud top"><span class="rec-dot"></span>CAM 01 · NÚCLEO IA</span>
+      <span class="hud bottom" id="lensClock">--:--:--</span>
+      <span class="hud right" id="lensTime">T+00.00s</span>
+    </div>
+
+    <div class="wrap lens-content">
+      <div class="lens-copy">
+        <article class="phase" data-phase="0">
+          <span class="phase-num">FASE 01 / 03</span>
+          <h2>Monitoreo Óptico Perimetral</h2>
+          <p>Las cámaras de vigilancia activas envían la escena a 2 cuadros por segundo. Cada mochila, bolso o maleta que queda quieta 3 segundos se registra con su posición, su foto y la hora.</p>
+          <ul class="chips"><li>Cámaras activas</li><li>2 fps</li><li>Mochila · Bolso · Maleta</li></ul>
+        </article>
+        <article class="phase" data-phase="1">
+          <span class="phase-num">FASE 02 / 03</span>
+          <h2>Inmersión Neural</h2>
+          <p>Cada cuadro se digitaliza y pasa por YOLOv8 en el propio equipo, en el borde, sin enviar video a la nube. Detecta objetos y personas, sigue a cada persona con un id y estima su pose para identificar al dueño probable del objeto.</p>
+          <ul class="chips"><li>Inferencia en el borde</li><li>Pose de 17 puntos</li><li>Dueño probable</li></ul>
+        </article>
+        <article class="phase" data-phase="2">
+          <span class="phase-num">FASE 03 / 03</span>
+          <h2>Detección de Amenazas y SafeMode</h2>
+          <p>Cuando un objeto desaparece, Safemode analiza quién estaba cerca y clasifica la anomalía. La alerta llega en vivo al panel y suena la alarma.</p>
+          <ul class="threat-list">
+            <li><span class="dot" style="background: var(--high)"></span>Posible robo<span class="sev" style="background: var(--high-bg); color: var(--high)">Alta</span></li>
+            <li><span class="dot" style="background: var(--med)"></span>Retiro ambiguo<span class="sev" style="background: var(--med-bg); color: var(--med)">Media</span></li>
+            <li><span class="dot" style="background: var(--med)"></span>Objeto desaparecido<span class="sev" style="background: var(--med-bg); color: var(--med)">Media</span></li>
+            <li><span class="dot" style="background: var(--low)"></span>Retiro sin dueño conocido<span class="sev" style="background: var(--low-bg); color: var(--low)">Baja</span></li>
+          </ul>
+        </article>
+        <div class="steps" aria-hidden="true">
+          <div class="steps-bar"><div class="steps-fill" id="stepsFill"></div></div>
+          <span class="steps-label" id="stepsLabel">01/03</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ D. Consola de alertas ============ -->
+<section class="console" id="consola" aria-labelledby="consolaTitulo">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <h2 id="consolaTitulo">Consola de Alertas</h2>
+        <p>Los retiros sospechosos aparecen aquí con la foto del momento, quién se llevó el objeto y su dueño.</p>
+      </div>
+      <span class="demo-tag">Demo · datos de ejemplo</span>
+    </div>
+
+    <div class="app">
+      <div class="app-bar">
+        <span class="status-pill"><span class="dot"></span>Conectado · en vivo</span>
+        <span class="rec-line"><span class="rec-dot"></span>REC · CAM 01 · EN VIVO</span>
+        <div class="controls" id="controls">
+          <button type="button" class="btn btn-unlock blink" id="unlockBtn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M17 9l4 6M21 9l-4 6"/></svg>
+            Activar sonido
+          </button>
+          <label class="switch"><input type="checkbox" role="switch" id="soundToggle" checked><span class="track"></span>Sonido de alarma</label>
+          <label class="switch"><input type="checkbox" role="switch" id="doneToggle"><span class="track"></span>Ver revisadas</label>
+        </div>
+      </div>
+
+      <!-- Sin sesión -->
+      <div class="locked" id="lockedPanel">
+        <span class="brand-mark" style="width: 56px; height: 56px; border-radius: 16px">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+        </span>
+        <h3>Acceso solo para personal autorizado</h3>
+        <p>Inicia sesión como operador para ver y revisar las alertas.</p>
+        <button type="button" class="btn btn-primary" id="lockedLogin" style="min-height: 46px; padding: 0 24px">Iniciar sesión</button>
+      </div>
+
+      <!-- Con sesión -->
+      <div class="app-body" id="appBody" hidden>
+        <div class="metrics">
+          <div class="metric">
+            <span class="metric-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FF9A8B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>Alta · pendientes</span>
+            <span class="metric-value" id="countHigh" style="color: var(--high)">0</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F5C065" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><path d="M12 16.5h.01"/></svg>Media · pendientes</span>
+            <span class="metric-value" id="countMed" style="color: var(--med)">0</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9CC7F2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>Baja · pendientes</span>
+            <span class="metric-value" id="countLow" style="color: var(--low)">0</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4FD1C5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>Revisadas hoy</span>
+            <span class="metric-value" id="countDone" style="color: var(--text-2)">0</span>
+          </div>
+        </div>
+
+        <div class="list-head">
+          <h3>Alertas</h3>
+          <span class="mono" style="font-size: 13px; color: var(--muted)" aria-live="polite"><span id="countPending">0</span> pendientes</span>
+          <span class="note">Las más recientes primero</span>
+        </div>
+
+        <!-- Vacio.dc.html -->
+        <div class="empty" id="emptyState" hidden>
+          <svg width="120" height="96" viewBox="0 0 120 96" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M18 22l58-14 8 26-58 14z" stroke="#4FD1C5" stroke-width="2.4"/>
+            <path d="M84 26l18-5v18l-18 5" stroke="#4FD1C5" stroke-width="2.4"/>
+            <path d="M32 46l4 16H16" stroke="#4FD1C5" stroke-width="2.4"/>
+            <circle cx="30" cy="30" r="3" fill="#FF7A68" stroke="none"/>
+            <path d="M44 84c10-8 22-8 32 0" stroke="#2E6B66" stroke-width="2"/>
+            <path d="M36 76c14-12 34-12 48 0" stroke="#1F4A47" stroke-width="2"/>
+          </svg>
+          <h4>Sin alertas pendientes. Todo tranquilo.</h4>
+          <p>La cámara sigue vigilando. Si alguien se lleva un objeto, la alerta aparecerá aquí y sonará la alarma.</p>
+          <button type="button" class="btn" id="resetDemo">Restablecer demo</button>
+        </div>
+
+        <div class="feed-list" id="feed"></div>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Safemode · Arquitectura de Software</span>
+    <span class="mono">camera-feed · vision-detection · presence-tracker · alert-engine · realtime-gateway</span>
+  </div>
+</footer>
+
+<!-- ============ Lightbox ============ -->
+<dialog class="lightbox" id="lightbox" aria-labelledby="lbTitle">
+  <div class="lightbox-inner">
+    <div class="lightbox-head">
+      <strong id="lbTitle"></strong>
+      <span class="mono" id="lbTime" style="font-size: 12px; color: var(--muted)"></span>
+      <button type="button" class="icon-btn" id="lbClose" aria-label="Cerrar foto">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="cam" role="img" aria-label="Foto guardada del evento">
+      <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+      <span class="cam-label">CAM 01</span>
+      <span class="cam-time" id="lbStamp"></span>
+      <span class="cam-center">
+        <span id="lbIcon"></span>
+        <small id="lbCaption">[Foto guardada del evento]</small>
+      </span>
+    </div>
+  </div>
+</dialog>
+
+<!-- ============ Login (Login.dc.html) ============ -->
+<dialog class="login" id="loginDialog" aria-labelledby="loginTitle">
+  <div class="login-scene" id="loginScene" aria-hidden="true"></div>
+  <div class="login-veil" aria-hidden="true"></div>
+  <div class="login-center">
+    <div class="login-card">
+      <button type="button" class="icon-btn" id="loginClose" aria-label="Cerrar inicio de sesión">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+      <div class="login-brand">
+        <span class="brand-mark"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z"/><circle cx="12" cy="11" r="2.5"/></svg></span>
+        <div>
+          <h2 id="loginTitle">Safemode</h2>
+          <p>Centro de alertas de seguridad</p>
+        </div>
+      </div>
+      <form class="login-form" id="loginForm" novalidate>
+        <div class="field">
+          <label for="usuario">Usuario</label>
+          <input id="usuario" name="usuario" type="text" autocomplete="username" placeholder="tu.usuario">
+        </div>
+        <div class="field">
+          <label for="clave">Contraseña</label>
+          <input id="clave" name="clave" type="password" autocomplete="current-password" placeholder="••••••••">
+        </div>
+        <div class="form-error" id="loginError" role="alert" hidden>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg>
+          <span>Usuario o contraseña incorrectos. Revísalos e inténtalo de nuevo.</span>
+        </div>
+        <button type="submit" class="btn btn-primary">Ingresar</button>
+      </form>
+      <p class="login-hint">Demo: cualquier usuario y contraseña no vacíos.</p>
+      <div class="login-foot">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+        Acceso solo para personal autorizado
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<script>
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Guardado local tolerante a fallos (modo privado o almacenamiento bloqueado).
+  var store = {
+    get: function (area, key) { try { return window[area].getItem(key); } catch (e) { return null; } },
+    set: function (area, key, value) { try { window[area].setItem(key, value); } catch (e) { /* se ignora */ } },
+    remove: function (area, key) { try { window[area].removeItem(key); } catch (e) { /* se ignora */ } }
+  };
+
+  // Crea un elemento; el texto va siempre con textContent (nunca HTML con datos).
+  function el(tag, attrs, children) {
+    var node = document.createElement(tag);
+    if (attrs) {
+      Object.keys(attrs).forEach(function (k) {
+        if (k === 'text') node.textContent = attrs[k];
+        else if (k === 'class') node.className = attrs[k];
+        else if (k === 'style') node.style.cssText = attrs[k];
+        else if (k.slice(0, 2) === 'on') node.addEventListener(k.slice(2), attrs[k]);
+        else node.setAttribute(k, attrs[k]);
+      });
+    }
+    (children || []).forEach(function (c) { if (c) node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+    return node;
+  }
+  // Íconos fijos (constantes del código, no datos).
+  function icon(markup, size, extra) {
+    var wrap = document.createElement('span');
+    wrap.innerHTML = '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + (extra || 2) + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + markup + '</svg>';
+    return wrap.firstChild;
+  }
+  var ICONS = {
+    high: '<path d="M12 3l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/>',
+    med: '<circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><path d="M12 16.5h.01"/>',
+    low: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/>',
+    check: '<path d="M5 12l5 5 9-10"/>',
+    frame: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 16l5-5 4 4 3-3 6 6"/>',
+    person: '<circle cx="9" cy="7" r="3"/><path d="M3 20c.8-3.5 3-5.5 6-5.5s5.2 2 6 5.5"/><path d="M16 12a3 3 0 0 1 6 0v7a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1z"/>',
+    spark: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>'
+  };
+
+  /* =========================================================
+     C. Video ligado al scroll
+     ========================================================= */
+  var lens = $('lente');
+  var video = $('lensVideo');
+  var frame = $('lensFrame');
+  var phases = Array.prototype.slice.call(document.querySelectorAll('.phase'));
+  var stepsFill = $('stepsFill');
+  var stepsLabel = $('stepsLabel');
+  var lensTime = $('lensTime');
+  var canvas = $('lensCanvas');
+  var ctx = canvas.getContext('2d', { alpha: false });
+  var FRAME_COUNT = 120, FRAME_SECONDS = 10;   // lens-frames/f000.webp … f119.webp (12 cuadros/s)
+  var frames = [], lastDrawn = -1, useFrames = false;
+  var LERP = 0.15;            // suavizado por cuadro de pantalla
+  var SEEK_THRESHOLD = 0.03;  // s: no se pide un cuadro nuevo al decodificador por menos que esto
+  var hasFrameCallback = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
+  var duration = 0, rafId = 0;
+  var targetProgress = 0, smoothProgress = 0;
+  var lensTop = 0, lensRange = 1;
+  var seekBusy = false, seekTimer = 0;
+
+  function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
+
+  // Se mide la sección solo al cargar y al cambiar el tamaño: el scroll no lee el layout.
+  function measureLens() {
+    lensTop = lens.getBoundingClientRect().top + window.scrollY;
+    lensRange = Math.max(1, lens.offsetHeight - window.innerHeight);
+  }
+
+  function paintPhases(p) {
+    var seg = 1 / phases.length;
+    phases.forEach(function (card, i) {
+      var local = (p - i * seg) / seg;
+      var fadeIn = i === 0 ? 1 : clamp(local / 0.22, 0, 1);
+      var fadeOut = i === phases.length - 1 ? 1 : clamp((1 - local) / 0.22, 0, 1);
+      var o = Math.min(fadeIn, fadeOut);
+      var dir = local < 0.5 ? 1 : -1;
+      card.style.opacity = o.toFixed(3);
+      card.style.transform = reducedMotion ? 'translateZ(0)' : 'translate3d(0, ' + ((1 - o) * 32 * dir).toFixed(1) + 'px, 0)';
+      card.style.pointerEvents = o > 0.5 ? 'auto' : 'none';
+      card.setAttribute('aria-hidden', o > 0.5 ? 'false' : 'true');
+    });
+    var step = Math.min(phases.length, Math.floor(p * phases.length) + 1);
+    stepsFill.style.transform = 'scaleX(' + p.toFixed(4) + ')';
+    stepsLabel.textContent = '0' + step + '/0' + phases.length;
+  }
+
+  // Un solo salto de video a la vez: el siguiente se pide cuando el cuadro anterior ya se pintó
+  // (requestVideoFrameCallback) o, si el navegador no lo tiene, cuando termina el salto ('seeked').
+  // Así el decodificador nunca acumula saltos pendientes, que es lo que congelaba el scroll.
+  function seekDone() {
+    if (!seekBusy) return;
+    seekBusy = false;
+    clearTimeout(seekTimer);
+    requestTick();
+  }
+  function seekTo(t) {
+    seekBusy = true;
+    video.currentTime = t;
+    if (hasFrameCallback) video.requestVideoFrameCallback(seekDone);
+    // Red de seguridad: si el salto cae en el mismo cuadro no llega ningún aviso.
+    seekTimer = setTimeout(seekDone, 250);
+  }
+  video.addEventListener('seeked', function () { if (!hasFrameCallback) seekDone(); });
+
+  // Bucle de pintado: acerca el progreso visible al objetivo (LERP) y sincroniza tarjetas y video.
+  function tick() {
+    rafId = 0;
+    smoothProgress += (targetProgress - smoothProgress) * LERP;
+    if (Math.abs(targetProgress - smoothProgress) < 0.0005) smoothProgress = targetProgress;
+    paintPhases(smoothProgress);
+    if (useFrames) {
+      lensTime.textContent = 'T+' + (smoothProgress * FRAME_SECONDS).toFixed(2).padStart(5, '0') + 's';
+      drawFrame(Math.round(smoothProgress * (FRAME_COUNT - 1)));
+    } else if (duration) {
+      var t = smoothProgress * Math.max(0, duration - 0.05);
+      lensTime.textContent = 'T+' + t.toFixed(2).padStart(5, '0') + 's';
+      if (!seekBusy && Math.abs(video.currentTime - t) > SEEK_THRESHOLD) seekTo(t);
+    }
+    if (smoothProgress !== targetProgress) requestTick();
+  }
+  function requestTick() { if (!rafId) rafId = requestAnimationFrame(tick); }
+
+  // El evento de scroll solo guarda el objetivo; todo el trabajo va en el bucle de pintado.
+  function onScroll() {
+    targetProgress = clamp((window.scrollY - lensTop) / lensRange, 0, 1);
+    requestTick();
+  }
+
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', function () { measureLens(); onScroll(); });
+  window.addEventListener('load', function () { measureLens(); onScroll(); });
+  measureLens();
+  targetProgress = smoothProgress = clamp((window.scrollY - lensTop) / lensRange, 0, 1);
+  paintPhases(smoothProgress);
+
+  // Dibuja el cuadro pedido o, si aún no llegó, el cargado más cercano hacia atrás.
+  function drawFrame(i) {
+    var j = i;
+    while (j > 0 && !(frames[j] && frames[j].ready)) j--;
+    if (!(frames[j] && frames[j].ready) || j === lastDrawn) return;
+    ctx.drawImage(frames[j].img, 0, 0, canvas.width, canvas.height);
+    lastDrawn = j;
+  }
+  function loadFrame(i, onFail) {
+    var img = new Image();
+    var entry = { img: img, ready: false };
+    frames[i] = entry;
+    img.onload = function () {
+      // decode() deja la imagen decodificada antes de dibujarla: el scroll no paga ese trabajo.
+      var done = function () {
+        entry.ready = true;
+        if (i === 0 && !useFrames) { useFrames = true; loadRest(); }
+        lastDrawn = -1;
+        requestTick();
+      };
+      if (img.decode) img.decode().then(done, done); else done();
+    };
+    if (onFail) img.onerror = onFail;
+    img.src = 'lens-frames/f' + String(i).padStart(3, '0') + '.webp';
+  }
+  function loadRest() { for (var i = 1; i < FRAME_COUNT; i++) loadFrame(i); }
+  // Si no está la carpeta de cuadros se usa el video como antes.
+  loadFrame(0, function () {
+    frame.classList.add('video-mode');
+    video.preload = 'auto';
+    video.load();
+  });
+
+  video.addEventListener('loadedmetadata', function () {
+    duration = video.duration || 0;
+    // Algunos navegadores no pintan el cuadro hasta reproducir una vez: se reproduce y se pausa.
+    var p = video.play();
+    if (p && p.then) p.then(function () { video.pause(); requestTick(); }).catch(requestTick);
+    else { video.pause(); requestTick(); }
+  });
+  // Si ninguna fuente carga, se muestra un aviso en lugar del recuadro negro.
+  var sources = video.querySelectorAll('source');
+  sources[sources.length - 1].addEventListener('error', function () { frame.classList.add('no-video'); });
+
+  // Reloj del HUD
+  var lensClock = $('lensClock');
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function clockTick() {
+    var d = new Date();
+    lensClock.textContent = pad(d.getDate()) + '-' + pad(d.getMonth() + 1) + '-' + d.getFullYear() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+  }
+  clockTick();
+  setInterval(clockTick, 1000);
+
+  /* =========================================================
+     D. Consola de alertas (Main.dc.html)
+     ========================================================= */
+  var SEV = {
+    HIGH: { label: 'Alta', fg: 'var(--high)', bg: 'var(--high-bg)', line: 'var(--high-line)', icon: ICONS.high },
+    MEDIUM: { label: 'Media', fg: 'var(--med)', bg: 'var(--med-bg)', line: 'var(--med-line)', icon: ICONS.med },
+    LOW: { label: 'Baja', fg: 'var(--low)', bg: 'var(--low-bg)', line: 'var(--low-line)', icon: ICONS.low }
+  };
+  var TYPES = {
+    POSSIBLE_THEFT: 'Posible robo',
+    AMBIGUOUS_REMOVAL: 'Retiro ambiguo',
+    OBJECT_VANISHED: 'Objeto desaparecido',
+    UNKNOWN_OWNER_REMOVAL: 'Retiro sin dueño conocido'
+  };
+
+  // Mismos campos que manda realtime-gateway; isNew / *AiPending / time son solo de la demo.
+  var SEED = [
+    { id: 14, type: 'POSSIBLE_THEFT', severity: 'HIGH', time: '25-09-2026 20:13:01', isNew: true, acknowledged: false,
+      message: 'Se llevaron una mochila y su dueño no estaba cerca.',
+      framePhoto: 'frame.png', removerPhoto: 'remover.png', removerDescription: 'persona con camisa negra',
+      removerAiDescription: 'ropa superior: camisa blanca con patrones de colores; ropa inferior: pantalones cortos verdes; tatuajes: ninguno; lentes: ninguno; cabello: largo y negro',
+      ownerPhoto: 'owner.png', ownerDescription: 'persona con camisa negra',
+      ownerAiDescription: 'ropa superior: sudadera naranja; ropa inferior: pantalones grises; tatuajes: ninguno; lentes: ninguno; cabello: largo y negro' },
+    { id: 13, type: 'POSSIBLE_THEFT', severity: 'HIGH', time: '25-09-2026 19:48:22', isNew: false, acknowledged: false,
+      message: 'Se llevaron una maleta y su dueño no estaba cerca.',
+      framePhoto: 'frame.png', removerPhoto: 'remover.png', removerDescription: 'persona con camisa azul',
+      removerAiDescription: null, removerAiPending: true,
+      ownerPhoto: 'owner.png', ownerDescription: 'persona con chaqueta verde',
+      ownerAiDescription: 'ropa superior: chaqueta verde oscuro; ropa inferior: jean azul; calzado: tenis blancos; lentes: sí; cabello: corto y castaño' },
+    { id: 12, type: 'OBJECT_VANISHED', severity: 'MEDIUM', time: '25-09-2026 19:31:05', isNew: false, acknowledged: false,
+      message: 'Un bolso desapareció sin nadie cerca.',
+      framePhoto: 'frame.png', removerPhoto: null, removerDescription: null, removerAiDescription: null,
+      ownerPhoto: null, ownerDescription: null, ownerAiDescription: null },
+    { id: 11, type: 'UNKNOWN_OWNER_REMOVAL', severity: 'LOW', time: '25-09-2026 19:02:47', isNew: false, acknowledged: false,
+      message: 'Retiraron una mochila que no tenía dueño registrado.',
+      framePhoto: 'frame.png', removerPhoto: 'remover.png', removerDescription: 'persona con camisa gris', removerAiDescription: null,
+      ownerPhoto: null, ownerDescription: null, ownerAiDescription: null },
+    { id: 10, type: 'AMBIGUOUS_REMOVAL', severity: 'MEDIUM', time: '25-09-2026 18:40:13', isNew: false, acknowledged: true,
+      message: 'Se llevaron una maleta; el dueño y otra persona estaban cerca.',
+      framePhoto: 'frame.png', removerPhoto: 'remover.png', removerDescription: 'persona con camisa roja', removerAiDescription: null,
+      ownerPhoto: 'owner.png', ownerDescription: 'persona con camisa blanca', ownerAiDescription: null }
+  ];
+
+  var state = {
+    alerts: [],
+    showDone: false,
+    soundOn: store.get('localStorage', 'safemode.sound') !== 'off',
+    operator: store.get('sessionStorage', 'safemode.operator')
+  };
+  function resetAlerts() { state.alerts = SEED.map(function (a) { return Object.assign({}, a); }); }
+  resetAlerts();
+
+  // "clave: valor; clave: valor" -> [{k, v}] (formato de la descripción por IA del tracker)
+  function toFields(text) {
+    if (!text) return [];
+    return text.split('; ').map(function (part) {
+      var i = part.indexOf(':');
+      return i < 0 ? { k: '', v: part } : { k: part.slice(0, i + 1), v: part.slice(i + 1).trim() };
+    });
+  }
+
+  function camButton(title, a, kind) {
+    var isFrame = kind === 'frame';
+    return el('button', {
+      type: 'button', class: 'cam', 'aria-label': 'Ampliar foto: ' + title,
+      onclick: function () { openLightbox(title + ' · alerta #' + a.id, a.time, isFrame); }
+    }, [
+      el('span', { class: 'corner tl' }), el('span', { class: 'corner tr' }),
+      el('span', { class: 'corner bl' }), el('span', { class: 'corner br' }),
+      el('span', { class: 'cam-label', text: 'CAM 01' }),
+      el('span', { class: 'cam-time', text: a.time }),
+      el('span', { class: 'cam-center' }, [
+        icon(isFrame ? ICONS.frame : ICONS.person, 36, 1.4),
+        el('small', { text: isFrame ? 'Cuadro completo de la cámara' : 'Persona junto al objeto' })
+      ])
+    ]);
+  }
+
+  function aiBlock(ai, pending) {
+    if (ai) {
+      var dl = el('dl', { class: 'ai-fields' });
+      toFields(ai).forEach(function (f) {
+        dl.appendChild(el('dt', { text: f.k }));
+        dl.appendChild(el('dd', { text: f.v }));
+      });
+      return el('div', { class: 'ai-box' }, [
+        el('span', { class: 'ai-title' }, [icon(ICONS.spark, 12), 'Descripción por IA']), dl
+      ]);
+    }
+    if (pending) {
+      return el('div', { class: 'ai-box', 'aria-busy': 'true' }, [
+        el('span', { class: 'ai-title' }, [icon(ICONS.spark, 12), 'Analizando con IA…']),
+        el('span', { class: 'sk', style: 'width: 92%' }),
+        el('span', { class: 'sk', style: 'width: 74%' }),
+        el('span', { class: 'sk', style: 'width: 58%' })
+      ]);
+    }
+    return el('div', { class: 'ai-none', text: 'Descripción por IA no disponible' });
+  }
+
+  function personShot(title, a, photo, desc, ai, pending) {
+    if (!photo && !desc && !ai) return null;
+    return el('figure', { class: 'shot' }, [
+      camButton(title, a, 'person'),
+      el('figcaption', { style: 'display: flex; flex-direction: column; gap: 8px' }, [
+        el('span', { class: 'shot-title', text: title }),
+        aiBlock(ai, pending),
+        desc ? el('div', { class: 'estimate' }, ['Color estimado por imagen: ', el('b', { text: desc }), ' ', el('i', { text: '(aproximado)' })]) : null
+      ])
+    ]);
+  }
+
+  function renderCard(a) {
+    var sev = SEV[a.severity];
+    var ack = a.acknowledged;
+    var isNewCard = a.isNew && !ack;
+    var card = el('article', {
+      class: 'alert' + (ack ? ' acked' : '') + (isNewCard ? ' is-new' : ''),
+      style: ack ? '' : 'border-color: ' + sev.line,
+      'aria-label': 'Alerta ' + a.id + ': ' + (TYPES[a.type] || a.type)
+    });
+
+    var head = el('div', { class: 'alert-head' }, [
+      el('span', { class: 'badge', style: 'background: ' + sev.bg + '; color: ' + sev.fg }, [icon(sev.icon, 14), sev.label]),
+      el('span', { class: 'alert-type', text: TYPES[a.type] || a.type }),
+      isNewCard ? el('span', { class: 'tag-new', text: 'NUEVA' }) : null,
+      ack ? el('span', { class: 'tag-done' }, [icon(ICONS.check, 12, 2.4), 'REVISADA']) : null,
+      el('span', { class: 'alert-meta', text: '#' + a.id + ' · ' + a.time })
+    ]);
+    card.appendChild(head);
+    card.appendChild(el('p', { class: 'alert-msg', text: a.message }));
+
+    if (!ack) {
+      var shots = el('div', { class: 'shots' });
+      if (a.framePhoto) {
+        var t = 'Retiro · foto del momento';
+        shots.appendChild(el('figure', { class: 'shot' }, [
+          camButton(t, a, 'frame'),
+          el('figcaption', {}, [el('span', { class: 'shot-title', text: t })])
+        ]));
+      }
+      var remover = personShot('Quien se lo llevó', a, a.removerPhoto, a.removerDescription, a.removerAiDescription, a.removerAiPending);
+      var owner = personShot('Dueño', a, a.ownerPhoto, a.ownerDescription, a.ownerAiDescription, a.ownerAiPending);
+      if (remover) shots.appendChild(remover);
+      if (owner) shots.appendChild(owner);
+      card.appendChild(shots);
+
+      card.appendChild(el('div', { class: 'alert-actions' }, [
+        el('button', { type: 'button', class: 'btn btn-ghost-accent', onclick: function () { acknowledge(a.id); } },
+          [icon(ICONS.check, 16, 2.2), 'Marcar como revisada'])
+      ]));
+    }
+    return card;
+  }
+
+  var lastCounts = {};
+  function setCount(id, value) {
+    var node = $(id);
+    node.textContent = String(value);
+    if (lastCounts[id] !== undefined && lastCounts[id] !== value) {
+      node.classList.remove('bump');
+      void node.offsetWidth; // reinicia la animación
+      node.classList.add('bump');
+    }
+    lastCounts[id] = value;
+  }
+
+  function render() {
+    var loggedIn = !!state.operator;
+    $('lockedPanel').hidden = loggedIn;
+    $('appBody').hidden = !loggedIn;
+    $('controls').hidden = !loggedIn;
+    $('navOperator').hidden = !loggedIn;
+    $('navOperatorName').textContent = state.operator || 'Operador';
+    $('authLabel').textContent = loggedIn ? 'Cerrar sesión' : 'Iniciar sesión';
+    $('soundToggle').checked = state.soundOn;
+    $('doneToggle').checked = state.showDone;
+    updateUnlockButton();
+    if (!loggedIn) return;
+
+    var pending = state.alerts.filter(function (a) { return !a.acknowledged; });
+    var count = function (sev) { return pending.filter(function (a) { return a.severity === sev; }).length; };
+    setCount('countHigh', count('HIGH'));
+    setCount('countMed', count('MEDIUM'));
+    setCount('countLow', count('LOW'));
+    setCount('countDone', state.alerts.length - pending.length);
+    $('countPending').textContent = String(pending.length);
+    $('emptyState').hidden = pending.length > 0;
+
+    var visible = state.alerts
+      .filter(function (a) { return state.showDone || !a.acknowledged; })
+      .sort(function (x, y) { return y.id - x.id; });
+    var feed = $('feed');
+    feed.replaceChildren.apply(feed, visible.map(renderCard));
+  }
+
+  function acknowledge(id) {
+    state.alerts.forEach(function (a) { if (a.id === id) a.acknowledged = true; });
+    render();
+    // El foco vuelve a un lugar estable tras quitar la tarjeta.
+    var next = document.querySelector('#feed .alert:not(.acked) .alert-actions .btn');
+    if (next) next.focus({ preventScroll: true });
+  }
+
+  $('doneToggle').addEventListener('change', function (e) { state.showDone = e.target.checked; render(); });
+  $('soundToggle').addEventListener('change', function (e) {
+    state.soundOn = e.target.checked;
+    store.set('localStorage', 'safemode.sound', state.soundOn ? 'on' : 'off');
+    if (state.soundOn) ensureAudio();
+    updateUnlockButton();
+  });
+  $('resetDemo').addEventListener('click', function () { resetAlerts(); render(); });
+
+  /* ---------- Alarma sonora (mismo beep de dos tonos que el panel real) ---------- */
+  var audioCtx = null;
+  function ensureAudio() {
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    if (!audioCtx) { try { audioCtx = new Ctx(); } catch (e) { return null; } }
+    if (audioCtx.state === 'suspended') audioCtx.resume().then(updateUnlockButton, function () {});
+    return audioCtx;
+  }
+  function audioReady() { return !!audioCtx && audioCtx.state === 'running'; }
+  function updateUnlockButton() { $('unlockBtn').hidden = !state.soundOn || audioReady(); }
+  function playAlarm() {
+    if (!state.soundOn) return;
+    var ctx = ensureAudio();
+    if (!ctx || ctx.state !== 'running') return;
+    var now = ctx.currentTime;
+    [0, 0.35].forEach(function (offset) {
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(880, now + offset);
+      osc.frequency.setValueAtTime(660, now + offset + 0.15);
+      gain.gain.setValueAtTime(0.0001, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.25, now + offset + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.28);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.3);
+    });
+  }
+  $('unlockBtn').addEventListener('click', function () {
+    var ctx = ensureAudio();
+    if (!ctx) return;
+    ctx.resume().then(function () { updateUnlockButton(); playAlarm(); }, function () {});
+  });
+
+  /* ---------- Lightbox ---------- */
+  var lightbox = $('lightbox');
+  var lastFocus = null;
+  function openLightbox(title, time, isFrame) {
+    lastFocus = document.activeElement;
+    $('lbTitle').textContent = title;
+    $('lbTime').textContent = time;
+    $('lbStamp').textContent = time;
+    $('lbIcon').replaceChildren(icon(isFrame ? ICONS.frame : ICONS.person, 64, 1.2));
+    lightbox.showModal();
+  }
+  $('lbClose').addEventListener('click', function () { lightbox.close(); });
+  lightbox.addEventListener('click', function (e) { if (e.target === lightbox) lightbox.close(); });
+  lightbox.addEventListener('close', function () { if (lastFocus) lastFocus.focus({ preventScroll: true }); });
+
+  /* ---------- Login (Login.dc.html) ---------- */
+  var TILES = [
+    { label: 'CAM 01 · SALA', sec: '02', kind: 'room' },
+    { label: 'CAM 02 · PASILLO', sec: '02', kind: 'corridor' },
+    { label: 'CAM 03 · CASILLEROS', sec: '03', kind: 'hall' },
+    { label: 'CAM 04 · ENTRADA', sec: '03', kind: 'corridor' },
+    { label: 'CAM 05 · BIBLIOTECA', sec: '04', kind: 'room' },
+    { label: 'CAM 06 · CAFETERÍA', sec: '04', kind: 'hall' }
+  ];
+  var SCENES = {
+    corridor: '<path d="M0 0L150 90M400 0L250 90M0 260L150 170M400 260L250 170"/><rect x="150" y="90" width="100" height="80"/><path d="M60 36v188M340 36v188"/>',
+    room: '<path d="M0 180L120 150H330L400 175"/><rect x="150" y="60" width="90" height="90"/><rect x="40" y="170" width="120" height="50" rx="6"/><path d="M280 150v-70h60v75"/>',
+    hall: '<path d="M0 200H400M0 120H400"/><rect x="30" y="130" width="60" height="70"/><rect x="170" y="130" width="60" height="70"/><rect x="310" y="130" width="60" height="70"/>'
+  };
+  var scene = $('loginScene');
+  TILES.forEach(function (t) {
+    var tile = el('div', { class: 'tile' });
+    tile.innerHTML = '<svg viewBox="0 0 400 260" preserveAspectRatio="none" fill="none" stroke="#223039" stroke-width="2">' + SCENES[t.kind] + '</svg>';
+    tile.appendChild(el('span', { class: 'tile-label', text: t.label }));
+    tile.appendChild(el('span', { class: 'rec-dot' }));
+    tile.appendChild(el('span', { class: 'cam-time', style: 'bottom: 14px; left: 16px; font-size: 12px; color: #6B7884', text: '25-09-2026 20:14:' + t.sec }));
+    scene.appendChild(tile);
+  });
+
+  var loginDialog = $('loginDialog');
+  var loginForm = $('loginForm');
+  function openLogin() {
+    loginForm.reset();
+    $('loginError').hidden = true;
+    loginDialog.showModal();
+    $('usuario').focus();
+  }
+  function logout() {
+    state.operator = null;
+    store.remove('sessionStorage', 'safemode.operator');
+    render();
+  }
+  $('authBtn').addEventListener('click', function () { if (state.operator) logout(); else openLogin(); });
+  $('lockedLogin').addEventListener('click', openLogin);
+  $('loginClose').addEventListener('click', function () { loginDialog.close(); });
+  loginForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var user = $('usuario').value.trim();
+    var pass = $('clave').value;
+    if (!user || !pass) {
+      $('loginError').hidden = false;
+      (user ? $('clave') : $('usuario')).focus();
+      return;
+    }
+    state.operator = user;
+    store.set('sessionStorage', 'safemode.operator', user);
+    loginDialog.close();
+    render();
+    // El clic de "Ingresar" cuenta como interacción: se aprovecha para desbloquear el audio.
+    if (state.soundOn) ensureAudio();
+    $('consola').scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth' });
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

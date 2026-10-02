@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Safemode - Centro de alertas</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --text: #1d2330; --muted: #5d6675; --border: #dde1e8;
+    --high: #c62828; --medium: #e08a00; --low: #2e7d32; --accent: #1f5fbf;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14171d; --card: #1e232c; --text: #e8ebf0; --muted: #98a2b3; --border: #2f3644; --accent: #6ea8ff; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, sans-serif; }
+  header { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center;
+           padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--border); }
+  h1 { margin: 0; font-size: 18px; flex: 1 1 auto; }
+  .status { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--high); }
+  .dot.on { background: var(--low); }
+  main { max-width: 900px; margin: 0 auto; padding: 16px; display: grid; gap: 12px; }
+  .empty { text-align: center; color: var(--muted); padding: 48px 0; }
+  .card { background: var(--card); border: 1px solid var(--border); border-left: 6px solid var(--muted); border-radius: 8px; padding: 12px 14px; }
+  .card.HIGH { border-left-color: var(--high); } .card.MEDIUM { border-left-color: var(--medium); } .card.LOW { border-left-color: var(--low); }
+  .card.done { opacity: .55; }
+  .top { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
+  .badge { font-size: 12px; font-weight: 700; color: #fff; border-radius: 4px; padding: 1px 8px; }
+  .badge.HIGH { background: var(--high); } .badge.MEDIUM { background: var(--medium); } .badge.LOW { background: var(--low); }
+  .title { font-weight: 700; }
+  .time { margin-left: auto; font-size: 13px; color: var(--muted); }
+  .msg { margin: 6px 0; }
+  .people { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin-top: 8px; }
+  figure { margin: 0; }
+  figure img { display: block; width: 100%; max-height: 220px; object-fit: contain; background: #0002; border-radius: 6px; }
+  figcaption { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  figcaption b { color: var(--text); }
+  figcaption .ai { color: var(--text); margin-top: 2px; }
+  figcaption .pending, figcaption .estimate { font-size: 12px; font-style: italic; margin-top: 2px; }
+  button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; }
+  button:hover { background: var(--accent); color: #fff; }
+  .actions { margin-top: 10px; }
+  label { font-size: 13px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+  #unlockSound { border-color: var(--high); color: var(--high); font-weight: 700; }
+  #unlockSound:hover { background: var(--high); color: #fff; }
+  #unlockSound.blink { animation: blink .5s step-start 0s 6; }
+  @keyframes blink { 50% { background: var(--high); color: #fff; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Safemode - Centro de alertas</h1>
+  <label><input type="checkbox" id="showDone"> ver revisadas</label>
+  <label><input type="checkbox" id="soundToggle"> sonido de alarma</label>
+  <button id="unlockSound" hidden>🔇 Activar sonido</button>
+  <div class="status"><span class="dot" id="dot"></span><span id="statusText">Conectando...</span></div>
+</header>
+<main id="list"></main>
+
+<script>
+(function () {
+  var WS_PORT = 8090;
+  var TYPES = { POSSIBLE_THEFT: 'Posible robo', AMBIGUOUS_REMOVAL: 'Retiro ambiguo',
+                OBJECT_VANISHED: 'Objeto desaparecido', UNKNOWN_OWNER_REMOVAL: 'Retiro sin dueño registrado' };
+  var SEVERITIES = { HIGH: 'Alta', MEDIUM: 'Media', LOW: 'Baja' };
+  var alerts = new Map();
+  var socket = null;
+  var list = document.getElementById('list');
+  var showDone = document.getElementById('showDone');
+  var soundToggle = document.getElementById('soundToggle');
+
+  // Alarma sonora al llegar una alerta NUEVA. Se genera con la Web Audio API (sin
+  // archivo de audio) para no depender de nada extra en esta página estática.
+  var SOUND_KEY = 'safemode-alert-sound';
+  var soundEnabled = true;
+  try { soundEnabled = localStorage.getItem(SOUND_KEY) !== 'off'; } catch (e) { /* almacenamiento bloqueado: se ignora */ }
+  soundToggle.checked = soundEnabled;
+  soundToggle.addEventListener('change', function () {
+    soundEnabled = soundToggle.checked;
+    try { localStorage.setItem(SOUND_KEY, soundEnabled ? 'on' : 'off'); } catch (e) { /* almacenamiento bloqueado: se ignora */ }
+    if (soundEnabled) ensureAudioContext();
+    updateUnlockButton();
+  });
+
+  var unlockSound = document.getElementById('unlockSound');
+  var audioCtx = null;
+  function ensureAudioContext() {
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    if (!audioCtx) {
+      audioCtx = new Ctx();
+      audioCtx.onstatechange = updateUnlockButton;
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+  function audioReady() { return audioCtx !== null && audioCtx.state === 'running'; }
+  // Los navegadores bloquean el audio hasta que el usuario hace clic o pulsa una tecla en la
+  // página. Mientras siga bloqueado se muestra el botón "Activar sonido" para que se haga ese
+  // clic al abrir el panel, y no justo al revisar la primera alerta.
+  function updateUnlockButton() { unlockSound.hidden = !soundEnabled || audioReady(); }
+  function unlockOnInteraction() {
+    ensureAudioContext();
+    if (audioReady()) {
+      document.removeEventListener('click', unlockOnInteraction);
+      document.removeEventListener('keydown', unlockOnInteraction);
+    }
+  }
+  document.addEventListener('click', unlockOnInteraction);
+  document.addEventListener('keydown', unlockOnInteraction);
+  updateUnlockButton();
+
+  function playAlarm() {
+    if (!soundEnabled) return;
+    var ctx = ensureAudioContext();
+    if (!ctx) return;
+    // Con el audio aún bloqueado el sonido quedaría en cola y saldría con el siguiente clic
+    // (p. ej. al pulsar "ya lo revisé"): mejor no programarlo y avisar con el botón.
+    if (ctx.state !== 'running') {
+      unlockSound.classList.remove('blink');
+      void unlockSound.offsetWidth; // reinicia la animación
+      unlockSound.classList.add('blink');
+      return;
+    }
+    var now = ctx.currentTime;
+    [0, 0.35].forEach(function (offset) {
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(880, now + offset);
+      osc.frequency.setValueAtTime(660, now + offset + 0.15);
+      gain.gain.setValueAtTime(0.0001, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.25, now + offset + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.28);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.3);
+    });
+  }
+
+  // Todo lo que viene del servidor (incluido el texto de la IA) se inserta con textContent, nunca como HTML.
+  function el(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
+  function person(title, photo, description, aiDescription) {
+    if (!photo && !description && !aiDescription) return null;
+    var fig = el('figure');
+    if (photo) {
+      var link = el('a'); link.href = photo; link.target = '_blank'; link.rel = 'noopener';
+      var img = el('img'); img.src = photo; img.alt = title; img.loading = 'lazy';
+      link.appendChild(img); fig.appendChild(link);
+    }
+    // La descripcion de la IA es la confiable; el color por pixeles es una estimacion que puede equivocarse (fondo, luz),
+    // asi que va aparte y marcada como aproximada.
+    var caption = el('figcaption');
+    caption.appendChild(el('b', null, title));
+    if (aiDescription) {
+      caption.appendChild(el('div', 'ai', aiDescription));
+    } else {
+      caption.appendChild(el('div', 'pending', 'Descripción por IA: pendiente o no disponible'));
+    }
+    if (description) caption.appendChild(el('div', 'estimate', 'Color estimado por imagen: ' + description));
+    fig.appendChild(caption);
+    return fig;
+  }
+
+  function card(a) {
+    var box = el('article', 'card ' + a.severity + (a.acknowledged ? ' done' : ''));
+    var top = el('div', 'top');
+    top.appendChild(el('span', 'badge ' + a.severity, SEVERITIES[a.severity] || a.severity));
+    top.appendChild(el('span', 'title', TYPES[a.type] || a.type));
+    top.appendChild(el('span', 'time', new Date(a.occurredAt).toLocaleString('es-CO')));
+    box.appendChild(top);
+    box.appendChild(el('div', 'msg', a.message));
+
+    var people = el('div', 'people');
+    [person('Retiro (foto del momento)', a.framePhoto, null, null),
+     person('Quien se lo llevó', a.removerPhoto, a.removerDescription, a.removerAiDescription),
+     person('Dueño', a.ownerPhoto, a.ownerDescription, a.ownerAiDescription)
+    ].forEach(function (p) { if (p) people.appendChild(p); });
+    if (people.children.length) box.appendChild(people);
+
+    if (!a.acknowledged) {
+      var actions = el('div', 'actions');
+      var button = el('button', null, 'Marcar como revisada');
+      button.addEventListener('click', function () {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ action: 'ack', id: a.id }));
+        }
+      });
+      actions.appendChild(button);
+      box.appendChild(actions);
+    }
+    return box;
+  }
+
+  function render() {
+    var visible = Array.from(alerts.values())
+      .filter(function (a) { return showDone.checked || !a.acknowledged; })
+      .sort(function (x, y) { return y.id - x.id; });
+    list.replaceChildren();
+    if (!visible.length) {
+      list.appendChild(el('div', 'empty', 'Sin alertas pendientes. Todo tranquilo.'));
+    }
+    visible.forEach(function (a) { list.appendChild(card(a)); });
+    var pending = Array.from(alerts.values()).filter(function (a) { return !a.acknowledged; }).length;
+    document.title = (pending ? '(' + pending + ') ' : '') + 'Safemode - Centro de alertas';
+  }
+
+  function setStatus(connected) {
+    document.getElementById('dot').className = 'dot' + (connected ? ' on' : '');
+    document.getElementById('statusText').textContent = connected ? 'En vivo' : 'Desconectado, reintentando...';
+  }
+
+  function connect() {
+    var host = location.hostname || 'localhost';
+    socket = new WebSocket('ws://' + host + ':' + WS_PORT);
+    socket.onopen = function () { setStatus(true); };
+    socket.onmessage = function (event) {
+      var message = JSON.parse(event.data);
+      if (message.type === 'snapshot') {
+        alerts.clear();
+        message.alerts.forEach(function (a) { alerts.set(a.id, a); });
+      } else if (message.alert) {
+        alerts.set(message.alert.id, message.alert);
+        // Solo suena con una alerta nueva ('alert'); una 'update' (p.ej. llegó la
+        // descripción de la IA unos segundos después) no debe volver a sonar.
+        if (message.type === 'alert') playAlarm();
+      }
+      render();
+    };
+    socket.onclose = function () { setStatus(false); setTimeout(connect, 2000); };
+  }
+
+  showDone.addEventListener('change', render);
+  render();
+  connect();
+})();
+</script>
+</body>
+</html>

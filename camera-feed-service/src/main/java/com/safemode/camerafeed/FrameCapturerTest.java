@@ -3,6 +3,7 @@ package com.safemode.camerafeed;
 import java.awt.Rectangle;
 import java.awt.Toolkit;
 
+// Script de verificacion manual (no es un test automatizado; no usa JUnit).
 public class FrameCapturerTest {
     public static void main(String[] args) throws Exception {
         Rectangle screenRect = new Rectangle(Toolkit.getDefaultToolkit().getScreenSize());

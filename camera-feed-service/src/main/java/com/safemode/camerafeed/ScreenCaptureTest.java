@@ -5,6 +5,7 @@ import java.awt.image.BufferedImage;
 import javax.imageio.ImageIO;
 import java.io.File;
 
+// Script de verificacion manual (no es un test automatizado; no usa JUnit).
 public class ScreenCaptureTest {
     public static void main(String[] args) throws Exception {
         Robot robot = new Robot();
