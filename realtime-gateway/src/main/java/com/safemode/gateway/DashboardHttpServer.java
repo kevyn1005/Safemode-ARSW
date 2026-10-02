@@ -54,6 +54,10 @@ public class DashboardHttpServer {
                 serveFile(exchange, dashboardDir, "index.html");
             } else if (path.startsWith(AlertJson.PHOTO_PREFIX)) {
                 serveFile(exchange, photosDir, path.substring(AlertJson.PHOTO_PREFIX.length()));
+            } else if (path.startsWith("/lens-frames/")) {
+                serveFile(exchange, dashboardDir.resolve("lens-frames"), path.substring("/lens-frames/".length()));
+            } else if (path.equals("/Camera_pushing_into_AI_core_20260926081000.mp4")) {
+                serveFile(exchange, dashboardDir, path.substring(1));
             } else {
                 send(exchange, 404, "text/plain; charset=utf-8", "No encontrado".getBytes());
             }
@@ -74,12 +78,11 @@ public class DashboardHttpServer {
 
     static String contentType(String fileName) {
         String lower = fileName.toLowerCase();
-        if (lower.endsWith(".html")) {
-            return "text/html; charset=utf-8";
-        }
-        if (lower.endsWith(".png")) {
-            return "image/png";
-        }
+        if (lower.endsWith(".html")) return "text/html; charset=utf-8";
+        if (lower.endsWith(".png")) return "image/png";
+        if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+        if (lower.endsWith(".webp")) return "image/webp";
+        if (lower.endsWith(".mp4")) return "video/mp4";
         return "application/octet-stream";
     }
 
