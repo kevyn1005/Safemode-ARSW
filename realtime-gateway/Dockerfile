@@ -8,7 +8,9 @@ COPY object-presence-tracker object-presence-tracker
 COPY alert-engine alert-engine
 COPY realtime-gateway realtime-gateway
 # la pagina del panel; el gateway la entrega en http://localhost:8080
-COPY security-dashboard/index.html security-dashboard/index.html
+COPY index.html security-dashboard/index.html
+COPY lens-frames security-dashboard/lens-frames
+COPY Camera_pushing_into_AI_core_20260926081000.mp4 security-dashboard/
 
 # realtime-gateway depende de alert-engine, que depende del tracker y este del modulo de vision: con -am se construyen e
 # instalan todos en el repositorio local (el pom padre incluido). Igual que en los otros Dockerfiles, el classpath se arma
