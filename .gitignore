@@ -21,3 +21,20 @@ object-presence-tracker/data/
 .claude/skills/
 .agents/
 skills-lock.json
+
+# graphify
+graphify-out/
+
+# Herramientas de diseno / IA (no van al repo publico)
+.impeccable/
+DESIGN.md
+PRODUCT.md
+.gitattributes
+.graphifyignore
+
+# Material de la sustentacion
+*.pptx
+
+# Contexto interno y pesos sueltos
+CLAUDE.md
+yolov8s.pt
