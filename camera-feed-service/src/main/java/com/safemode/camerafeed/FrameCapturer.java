@@ -7,7 +7,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class FrameCapturer {
+public class FrameCapturer implements FrameSource {
 
     private final Robot robot;
     private final Rectangle region;
@@ -35,6 +35,7 @@ public class FrameCapturer {
         }, 0, periodMillis, TimeUnit.MILLISECONDS);
     }
 
+    @Override
     public void stop() {
         if (scheduler != null) {
             scheduler.shutdown();
@@ -42,6 +43,7 @@ public class FrameCapturer {
     }
 
     // Esto es lo que va a usar el siguiente servicio para pedir el frame actual
+    @Override
     public BufferedImage getLatestFrame() {
         return latestFrame;
     }

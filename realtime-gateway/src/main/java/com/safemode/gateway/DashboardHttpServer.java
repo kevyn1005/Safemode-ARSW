@@ -52,6 +52,8 @@ public class DashboardHttpServer {
             String path = exchange.getRequestURI().getPath();
             if (path.equals("/") || path.equals("/index.html")) {
                 serveFile(exchange, dashboardDir, "index.html");
+            } else if (path.equals("/camera-share.js")) {
+                serveFile(exchange, dashboardDir, "camera-share.js");
             } else if (path.startsWith(AlertJson.PHOTO_PREFIX)) {
                 serveFile(exchange, photosDir, path.substring(AlertJson.PHOTO_PREFIX.length()));
             } else if (path.startsWith("/lens-frames/")) {
@@ -79,6 +81,7 @@ public class DashboardHttpServer {
     static String contentType(String fileName) {
         String lower = fileName.toLowerCase();
         if (lower.endsWith(".html")) return "text/html; charset=utf-8";
+        if (lower.endsWith(".js")) return "text/javascript; charset=utf-8";
         if (lower.endsWith(".png")) return "image/png";
         if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
         if (lower.endsWith(".webp")) return "image/webp";

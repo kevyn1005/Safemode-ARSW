@@ -52,6 +52,20 @@ mvn -pl object-presence-tracker exec:java "-Dexec.mainClass=com.safemode.presenc
 Sin Docker sigue funcionando como antes (no definir `SAFEMODE_DB_URL`; ver la lista de pasos en `CLAUDE.md`).
 Detalles y motivos en [ADR 0002](docs/adr/0002-docker-compose-gateway-y-base-de-datos.md).
 
+### Compartir la ventana de la camara (en vez de capturar una zona de la pantalla)
+
+Por defecto el tracker captura la mitad izquierda de la pantalla, asi que cualquier ventana encima de la camara arruina la
+deteccion. Con esta opcion el operador comparte **la ventana de la camara** desde el panel, como en una videollamada:
+
+1. Abre la camara (app Camara, VLC...) en su ventana.
+2. Corre el tracker con la fuente "browser" (PowerShell):
+   `$env:SAFEMODE_FRAME_SOURCE = "browser"` y luego el comando de siempre (`ObjectPresenceTrackerTest`).
+3. Abre el panel (http://localhost:8080) en Chrome o Edge y pulsa **Compartir ventana de la camara**; elige la ventana.
+
+Se puede tapar la ventana de la camara con otras y trabajar en el resto del computador. **No** se debe minimizar la
+ventana de la camara (Windows deja de dibujarla) ni cerrar la pestana del panel; minimizar todo Chrome puede ralentizar
+el envio. Los frames viajan solo por `localhost` (puerto 8091) y el tracker solo acepta paginas del panel (`Origin`).
+
 ## Notas
 
 - El modelo `vision-detection-service/src/main/resources/models/yolov8n.onnx`

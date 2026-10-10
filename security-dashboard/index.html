@@ -51,12 +51,14 @@
 <body>
 <header>
   <h1>Safemode - Centro de alertas</h1>
+  <div id="cameraShareSlot"></div>
   <label><input type="checkbox" id="showDone"> ver revisadas</label>
   <label><input type="checkbox" id="soundToggle"> sonido de alarma</label>
   <button id="unlockSound" hidden>🔇 Activar sonido</button>
   <div class="status"><span class="dot" id="dot"></span><span id="statusText">Conectando...</span></div>
 </header>
 <main id="list"></main>
+<script src="camera-share.js"></script>
 
 <script>
 (function () {

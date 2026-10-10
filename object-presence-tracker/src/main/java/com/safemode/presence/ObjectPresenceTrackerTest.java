@@ -1,6 +1,8 @@
 package com.safemode.presence;
 
+import com.safemode.camerafeed.BrowserFrameSource;
 import com.safemode.camerafeed.FrameCapturer;
+import com.safemode.camerafeed.FrameSource;
 import com.safemode.vision.ObjectDetector;
 import com.safemode.vision.PoseEstimator;
 
@@ -12,21 +14,18 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Set;
 
 // Script de verificacion manual (no es un test automatizado; no usa JUnit).
 // La logica de ObjectTracker si tiene pruebas automatizadas de verdad:
 // ver ObjectTrackerTest en src/test/java (no necesitan camara).
 public class ObjectPresenceTrackerTest {
+    private static final int BROWSER_FRAMES_PORT = 8091;
+
     public static void main(String[] args) throws Exception {
         clearPreviousRunPhotos();
 
-        // Solo la mitad izquierda de la pantalla: se captura esa zona (no toda), asi se puede tener el panel de
-        // alertas (http://localhost:8080) abierto en la otra mitad sin que el detector lo confunda con la escena.
-        // En Windows: Win+flecha-izquierda sobre la ventana de la camara, Win+flecha-derecha sobre el navegador.
-        Rectangle region = leftHalfOfScreen();
-
-        FrameCapturer capturer = new FrameCapturer(region);
-        capturer.start(2); // 2 fps
+        FrameSource capturer = openFrameSource();
 
         // Si existe un modelo mas grande exportado localmente (no va al repo: data/ esta en .gitignore), se usa ese.
         Path biggerModel = Path.of("object-presence-tracker", "data", "models", "yolov8m.onnx");
@@ -87,6 +86,28 @@ public class ObjectPresenceTrackerTest {
         } finally {
             capturer.stop();
         }
+    }
+
+    /**
+     * De donde salen los frames. Por defecto, la captura de la mitad izquierda de la pantalla (como siempre). Con la
+     * variable de entorno {@code SAFEMODE_FRAME_SOURCE=browser} se recibe la ventana que el operador comparte desde el
+     * panel (boton "Compartir ventana de la camara"): asi la camara puede quedar tapada por otras ventanas.
+     */
+    private static FrameSource openFrameSource() throws Exception {
+        if ("browser".equalsIgnoreCase(System.getenv("SAFEMODE_FRAME_SOURCE"))) {
+            BrowserFrameSource source = new BrowserFrameSource("localhost", BROWSER_FRAMES_PORT,
+                    Set.of("http://localhost:8080", "http://127.0.0.1:8080"));
+            source.startAndWait();
+            System.out.println("Fuente de frames: ventana compartida desde el navegador (ws://localhost:" + BROWSER_FRAMES_PORT
+                    + "). Abre http://localhost:8080 y pulsa \"Compartir ventana de la camara\".");
+            return source;
+        }
+        // Solo la mitad izquierda de la pantalla: se captura esa zona (no toda), asi se puede tener el panel de
+        // alertas (http://localhost:8080) abierto en la otra mitad sin que el detector lo confunda con la escena.
+        // En Windows: Win+flecha-izquierda sobre la ventana de la camara, Win+flecha-derecha sobre el navegador.
+        FrameCapturer capturer = new FrameCapturer(leftHalfOfScreen());
+        capturer.start(2); // 2 fps
+        return capturer;
     }
 
     /**

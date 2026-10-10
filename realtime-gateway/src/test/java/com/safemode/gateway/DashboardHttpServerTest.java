@@ -30,6 +30,7 @@ class DashboardHttpServerTest {
         Path dashboard = Files.createDirectories(tmp.resolve("dashboard"));
         Path photos = Files.createDirectories(tmp.resolve("photos"));
         Files.writeString(dashboard.resolve("index.html"), "<html>panel</html>");
+        Files.writeString(dashboard.resolve("camera-share.js"), "// compartir");
         Files.write(photos.resolve("a.png"), new byte[]{1, 2, 3});
         Files.writeString(tmp.resolve("secreto.txt"), "no debe salir");
         Files.createDirectories(photos.resolve("sub"));
@@ -54,6 +55,14 @@ class DashboardHttpServerTest {
         assertEquals(200, response.statusCode());
         assertEquals("<html>panel</html>", new String(response.body()));
         assertTrue(response.headers().firstValue("Content-Type").orElse("").startsWith("text/html"));
+    }
+
+    @Test
+    void entregaElScriptParaCompartirLaCamara() throws Exception {
+        HttpResponse<byte[]> response = get("/camera-share.js");
+        assertEquals(200, response.statusCode());
+        assertEquals("// compartir", new String(response.body()));
+        assertTrue(response.headers().firstValue("Content-Type").orElse("").startsWith("text/javascript"));
     }
 
     @Test
