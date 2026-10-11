@@ -86,6 +86,8 @@ los POST solo se aceptan desde el propio panel (`Origin` y `Host`), el boton no 
 - [ADR 0002](docs/adr/0002-docker-compose-gateway-y-base-de-datos.md): docker-compose para el gateway y la base de datos.
 - [ADR 0003](docs/adr/0003-dos-camaras-zonas-y-reporte.md): dos camaras desde una ventana compartida, zonas dibujadas y
   reporte de alertas (propuesto, aun no implementado).
+- [ADR 0004](docs/adr/0004-login-google-y-notificaciones.md): inicio de sesion con Google y notificaciones por navegador,
+  Telegram y correo (propuesto, aun no implementado).
 
 ## Notas
 
