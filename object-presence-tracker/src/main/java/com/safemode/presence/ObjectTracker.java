@@ -65,6 +65,9 @@ public class ObjectTracker {
     // fraccion del tamano de la caja (ancho o alto, el mayor) que una persona puede desplazarse entre frames
     private static final double PERSON_MOVE_PER_SIZE = 0.6;
     private static final int MAX_PERSON_FRAMES_UNSEEN = 5;
+    // diferencia de color maxima (como PersonAppearance) para decir que quien retira se viste "parecido al dueno": mas estricta que
+    // la de identidad (80) porque de ella depende bajar la severidad de la alerta; los retornos del mismo dueno medidos dieron 14 a 44
+    private static final double OWNER_LOOKALIKE_MAX_DISTANCE = 60;
 
     private final Map<Long, TrackedObject> tracked = new LinkedHashMap<>();
     private final AtomicLong nextId = new AtomicLong(1);
@@ -429,9 +432,10 @@ public class ObjectTracker {
             int uy = Math.min(person.y(), oy);
             int ux2 = Math.max(person.x() + person.width(), ox + ow);
             int uy2 = Math.max(person.y() + person.height(), oy + oh);
+            TrackedPerson tracked = trackedPersons.get(personIds.get(i));
             near.put(personIds.get(i), new TrackedObject.NearPerson(personIds.get(i), distance,
                     cropRegion(frame, person.x(), person.y(), person.width(), person.height()),
-                    cropRegion(frame, ux, uy, ux2 - ux, uy2 - uy), objectInCrop));
+                    cropRegion(frame, ux, uy, ux2 - ux, uy2 - uy), objectInCrop, tracked == null ? null : tracked.getAppearance()));
         }
         return near;
     }
@@ -458,13 +462,52 @@ public class ObjectTracker {
         if (remover == null) {
             return new RemovalAnalysis(new RemovalInfo(kind.name(), null, null, null), kind, null, null);
         }
+        boolean looksLikeOwner = kind == RemovalKind.BY_OTHER && othersLookLikeOwner(t, ownerId, near);
 
         String cropPath = remover.crop == null ? null
                 : writePng(remover.evidenceCrop != null ? remover.evidenceCrop : remover.crop,
                         photoPrefix() + "obj" + t.getId() + "_REMOVER_person" + remover.personId + "_" + now.toEpochMilli() + ".png");
         Keypoint[] pose = (remover.crop == null || poseFinder == null) ? null : poseFinder.apply(remover.crop);
         String description = PersonDescriber.describe(remover.crop, remover.objectInCrop, pose);
-        return new RemovalAnalysis(new RemovalInfo(kind.name(), remover.personId, description, cropPath), kind, remover, pose);
+        return new RemovalAnalysis(new RemovalInfo(kind.name(), remover.personId, description, cropPath, looksLikeOwner), kind, remover, pose);
+    }
+
+    /**
+     * El retiro fue de "otra persona" (el dueno que sale de cuadro mas de unos frames se olvida y al volver recibe un id nuevo),
+     * pero TODAS las personas junto al objeto se visten parecido al dueno: puede ser el dueno que volvio. Es solo una pista que
+     * baja la alerta de posible robo a "posible dueno que volvio"; si alguna se ve distinta, o falta la ropa del dueno o de alguna
+     * (sin imagen no se puede comparar), no cambia nada y sigue siendo un posible robo.
+     */
+    private boolean othersLookLikeOwner(TrackedObject t, Long ownerId, Map<Long, TrackedObject.NearPerson> near) {
+        PersonAppearance ownerLook = t.getOwnerAppearance();
+        if (ownerId == null || ownerLook == null) {
+            System.out.println("[DEBUG]   -> Retiro por otra persona: no hay ropa del dueno para comparar; se trata como posible robo");
+            return false;
+        }
+        List<String> parts = new ArrayList<>();
+        boolean allAlike = true;
+        boolean any = false;
+        for (TrackedObject.NearPerson other : near.values()) {
+            if (other.personId == ownerId) {
+                continue;
+            }
+            any = true;
+            if (other.appearance == null) {
+                parts.add("persona #" + other.personId + " sin ropa que comparar");
+                allAlike = false;
+                continue;
+            }
+            double distance = ownerLook.distanceTo(other.appearance);
+            parts.add("persona #" + other.personId + " color a " + Math.round(distance));
+            if (distance > OWNER_LOOKALIKE_MAX_DISTANCE) {
+                allAlike = false;
+            }
+        }
+        boolean result = any && allAlike;
+        System.out.println("[DEBUG]   -> Retiro por otra persona, comparada con el dueno #" + ownerId + ": " + String.join(", ", parts)
+                + " (maximo " + (int) OWNER_LOOKALIKE_MAX_DISTANCE + ") => "
+                + (result ? "se parece: puede ser el dueno que volvio" : "se ve distinta: posible robo"));
+        return result;
     }
 
     /** Tipo de retiro segun el dueno del objeto (puede ser null) y las personas que estaban junto a el. */
@@ -705,12 +748,14 @@ public class ObjectTracker {
         for (Detection det : personDetections) {
             PersonAppearance appearance = PersonAppearance.of(frame, det.x(), det.y(), det.width(), det.height());
             Set<String> rejected = new java.util.LinkedHashSet<>();
-            TrackedPerson person = findBestPersonMatch(det, matched, appearance, rejected);
+            String[] closestMiss = new String[1];
+            TrackedPerson person = findBestPersonMatch(det, matched, appearance, rejected, closestMiss);
             if (person == null) {
                 person = new TrackedPerson(nextPersonId.getAndIncrement(), det.x(), det.y(), det.width(), det.height());
                 trackedPersons.put(person.getId(), person);
                 System.out.println("[DEBUG]   -> Persona #" + person.getId() + " nueva"
-                        + (rejected.isEmpty() ? "" : " (descarto a " + String.join(" y a ", rejected) + ")"));
+                        + (!rejected.isEmpty() ? " (descarto a " + String.join(" y a ", rejected) + ")"
+                        : closestMiss[0] != null ? " (" + closestMiss[0] + ")" : ""));
             } else {
                 if (person.getFramesUnseen() > 0) {
                     System.out.println("[DEBUG]   -> Persona #" + person.getId() + " vuelve a verse tras " + person.getFramesUnseen()
@@ -770,15 +815,30 @@ public class ObjectTracker {
     }
 
     private TrackedPerson findBestPersonMatch(Detection det, Set<Long> alreadyMatched, PersonAppearance appearance,
-                                              Set<String> rejected) {
+                                              Set<String> rejected, String[] closestMiss) {
         TrackedPerson bestByIou = null;
         double bestIou = MATCH_IOU_THRESHOLD;
+        // la persona rastreada mas cercana por posicion, solo para explicar en el log por que una persona entra con id nuevo
+        TrackedPerson missPerson = null;
+        double missRatio = Double.MAX_VALUE;
+        double missIou = 0;
+        double missDistance = 0;
+        double missLimit = 0;
         for (TrackedPerson p : trackedPersons.values()) {
             if (alreadyMatched.contains(p.getId())) {
                 continue;
             }
             double iou = iou(p.getX(), p.getY(), p.getWidth(), p.getHeight(),
                     det.x(), det.y(), det.width(), det.height());
+            double distance = personCenterDistance(det, p);
+            double limit = personMoveLimit(p);
+            if (distance / limit < missRatio) {
+                missRatio = distance / limit;
+                missPerson = p;
+                missIou = iou;
+                missDistance = distance;
+                missLimit = limit;
+            }
             if (iou <= bestIou) {
                 continue;
             }
@@ -801,11 +861,7 @@ public class ObjectTracker {
             if (alreadyMatched.contains(p.getId())) {
                 continue;
             }
-            double distance = Math.hypot(
-                    (det.x() + det.width() / 2.0) - (p.getX() + p.getWidth() / 2.0),
-                    (det.y() + det.height() / 2.0) - (p.getY() + p.getHeight() / 2.0));
-            double limit = Math.max(MAX_PERSON_FALLBACK_DISTANCE_PX, PERSON_MOVE_PER_SIZE * Math.max(p.getWidth(), p.getHeight()));
-            double ratio = distance / limit;
+            double ratio = personCenterDistance(det, p) / personMoveLimit(p);
             if (ratio >= bestRatio) {
                 continue;
             }
@@ -816,7 +872,23 @@ public class ObjectTracker {
             bestRatio = ratio;
             bestByDistance = p;
         }
+        if (bestByDistance == null && missPerson != null && rejected.isEmpty()) {
+            closestMiss[0] = "el candidato mas cercano era #" + missPerson.getId() + ": IoU "
+                    + String.format(java.util.Locale.ROOT, "%.2f", missIou) + ", a " + Math.round(missDistance)
+                    + " px de su centro con limite de " + Math.round(missLimit) + " px, " + missPerson.getFramesUnseen()
+                    + " frame(s) sin verse";
+        }
         return bestByDistance;
+    }
+
+    private static double personCenterDistance(Detection det, TrackedPerson p) {
+        return Math.hypot(
+                (det.x() + det.width() / 2.0) - (p.getX() + p.getWidth() / 2.0),
+                (det.y() + det.height() / 2.0) - (p.getY() + p.getHeight() / 2.0));
+    }
+
+    private static double personMoveLimit(TrackedPerson p) {
+        return Math.max(MAX_PERSON_FALLBACK_DISTANCE_PX, PERSON_MOVE_PER_SIZE * Math.max(p.getWidth(), p.getHeight()));
     }
 
     /** Anota, en un objeto todavia NEW, la persona mas cercana (si hay alguna dentro del radio de dueno). */
@@ -850,6 +922,10 @@ public class ObjectTracker {
             int uy2 = Math.max(person.y() + person.height(), objDet.y() + objDet.height());
             t.recordNearPerson(personIds.get(nearestIdx), cropRegion(frame, person.x(), person.y(), person.width(), person.height()),
                     objectInCrop, cropRegion(frame, ux, uy, ux2 - ux, uy2 - uy));
+            TrackedPerson nearPerson = trackedPersons.get(personIds.get(nearestIdx));
+            if (nearPerson != null) {
+                t.recordNearAppearance(personIds.get(nearestIdx), nearPerson.getAppearance());
+            }
         }
     }
 
@@ -903,6 +979,7 @@ public class ObjectTracker {
         String description = PersonDescriber.describe(crop, t.objectInCropOf(ownerId), pose);
         t.setOwnerCrop(crop);
         t.setOwnerPose(pose);
+        t.setOwnerAppearance(t.averageLookOf(ownerId));
         t.clearSightings();
         return new OwnerInfo(ownerId, description, cropPath);
     }

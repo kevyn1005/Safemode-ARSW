@@ -958,6 +958,15 @@
       font-weight: 600;
       letter-spacing: -0.01em;
     }
+    .alert-hint {
+      margin: 8px 0 0;
+      padding: 8px 12px;
+      border-left: 3px solid var(--accent);
+      background: var(--surface-dim);
+      border-radius: var(--radius-xs);
+      color: var(--text-dim, inherit);
+      font-size: 13.5px;
+    }
     .cam-chip {
       padding: 2px 8px;
       border-radius: var(--radius-xs);
@@ -2005,7 +2014,8 @@
       POSSIBLE_THEFT: 'Posible robo',
       AMBIGUOUS_REMOVAL: 'Retiro ambiguo',
       OBJECT_VANISHED: 'Objeto desaparecido',
-      UNKNOWN_OWNER_REMOVAL: 'Retiro sin dueño conocido'
+      UNKNOWN_OWNER_REMOVAL: 'Retiro sin dueño conocido',
+      POSSIBLE_OWNER_RETURN: 'Posible dueño que volvió'
     };
 
     var SEED = [
@@ -2125,6 +2135,10 @@
       ]);
       card.appendChild(head);
       card.appendChild(el('p', { class: 'alert-msg', text: a.message }));
+      if (a.removerLooksLikeOwner) {
+        card.appendChild(el('p', { class: 'alert-hint', text: 'Quien se lo llevó se viste parecido al dueño: puede ser el dueño que ' +
+          'volvió de salir de cuadro. Compara las dos fotos antes de descartarla.' }));
+      }
 
       if (!ack) {
         var shots = el('div', { class: 'shots' });

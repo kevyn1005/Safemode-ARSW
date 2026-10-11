@@ -50,8 +50,12 @@ public final class AlertRules {
         Noun object = NOUNS_ES.getOrDefault(event.className(), new Noun(event.className(), false));
         return switch (kind) {
             case BY_OWNER -> Optional.empty();
-            case BY_OTHER -> Optional.of(decision(AlertType.POSSIBLE_THEFT, Severity.HIGH,
-                    "Posible robo: " + object.the() + " " + object.name() + " fue " + object.removed() + " por alguien distinto del dueño"));
+            case BY_OTHER -> event.removerLooksLikeOwner()
+                    ? Optional.of(decision(AlertType.POSSIBLE_OWNER_RETURN, Severity.MEDIUM,
+                            "Posible dueño que volvió: " + object.the() + " " + object.name() + " fue " + object.removed()
+                                    + " por alguien con ropa parecida a la del dueño"))
+                    : Optional.of(decision(AlertType.POSSIBLE_THEFT, Severity.HIGH,
+                            "Posible robo: " + object.the() + " " + object.name() + " fue " + object.removed() + " por alguien distinto del dueño"));
             case OWNER_AND_OTHER_NEAR -> Optional.of(decision(AlertType.AMBIGUOUS_REMOVAL, Severity.MEDIUM,
                     "Retiro ambiguo: " + object.the() + " " + object.name() + " se retiró con el dueño y otra persona cerca"));
             case NO_ONE_NEAR -> Optional.of(decision(AlertType.OBJECT_VANISHED, Severity.MEDIUM,

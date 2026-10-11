@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -48,6 +49,23 @@ class PresenceEventStoreQueryTest {
             assertEquals(List.of(third, second), store.findRecent(2).stream().map(StoredEvent::id).toList());
             assertEquals(List.of(third), store.findRecent(0).stream().map(StoredEvent::id).toList(), "un limite menor que 1 se toma como 1");
             assertEquals("REGISTERED_AT_REST", store.findRecent(1).get(0).eventType());
+        }
+    }
+
+    @Test
+    void laPistaDelDuenoQueVuelvePersisteYLoDemasQuedaEnFalso() {
+        try (PresenceEventStore store = newStore()) {
+            Instant now = Instant.now();
+            long lookAlike = store.recordRemoved(1, "backpack", 1, 2, 3, 4, now, true, null, null,
+                    new RemovalInfo("BY_OTHER", 3L, "persona con camisa negra", null, true));
+            long plain = store.recordRemoved(2, "backpack", 1, 2, 3, 4, now, true, null, null,
+                    new RemovalInfo("BY_OTHER", 4L, "persona con camisa azul", null));
+            long registered = store.recordRegistered(3, "backpack", 1, 2, 3, 4, now, null, null);
+
+            assertTrue(store.findById(lookAlike).orElseThrow().removerLooksLikeOwner());
+            assertFalse(store.findById(plain).orElseThrow().removerLooksLikeOwner());
+            assertFalse(store.findById(registered).orElseThrow().removerLooksLikeOwner());
+            assertFalse(store.lastRemoval().looksLikeOwner(), "lastRemoval es el ultimo retiro: el normal");
         }
     }
 

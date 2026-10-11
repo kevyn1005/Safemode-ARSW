@@ -46,6 +46,7 @@ final class AlertJson {
         json.addProperty("ownerPhoto", event == null ? null : photoUrl(event.ownerCropPath()));
         json.addProperty("ownerDescription", event == null ? null : event.ownerDescription());
         json.addProperty("ownerAiDescription", event == null ? null : event.ownerAiDescription());
+        json.addProperty("removerLooksLikeOwner", event != null && event.removerLooksLikeOwner());
         json.addProperty("removerPhoto", event == null ? null : photoUrl(event.removerCropPath()));
         json.addProperty("removerDescription", event == null ? null : event.removerDescription());
         json.addProperty("removerAiDescription", event == null ? null : event.removerAiDescription());

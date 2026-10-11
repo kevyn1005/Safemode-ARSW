@@ -60,6 +60,18 @@ class ReportJsonTest {
     }
 
     @Test
+    void siQuienRetiraSePareceAlDuenoElReporteLoDiceYLaAlertaEsDeDuenoQueVolvio() {
+        StoredEvent lookAlike = new StoredEvent(10, 1, "backpack", "REMOVED", WHEN, 404, 408, 300, 280, true, null, 3L, null, null, null,
+                "BY_OTHER", 7L, null, null, null, 1, true);
+        JsonObject row = ReportJson.row(lookAlike, id -> "CAM " + id);
+
+        assertTrue(row.get("removerLooksLikeOwner").getAsBoolean());
+        assertEquals("POSSIBLE_OWNER_RETURN", row.get("alertType").getAsString());
+        assertEquals("MEDIUM", row.get("severity").getAsString());
+        assertFalse(ReportJson.row(removed(11, 1, "BY_OTHER"), id -> "CAM " + id).get("removerLooksLikeOwner").getAsBoolean());
+    }
+
+    @Test
     void elRetiroPorSuDuenoApareceEnElReportePeroSinAlerta() {
         JsonObject row = ReportJson.row(removed(7, 1, "BY_OWNER"), id -> "CAM " + id);
 

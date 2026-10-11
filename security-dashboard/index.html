@@ -32,6 +32,7 @@
   .cam { font-size: 12px; font-weight: 700; color: var(--accent); border: 1px solid var(--border); border-radius: 4px; padding: 1px 8px; }
   .time { margin-left: auto; font-size: 13px; color: var(--muted); }
   .msg { margin: 6px 0; }
+  .hint { margin: 6px 0; padding: 6px 10px; border-left: 3px solid var(--accent); background: rgba(79, 209, 197, .08); font-size: 13px; }
   .people { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin-top: 8px; }
   figure { margin: 0; }
   figure img { display: block; width: 100%; max-height: 220px; object-fit: contain; background: #0002; border-radius: 6px; }
@@ -72,7 +73,8 @@
 (function () {
   var WS_PORT = 8090;
   var TYPES = { POSSIBLE_THEFT: 'Posible robo', AMBIGUOUS_REMOVAL: 'Retiro ambiguo',
-                OBJECT_VANISHED: 'Objeto desaparecido', UNKNOWN_OWNER_REMOVAL: 'Retiro sin dueño registrado' };
+                OBJECT_VANISHED: 'Objeto desaparecido', UNKNOWN_OWNER_REMOVAL: 'Retiro sin dueño registrado',
+                POSSIBLE_OWNER_RETURN: 'Posible dueño que volvió' };
   var SEVERITIES = { HIGH: 'Alta', MEDIUM: 'Media', LOW: 'Baja' };
   var alerts = new Map();
   var socket = null;
@@ -189,6 +191,10 @@
     top.appendChild(el('span', 'time', new Date(a.occurredAt).toLocaleString('es-CO')));
     box.appendChild(top);
     box.appendChild(el('div', 'msg', a.message));
+    if (a.removerLooksLikeOwner) {
+      box.appendChild(el('div', 'hint', 'Quien se lo llevó se viste parecido al dueño: puede ser el dueño que volvió de salir de cuadro. ' +
+        'Compara las dos fotos antes de descartarla.'));
+    }
 
     var people = el('div', 'people');
     [person('Retiro (foto del momento)', a.framePhoto, null, null),

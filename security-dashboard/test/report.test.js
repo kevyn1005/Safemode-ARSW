@@ -26,7 +26,7 @@ test('un registro en reposo se describe como "solo se registra", con dueno y fot
   assert.equal(info.owner.label, 'Persona #1');
   assert.equal(info.owner.text, 'persona con camisa blanca');
   assert.equal(info.owner.estimated, true, 'sin descripcion de la IA el color es solo una estimacion');
-  assert.deepEqual(info.remover, { label: '', text: '', estimated: false });
+  assert.deepEqual(info.remover, { label: '', text: '', estimated: false, looksLikeOwner: false });
   assert.deepEqual(info.photos.map((p) => p.label), ['Objeto', 'Dueño']);
 });
 
@@ -39,6 +39,13 @@ test('un retiro por otra persona dice que alerta genera y muestra la descripcion
   assert.equal(info.remover.text, 'chaqueta negra y jeans');
   assert.equal(info.remover.estimated, false);
   assert.equal(info.photos.length, 3);
+});
+
+test('si quien retira se viste parecido al dueno el reporte lo dice y la alerta es de "dueno que volvio"', () => {
+  const info = R.describeRow(Object.assign({}, removedByOther, { removerLooksLikeOwner: true, alertType: 'POSSIBLE_OWNER_RETURN', severity: 'MEDIUM' }));
+  assert.equal(info.remover.looksLikeOwner, true);
+  assert.deepEqual(info.verdict, { text: 'Posible dueño que volvió · Media', level: 'medium' });
+  assert.equal(R.describeRow(removedByOther).remover.looksLikeOwner, false);
 });
 
 test('el retiro por el dueno aparece en el reporte pero explica por que no hay alerta', () => {

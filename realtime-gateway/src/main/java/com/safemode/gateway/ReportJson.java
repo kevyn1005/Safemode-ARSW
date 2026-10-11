@@ -47,6 +47,7 @@ final class ReportJson {
         json.addProperty("ownerAiDescription", event.ownerAiDescription());
         json.addProperty("removalKind", event.removalKind());
         json.addProperty("removerPersonId", event.removerPersonId());
+        json.addProperty("removerLooksLikeOwner", event.removerLooksLikeOwner());
         json.addProperty("removerDescription", event.removerDescription());
         json.addProperty("removerAiDescription", event.removerAiDescription());
         json.addProperty("framePhoto", AlertJson.photoUrl(event.framePath()));

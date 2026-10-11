@@ -22,7 +22,8 @@
   };
   var ALERTS = {
     POSSIBLE_THEFT: 'Posible robo', AMBIGUOUS_REMOVAL: 'Retiro ambiguo',
-    OBJECT_VANISHED: 'Objeto desaparecido', UNKNOWN_OWNER_REMOVAL: 'Retiro sin dueño registrado'
+    OBJECT_VANISHED: 'Objeto desaparecido', UNKNOWN_OWNER_REMOVAL: 'Retiro sin dueño registrado',
+    POSSIBLE_OWNER_RETURN: 'Posible dueño que volvió'
   };
   var SEVERITIES = { HIGH: 'Alta', MEDIUM: 'Media', LOW: 'Baja' };
   var PHOTO_URL = /^\/photo\/[^\/?#\\]+$/;
@@ -44,10 +45,10 @@
     return typeof url === 'string' && PHOTO_URL.test(url) ? url : null;
   }
 
-  function person(id, aiText, localText) {
+  function person(id, aiText, localText, looksLikeOwner) {
     var label = id === null || id === undefined ? '' : 'Persona #' + id;
     var text = aiText || localText || '';
-    return { label: label, text: text, estimated: !aiText && !!localText };
+    return { label: label, text: text, estimated: !aiText && !!localText, looksLikeOwner: !!looksLikeOwner };
   }
 
   /** Lo que dice el reporte sobre si ese evento genero alerta (y por que no, cuando no la genera). */
@@ -77,7 +78,9 @@
       detail: row.eventType === 'REMOVED' ? (REMOVALS[row.removalKind] || row.removalKind || '') : '',
       object: objectName + (row.trackedObjectId ? ' #' + row.trackedObjectId : ''),
       owner: person(row.ownerPersonId, row.ownerAiDescription, row.ownerDescription),
-      remover: row.eventType === 'REMOVED' ? person(row.removerPersonId, row.removerAiDescription, row.removerDescription) : person(null, '', ''),
+      remover: row.eventType === 'REMOVED'
+        ? person(row.removerPersonId, row.removerAiDescription, row.removerDescription, row.removerLooksLikeOwner)
+        : person(null, '', ''),
       verdict: verdict(row),
       photos: photos
     };
@@ -125,6 +128,7 @@
       if (info.label) box.appendChild(el('div', info.label, 'font-weight:600'));
       if (info.text) box.appendChild(el('div', info.text, 'color:#c3ccd3'));
       if (info.estimated) box.appendChild(el('div', 'color estimado por imagen', 'color:#9aa7b2;font-size:11px'));
+      if (info.looksLikeOwner) box.appendChild(el('div', 'se viste parecido al dueño', 'color:#4FD1C5;font-size:12px;font-weight:600'));
       return box;
     }
 
