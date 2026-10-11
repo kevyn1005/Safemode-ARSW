@@ -103,8 +103,20 @@ siempre visible y los chequeos automaticos son una ayuda.
 - Cambios en: `PresenceEventStore` y `AlertStore` (camera_id, tabla de camaras), el tracker (una instancia por camara y
   fuente de frames con camara), `camera-share.js` (zonas, verificacion, recorte), el panel (camara en cada alerta, nombres
   y reporte).
-- **Rendimiento sin medir**: analizar dos camaras duplica el trabajo del modelo. Hay que medir los fps que aguanta el
-  computador antes de prometer cifras; si no alcanza, se baja la frecuencia por camara.
+- **Rendimiento medido** (computador de desarrollo, 16 nucleos, escena 1920x810, `DetectionBenchmark`):
+
+  | Modelo | 1 camara | 2 camaras en fila (ciclo) | 2 camaras en paralelo (por fotograma) |
+  |---|---|---|---|
+  | `yolov8m` (el que se usa) | 371 ms | 702 ms | 638 ms |
+  | `yolov8s` | 183 ms | 348 ms | 382 ms |
+
+  Con `yolov8m` dos camaras **no alcanzan 2 fps** por camara (maximo ~1.6); con `yolov8s` si (~2.6-2.9). Ademas el bucle del
+  tracker duerme 500 ms **despues** de detectar, asi que un fotograma real dura inferencia + 500 ms (~0.87 s con `yolov8m`
+  y una camara, ~1.1 fps), no 500 ms. Ver las decisiones abiertas en "Pendientes relacionados".
+- **Latencia medida** (`AlertLatencyBenchmark`, componentes reales con base en memoria): del evento de retiro al panel por
+  WebSocket, media ~0.5 s y p95 ~0.92 s (domina el intervalo de lectura del motor, 1 s). Sumando confirmar el retiro (3
+  fotogramas), el peor caso estimado es ~3.5 s con 1 camara y `yolov8m`, ~4.3-4.5 s con 2 camaras y `yolov8m` (poco
+  margen) y ~3.0 s con `yolov8s`; todos dentro de los 5 s, sin contar objetos tapados (verificacion por imagen).
 - Las zonas pueden quedar mal puestas si el operador reacomoda el software; se mitiga con la prueba previa, pero no se
   elimina.
 - Una ventana de camaras minimizada o con otro tamano deja de dar la imagen correcta (limite del sistema operativo).
@@ -114,6 +126,11 @@ siempre visible y los chequeos automaticos son una ayuda.
 - Las fotos siguen ocupando disco (~3 MB cada una): conviene una politica de retencion mas adelante.
 
 ## Pendientes relacionados
+- **Decidir como cumplir el ritmo con 2 camaras** (resultados en "Consecuencias"): (a) pasar a `yolov8s`, que cabe holgado
+  pero detecta peor; (b) mantener `yolov8m` y procesar a ~1.2 fps por camara, con poco margen para los 5 s; (c) limitar los
+  hilos de cada detector (ONNX Runtime usa todos los nucleos y dos detectores se estorban) y medir de nuevo; (d) pacing a
+  periodo fijo en el bucle del tracker (dormir solo lo que falte hasta 500 ms), que da 2 fps con `yolov8m` y 1 camara pero
+  cambia el ritmo con que se calibraron los umbrales en fotogramas (retiro falso por una persona que pasa delante).
 - Corregir las diapositivas (alcance, arquitectura As-Is vs To-Be, concurrencia, evidencia, declaracion de uso de IA que
   incluya el modelo de vision de NVIDIA y el asistente de desarrollo) y escribir el backlog con criterios Gherkin para
   lo construido (pose, descripcion por IA, clasificacion del retiro, compartir ventana, boton de vigilancia, camaras,
