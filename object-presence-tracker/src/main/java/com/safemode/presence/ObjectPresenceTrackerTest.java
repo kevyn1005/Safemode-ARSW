@@ -15,6 +15,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 // Script de verificacion manual (no es un test automatizado; no usa JUnit).
 // La logica de ObjectTracker si tiene pruebas automatizadas de verdad:
@@ -61,11 +62,15 @@ public class ObjectPresenceTrackerTest {
 
             Thread.sleep(1000); // esperar el primer frame
 
-            // 60 s por defecto (da tiempo a dejar un objeto, esperar y retirarlo); otro valor: "-Dexec.args=30"
+            // 60 s por defecto (da tiempo a dejar un objeto, esperar y retirarlo); otro valor: "-Dexec.args=30".
+            // 0 = sin limite de tiempo: corre hasta que lo detengan (lo usa el boton del panel, ver watchStopSignal).
             long captureSeconds = args.length > 0 ? Long.parseLong(args[0].trim()) : 60;
-            System.out.println("Duracion de captura: " + captureSeconds + " s");
+            boolean untilStopped = captureSeconds <= 0;
+            System.out.println(untilStopped ? "Duracion de captura: hasta que lo detengan"
+                    : "Duracion de captura: " + captureSeconds + " s");
             long endAt = System.currentTimeMillis() + captureSeconds * 1000;
-            while (System.currentTimeMillis() < endAt) {
+            AtomicBoolean stopRequested = watchStopSignal();
+            while (!stopRequested.get() && (untilStopped || System.currentTimeMillis() < endAt)) {
                 BufferedImage frame = capturer.getLatestFrame();
                 if (frame == null) {
                     Thread.sleep(500);
@@ -86,6 +91,34 @@ public class ObjectPresenceTrackerTest {
         } finally {
             capturer.stop();
         }
+    }
+
+    /**
+     * Cuando el gateway lanza este programa desde el boton del panel (variable {@code SAFEMODE_STOP_ON_STDIN=1}) se
+     * detiene de forma ordenada: el gateway escribe "stop" en la entrada estandar, o la cierra si el mismo se apaga
+     * (asi no queda un tracker huerfano). Sin la variable no se lee la entrada: una corrida normal desde la terminal
+     * o un IDE (cuya entrada puede venir vacia) no se debe cortar sola.
+     */
+    private static AtomicBoolean watchStopSignal() {
+        AtomicBoolean stopRequested = new AtomicBoolean();
+        if (!"1".equals(System.getenv("SAFEMODE_STOP_ON_STDIN"))) {
+            return stopRequested;
+        }
+        Thread watcher = new Thread(() -> {
+            try (var reader = new java.io.BufferedReader(new java.io.InputStreamReader(System.in))) {
+                String line;
+                do {
+                    line = reader.readLine();
+                } while (line != null && !line.trim().equalsIgnoreCase("stop"));
+            } catch (IOException ignored) {
+                // la entrada se cerro: se trata igual que un "stop"
+            }
+            System.out.println("Senal de parada recibida: terminando la corrida...");
+            stopRequested.set(true);
+        }, "stop-watcher");
+        watcher.setDaemon(true);
+        watcher.start();
+        return stopRequested;
     }
 
     /**

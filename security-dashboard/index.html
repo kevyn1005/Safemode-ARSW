@@ -51,6 +51,7 @@
 <body>
 <header>
   <h1>Safemode - Centro de alertas</h1>
+  <div id="trackerControlSlot"></div>
   <div id="cameraShareSlot"></div>
   <label><input type="checkbox" id="showDone"> ver revisadas</label>
   <label><input type="checkbox" id="soundToggle"> sonido de alarma</label>
@@ -58,6 +59,7 @@
   <div class="status"><span class="dot" id="dot"></span><span id="statusText">Conectando...</span></div>
 </header>
 <main id="list"></main>
+<script src="tracker-control.js"></script>
 <script src="camera-share.js"></script>
 
 <script>

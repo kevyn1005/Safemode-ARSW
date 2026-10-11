@@ -15,6 +15,7 @@ import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DashboardHttpServerTest {
@@ -93,5 +94,146 @@ class DashboardHttpServerTest {
                         .POST(HttpRequest.BodyPublishers.ofString("x")).build(),
                 HttpResponse.BodyHandlers.ofByteArray());
         assertEquals(405, response.statusCode());
+    }
+    // ---- boton de vigilancia (/tracker/*) ----
+
+    /** Control falso: cuenta las llamadas y guarda el estado que se le diga. */
+    private static class FakeTracker implements TrackerControl {
+        int starts, stops;
+        State state = State.STOPPED;
+        boolean failToStart;
+
+        @Override public Status status() { return new Status(state, -1); }
+
+        @Override public void start() throws IOException {
+            if (failToStart) throw new IOException("no hay mvn");
+            if (state == State.RUNNING) throw new IllegalStateException("ya corre");
+            starts++;
+            state = State.RUNNING;
+        }
+
+        @Override public void requestStop() {
+            stops++;
+            state = State.STOPPED;
+        }
+    }
+
+    private DashboardHttpServer trackerServer;
+    private FakeTracker fake;
+    private String panelOrigin;
+
+    private void startServerWithTracker() throws IOException {
+        int port;
+        try (java.net.ServerSocket probe = new java.net.ServerSocket(0)) {
+            port = probe.getLocalPort();   // el Origin autorizado necesita conocer el puerto de antemano
+        }
+        panelOrigin = "http://localhost:" + port;
+        fake = new FakeTracker();
+        trackerServer = new DashboardHttpServer("localhost", port, tmp.resolve("dashboard"), tmp.resolve("photos"), fake,
+                java.util.Set.of(panelOrigin));
+        trackerServer.start();
+    }
+
+    @AfterEach
+    void stopTrackerServer() {
+        if (trackerServer != null) {
+            trackerServer.stop();
+        }
+    }
+
+    private HttpResponse<String> send(String method, String path, String origin) throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(panelOrigin + path))
+                .method(method, HttpRequest.BodyPublishers.noBody());
+        if (origin != null) {
+            request.header("Origin", origin);
+        }
+        return client.send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    @Test
+    void sinControlDeTrackerLasRutasDeTrackerNoExisten() throws Exception {
+        assertEquals(404, get("/tracker/status").statusCode());
+    }
+
+    @Test
+    void elEstadoDelTrackerSeConsultaSinPermisosEspeciales() throws Exception {
+        startServerWithTracker();
+        HttpResponse<String> response = send("GET", "/tracker/status", null);
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("\"state\":\"STOPPED\""));
+        assertEquals("no-store", response.headers().firstValue("Cache-Control").orElse(""));
+    }
+
+    @Test
+    void iniciarYDetenerDesdeElPropioPanel() throws Exception {
+        startServerWithTracker();
+        HttpResponse<String> started = send("POST", "/tracker/start", panelOrigin);
+        assertEquals(200, started.statusCode());
+        assertTrue(started.body().contains("RUNNING"));
+        assertEquals(1, fake.starts);
+
+        assertEquals(200, send("POST", "/tracker/stop", panelOrigin).statusCode());
+        assertEquals(1, fake.stops);
+    }
+
+    @Test
+    void iniciarDosVecesDaConflictoYNoLanzaOtro() throws Exception {
+        startServerWithTracker();
+        send("POST", "/tracker/start", panelOrigin);
+        HttpResponse<String> again = send("POST", "/tracker/start", panelOrigin);
+        assertEquals(409, again.statusCode());
+        assertEquals(1, fake.starts);
+    }
+
+    @Test
+    void unPostSinOrigenOConOrigenAjenoSeRechazaYNoHaceNada() throws Exception {
+        startServerWithTracker();
+        assertEquals(403, send("POST", "/tracker/start", null).statusCode());
+        assertEquals(403, send("POST", "/tracker/start", "http://evil.example").statusCode());
+        assertEquals(403, send("POST", "/tracker/stop", "http://localhost:1").statusCode());
+        assertEquals(0, fake.starts);
+        assertEquals(0, fake.stops);
+    }
+
+    @Test
+    void unPostConHostRaroSeRechazaContraDnsRebinding() throws Exception {
+        startServerWithTracker();
+        int port = trackerServer.boundPort();
+        try (java.net.Socket socket = new java.net.Socket("localhost", port)) {
+            String request = "POST /tracker/start HTTP/1.1\r\nHost: evil.example:" + port + "\r\nOrigin: " + panelOrigin
+                    + "\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+            socket.getOutputStream().write(request.getBytes());
+            socket.getOutputStream().flush();
+            String statusLine = new java.io.BufferedReader(new java.io.InputStreamReader(socket.getInputStream())).readLine();
+            assertTrue(statusLine.contains("403"), statusLine);
+        }
+        assertEquals(0, fake.starts);
+    }
+
+    @Test
+    void iniciarYDetenerSoloAceptanPost() throws Exception {
+        startServerWithTracker();
+        assertEquals(405, send("GET", "/tracker/start", panelOrigin).statusCode());
+        assertEquals(405, send("GET", "/tracker/stop", panelOrigin).statusCode());
+        assertEquals(405, send("POST", "/tracker/status", panelOrigin).statusCode());
+        assertEquals(0, fake.starts);
+    }
+
+    @Test
+    void siNoSePuedeLanzarElTrackerElErrorNoRevelaDetalles() throws Exception {
+        startServerWithTracker();
+        fake.failToStart = true;
+        HttpResponse<String> response = send("POST", "/tracker/start", panelOrigin);
+        assertEquals(500, response.statusCode());
+        assertFalse(response.body().contains("mvn"));
+    }
+
+    @Test
+    void entregaElScriptDelBotonDeVigilancia() throws Exception {
+        startServerWithTracker();
+        Files.writeString(tmp.resolve("dashboard").resolve("tracker-control.js"), "// boton");
+        HttpResponse<String> response = send("GET", "/tracker-control.js", null);
+        assertEquals(200, response.statusCode());
+        assertEquals("// boton", response.body());
     }
 }

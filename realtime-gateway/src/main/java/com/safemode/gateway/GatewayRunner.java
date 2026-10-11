@@ -6,6 +6,7 @@ import com.safemode.presence.PresenceEventStore;
 
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -17,6 +18,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 // Variables de entorno (todas opcionales):
 //   SAFEMODE_DB_URL     URL JDBC de la base (por defecto el archivo local del tracker; en Docker, el servicio h2-db)
 //   SAFEMODE_BIND_HOST  direccion donde escuchar (por defecto localhost; en Docker, 0.0.0.0 para que llegue el puerto publicado)
+// Boton "Iniciar vigilancia" del panel: lanza el tracker como proceso hijo (ver TrackerProcess). Solo se ofrece si el
+// gateway escucha unicamente en esta maquina (no en un contenedor ni abierto a la red) y se corre desde la raiz del repo.
 public class GatewayRunner {
     private static final String DB_PATH = "./object-presence-tracker/data/presence";
     private static final int HTTP_PORT = 8080;
@@ -28,10 +31,11 @@ public class GatewayRunner {
         try (PresenceEventStore events = PresenceEventStore.fromEnvironment(DB_PATH);
              AlertStore alerts = AlertStore.fromEnvironment(DB_PATH);
              AlertEngine engine = new AlertEngine(events, alerts)) {
-            AlertGateway gateway = new AlertGateway(engine, alerts, bindHost, WS_PORT,
-                    Set.of("http://localhost:" + HTTP_PORT, "http://127.0.0.1:" + HTTP_PORT));
+            Set<String> panelOrigins = Set.of("http://localhost:" + HTTP_PORT, "http://127.0.0.1:" + HTTP_PORT);
+            AlertGateway gateway = new AlertGateway(engine, alerts, bindHost, WS_PORT, panelOrigins);
+            TrackerProcess tracker = trackerButtonAllowed(bindHost) ? newTrackerProcess() : null;
             DashboardHttpServer http = new DashboardHttpServer(bindHost, HTTP_PORT, Path.of("security-dashboard"),
-                    Path.of("object-presence-tracker", "data", "frames"));
+                    Path.of("object-presence-tracker", "data", "frames"), tracker, panelOrigins);
             gateway.startAndWait();
             http.start();
             engine.start(Duration.ofSeconds(1));
@@ -41,6 +45,9 @@ public class GatewayRunner {
             AtomicBoolean stopped = new AtomicBoolean();
             Runnable stopAll = () -> {
                 if (stopped.compareAndSet(false, true)) {
+                    if (tracker != null) {
+                        tracker.stopAndWait();
+                    }
                     engine.stop();
                     http.stop();
                     gateway.shutdown();
@@ -57,6 +64,18 @@ public class GatewayRunner {
                 stopAll.run();
             }
         }
+    }
+
+    /** El boton solo se ofrece con el gateway escuchando unicamente en esta maquina. */
+    static boolean trackerButtonAllowed(String bindHost) {
+        return bindHost.equals("localhost") || bindHost.equals("127.0.0.1");
+    }
+
+    /** Tracker con la fuente "ventana compartida desde el navegador", sin limite de tiempo y parada ordenada por entrada estandar. */
+    private static TrackerProcess newTrackerProcess() {
+        return new TrackerProcess(TrackerProcess.mavenCommand(), Path.of("."),
+                Map.of("SAFEMODE_FRAME_SOURCE", "browser", "SAFEMODE_STOP_ON_STDIN", "1"),
+                Path.of("object-presence-tracker", "data", "tracker.log"), Duration.ofSeconds(90));
     }
 
     /** Direccion donde escuchar: la de SAFEMODE_BIND_HOST, o solo esta maquina (localhost) si no esta definida. */

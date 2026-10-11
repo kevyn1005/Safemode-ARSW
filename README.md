@@ -66,6 +66,20 @@ Se puede tapar la ventana de la camara con otras y trabajar en el resto del comp
 ventana de la camara (Windows deja de dibujarla) ni cerrar la pestana del panel; minimizar todo Chrome puede ralentizar
 el envio. Los frames viajan solo por `localhost` (puerto 8091) y el tracker solo acepta paginas del panel (`Origin`).
 
+### Boton "Iniciar vigilancia" (una sola terminal)
+
+Con el gateway corriendo en el computador (no en Docker) el panel ofrece **Iniciar vigilancia** / **Detener vigilancia**: el
+gateway lanza el tracker por ti (con la fuente "ventana compartida", sin limite de tiempo) y lo detiene de forma ordenada.
+
+1. Una vez (y tras cambiar codigo): `mvn -pl realtime-gateway -am install -DskipTests`
+2. Desde la raiz del repo: `mvn -pl realtime-gateway exec:java "-Dexec.mainClass=com.safemode.gateway.GatewayRunner"`
+3. Abre http://localhost:8080, pulsa **Iniciar vigilancia** (pide un segundo clic: borra las fotos y eventos de la corrida
+   anterior) y luego **Compartir ventana de la camara**.
+
+La salida del tracker queda en `object-presence-tracker/data/tracker.log`. Seguridad: el comando esta fijo en el servidor,
+los POST solo se aceptan desde el propio panel (`Origin` y `Host`), el boton no se ofrece si el gateway escucha fuera de
+`localhost` (Docker), y si el gateway se cierra el tracker se detiene con el.
+
 ## Notas
 
 - El modelo `vision-detection-service/src/main/resources/models/yolov8n.onnx`
