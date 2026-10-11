@@ -76,7 +76,25 @@ siempre visible y los chequeos automaticos son una ayuda.
   ordenada con el detalle de la alerta: fecha, hora, camara, tipo, objeto, dueno probable, quien lo retiro y fotos, mas la
   pista para buscar la grabacion. Se arma con lo que ya esta en la base.
 
-### 8. Dueno probable (alcance)
+### 8. Dueno que sale de cuadro y vuelve (decidido: declarar el limite + avisar sin silenciar)
+- **Problema**: el seguimiento olvida a una persona tras 5 frames sin verla. Si el dueno sale de cuadro y vuelve a llevarse
+  su maleta recibe otro id y el retiro sale como `BY_OTHER` (posible robo), aunque era el.
+- **Criterio rector**: en un sistema de seguridad es peor no avisar de un robo real que avisar de mas. Ninguna solucion
+  puede **silenciar** una alerta por parecerse al dueno.
+- **Decision (opciones A + D)**:
+  - **A. Se declara el limite.** El criterio de aceptacion de la sustentacion pasa a: "el sistema alerta ante todo retiro
+    por una persona distinta al dueno registrado y, cuando la persona se parece al dueno, lo indica con evidencia para que
+    el operador decida".
+  - **D. Solo avisar, nunca silenciar.** La alerta `BY_OTHER` se mantiene con su severidad. Si quien retira el objeto se
+    parece al dueno registrado por color de ropa (la pista `remover_looks_like_owner` que estaba pendiente), la alerta y el
+    reporte muestran **"puede ser el dueno que volvio"** con las fotos del dueno y de quien retira lado a lado.
+- **Descartadas**:
+  - Reasignar el id del dueno por color de ropa (B): un ladrono con ropa parecida quedaria como "el dueno" y no habria
+    alerta; los margenes de color calibrados ya son cortos.
+  - Reidentificacion por modelo de apariencia (C): queda como **mejora futura** en el Release Plan; es la que mas cierra el
+    problema pero cuesta un modelo nuevo, mas CPU y calibracion, y habria que declararla como identidad por apariencia.
+
+### 9. Dueno probable (alcance)
 - El alcance de la sustentacion se corrige: el **dueno probable** (por cercania, con foto y descripcion) pasa de "Won't" a
   "Should". No es reconocimiento de identidad. La descripcion por IA externa (NVIDIA) es **opcional** y solo se activa si
   existe la clave; la privacidad de ese envio se declara en la sustentacion. No se guarda video.
@@ -90,12 +108,13 @@ siempre visible y los chequeos automaticos son una ayuda.
 - Las zonas pueden quedar mal puestas si el operador reacomoda el software; se mitiga con la prueba previa, pero no se
   elimina.
 - Una ventana de camaras minimizada o con otro tamano deja de dar la imagen correcta (limite del sistema operativo).
+- La pista "puede ser el dueno que volvio" compara color de ropa, que ya se sabe poco fiable con prendas claras o
+  estampadas: es una ayuda para el operador, no una regla. Hay que escribir sus pruebas y mostrarla sin cambiar la
+  severidad de la alerta.
 - Las fotos siguen ocupando disco (~3 MB cada una): conviene una politica de retencion mas adelante.
 
-## Pendientes relacionados (decididos aparte)
-- **Dueno que sale de cuadro y vuelve**: hoy recibe otro id y su propio retiro sale como posible robo, lo que contradice
-  el criterio de aceptacion de la sustentacion. Recomendacion: declararlo como limite ("sin falsos positivos mientras el
-  dueno permanezca en cuadro") y planificar la reidentificacion por apariencia como mejora. Decision del equipo pendiente.
+## Pendientes relacionados
 - Corregir las diapositivas (alcance, arquitectura As-Is vs To-Be, concurrencia, evidencia, declaracion de uso de IA que
   incluya el modelo de vision de NVIDIA y el asistente de desarrollo) y escribir el backlog con criterios Gherkin para
-  lo construido (pose, descripcion por IA, clasificacion del retiro, compartir ventana, boton de vigilancia, camaras).
+  lo construido (pose, descripcion por IA, clasificacion del retiro, compartir ventana, boton de vigilancia, camaras,
+  pista de dueno que vuelve). La reidentificacion por apariencia (opcion C) entra al Release Plan como mejora futura.
