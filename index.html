@@ -958,6 +958,18 @@
       font-weight: 600;
       letter-spacing: -0.01em;
     }
+    .cam-chip {
+      padding: 2px 8px;
+      border-radius: var(--radius-xs);
+      border: 1px solid var(--line-2);
+      background: var(--surface-dim);
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
     .tag-new {
       padding: 2px 8px;
       border-radius: var(--radius-xs);
@@ -1465,7 +1477,7 @@
       </span>
       <span class="brand-name">Safemode</span>
     </a>
-    <span class="live"><span class="live-dot" aria-hidden="true"></span>REC · CAM 01 · EN VIVO</span>
+    <span class="live"><span class="live-dot" aria-hidden="true"></span>REC · EN VIVO</span>
     <nav class="nav-actions" aria-label="Principal">
       <span class="operator" id="navOperator" hidden>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1595,10 +1607,11 @@
         <!-- Barra de Estado y Controles -->
         <div class="app-bar">
           <span class="status-pill"><span class="dot" id="connDot"></span><span id="connText">Conectando…</span></span>
-          <span class="rec-line"><span class="rec-dot"></span>REC · CAM 01 · EN VIVO</span>
+          <span class="rec-line"><span class="rec-dot"></span>REC · EN VIVO</span>
           <div class="controls" id="controls">
             <div id="trackerControlSlot" data-button-class="btn"></div>
             <div id="cameraShareSlot" data-button-class="btn"></div>
+            <div id="cameraNamesSlot" data-button-class="btn"></div>
             <button type="button" class="btn btn-unlock blink" id="unlockBtn">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M4 9h4l5-4v14l-5-4H4z"/>
@@ -1783,7 +1796,9 @@
 </dialog>
 
 <script src="tracker-control.js"></script>
+<script src="camera-zones.js"></script>
 <script src="camera-share.js"></script>
+<script src="camera-names.js"></script>
 <!-- ============ Lógica JavaScript de Interacción y WebSockets ============ -->
 <script>
   (function () {
@@ -2101,6 +2116,7 @@
       var head = el('div', { class: 'alert-head' }, [
         el('span', { class: 'badge', style: 'background: ' + sev.bg + '; color: ' + sev.fg }, [icon(sev.icon, 13), sev.label]),
         el('span', { class: 'alert-type', text: TYPES[a.type] || a.type }),
+        a.cameraName ? el('span', { class: 'cam-chip', text: a.cameraName }) : null,
         isNewCard ? el('span', { class: 'tag-new', text: 'NUEVA' }) : null,
         ack ? el('span', { class: 'tag-done' }, [icon(ICONS.check, 12, 2.4), 'REVISADA']) : null,
         el('span', { class: 'alert-meta num-tabular', text: '#' + a.id + ' · ' + a.time })

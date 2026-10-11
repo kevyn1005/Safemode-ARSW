@@ -29,6 +29,7 @@
   .badge { font-size: 12px; font-weight: 700; color: #fff; border-radius: 4px; padding: 1px 8px; }
   .badge.HIGH { background: var(--high); } .badge.MEDIUM { background: var(--medium); } .badge.LOW { background: var(--low); }
   .title { font-weight: 700; }
+  .cam { font-size: 12px; font-weight: 700; color: var(--accent); border: 1px solid var(--border); border-radius: 4px; padding: 1px 8px; }
   .time { margin-left: auto; font-size: 13px; color: var(--muted); }
   .msg { margin: 6px 0; }
   .people { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin-top: 8px; }
@@ -53,6 +54,7 @@
   <h1>Safemode - Centro de alertas</h1>
   <div id="trackerControlSlot"></div>
   <div id="cameraShareSlot"></div>
+  <div id="cameraNamesSlot"></div>
   <label><input type="checkbox" id="showDone"> ver revisadas</label>
   <label><input type="checkbox" id="soundToggle"> sonido de alarma</label>
   <button id="unlockSound" hidden>🔇 Activar sonido</button>
@@ -60,7 +62,9 @@
 </header>
 <main id="list"></main>
 <script src="tracker-control.js"></script>
+<script src="camera-zones.js"></script>
 <script src="camera-share.js"></script>
+<script src="camera-names.js"></script>
 
 <script>
 (function () {
@@ -179,6 +183,7 @@
     var top = el('div', 'top');
     top.appendChild(el('span', 'badge ' + a.severity, SEVERITIES[a.severity] || a.severity));
     top.appendChild(el('span', 'title', TYPES[a.type] || a.type));
+    if (a.cameraName) top.appendChild(el('span', 'cam', a.cameraName));
     top.appendChild(el('span', 'time', new Date(a.occurredAt).toLocaleString('es-CO')));
     box.appendChild(top);
     box.appendChild(el('div', 'msg', a.message));

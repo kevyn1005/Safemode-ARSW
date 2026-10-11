@@ -24,6 +24,13 @@
   slot.appendChild(button);
   slot.appendChild(status);
 
+  var MODE_KEY = 'safemode-cameras'; // lo escribe camera-share.js (selector "Camaras")
+  var startedCameras = null;         // con cuantas camaras se inicio desde ESTE panel (null = no se sabe)
+
+  function chosenCameras() {
+    try { return localStorage.getItem(MODE_KEY) === '2' ? 2 : 1; } catch (e) { return 1; }
+  }
+
   var state = 'STOPPED';
   var exitCode = -1;
   var confirming = false;
@@ -34,11 +41,14 @@
     var running = state === 'RUNNING';
     var stopping = state === 'STOPPING';
     if (confirming) {
-      button.textContent = 'Confirmar: borra fotos y eventos anteriores';
+      button.textContent = 'Confirmar: borra fotos y eventos anteriores (' + chosenCameras() + ' cámara' + (chosenCameras() === 2 ? 's' : '') + ')';
       status.textContent = '';
     } else if (running) {
       button.textContent = 'Detener vigilancia';
-      status.textContent = 'Vigilancia en marcha. Comparte la ventana de la cámara cuando el tracker termine de cargar.';
+      status.textContent = startedCameras && startedCameras !== chosenCameras()
+        ? 'Vigilancia en marcha con ' + startedCameras + ' cámara(s), pero elegiste ' + chosenCameras() +
+          '. Detén e inicia de nuevo la vigilancia para que el cambio surta efecto.'
+        : 'Vigilancia en marcha. Comparte la ventana de la cámara cuando el tracker termine de cargar.';
     } else if (stopping) {
       button.textContent = 'Deteniendo…';
       status.textContent = 'Cerrando el tracker (espera las descripciones de IA pendientes, puede tardar hasta un minuto).';
@@ -74,10 +84,18 @@
   function post(action) {
     busy = true;
     render();
-    fetch('/tracker/' + action, { method: 'POST' }).then(function (response) {
+    var cameras = action === 'start' ? chosenCameras() : 0;
+    var query = action === 'start' ? '?cameras=' + cameras : '';
+    var launched = false; // 200 = lo lanzo este clic; 409 = ya estaba corriendo (no se sabe con cuantas camaras)
+    fetch('/tracker/' + action + query, { method: 'POST' }).then(function (response) {
+      launched = response.status === 200;
       if (response.status === 200 || response.status === 409) return response.json();
       throw new Error('HTTP ' + response.status);
-    }).then(apply).catch(function (err) {
+    }).then(function (json) {
+      if (action === 'start' && launched) startedCameras = cameras;
+      if (action === 'stop') startedCameras = null;
+      apply(json);
+    }).catch(function (err) {
       status.textContent = 'No se pudo completar la acción: ' + (err && err.message || err);
     }).then(function () {
       busy = false;

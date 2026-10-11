@@ -9,8 +9,7 @@ COPY alert-engine alert-engine
 COPY realtime-gateway realtime-gateway
 # la pagina del panel; el gateway la entrega en http://localhost:8080
 COPY index.html security-dashboard/index.html
-COPY security-dashboard/camera-share.js security-dashboard/camera-share.js
-COPY security-dashboard/tracker-control.js security-dashboard/tracker-control.js
+COPY security-dashboard/*.js security-dashboard/
 COPY lens-frames security-dashboard/lens-frames
 COPY Camera_pushing_into_AI_core_20260926081000.mp4 security-dashboard/
 
