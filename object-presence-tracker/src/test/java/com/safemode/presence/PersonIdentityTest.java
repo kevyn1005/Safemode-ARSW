@@ -18,6 +18,8 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Quien entra justo despues de que otra persona sale de cuadro no debe heredar su id: si el dueno se va y un desconocido
@@ -138,6 +140,98 @@ class PersonIdentityTest {
         noImage.onFrame(null, List.of(PERSON));
 
         assertEquals(1L, store.lastOwner("REGISTERED_AT_REST").personId());
+    }
+
+    /** Lo que el tracker imprime mientras se ejecuta el codigo dado: el log de sus decisiones. */
+    private static String captureLog(Runnable action) {
+        java.io.PrintStream original = System.out;
+        java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+        System.setOut(new java.io.PrintStream(buffer, true, java.nio.charset.StandardCharsets.UTF_8));
+        try {
+            action.run();
+        } finally {
+            System.setOut(original);
+        }
+        return buffer.toString(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    @Test
+    void elLogExplicaPorQueQuienEntraConOtraRopaRecibeUnIdNuevo() {
+        String log = captureLog(() -> {
+            ownerLeavesTheBag();
+            frame(scene(null));
+            frame(scene(WHITE_SHIRT), PERSON);
+        });
+
+        assertTrue(log.contains("Persona #2 nueva (descarto a #1 por la ropa (color a 120 de distancia, maximo 80), llevaba 1 frame(s) sin verse)"), log);
+    }
+
+    @Test
+    void elLogDiceCuandoUnaPersonaVuelveConLaMismaRopaYConservaSuId() {
+        String log = captureLog(() -> {
+            ownerLeavesTheBag();
+            frame(scene(null));
+            frame(scene(BEIGE), PERSON);
+        });
+
+        assertTrue(log.contains("Persona #1 vuelve a verse tras 1 frame(s) y conserva su id (color a 0 de distancia, maximo 80)"), log);
+    }
+
+    @Test
+    void elLogAnotaCuandoSeOlvidaAUnaPersona() {
+        String log = captureLog(() -> {
+            ownerLeavesTheBag();
+            for (int i = 0; i < 6; i++) {
+                frame(scene(null));
+            }
+        });
+
+        assertTrue(log.contains("Persona #1 olvidada tras 6 frames sin verla: si vuelve sera otra persona"), log);
+    }
+
+    @Test
+    void conDuenoElLogDiceEnCuantosFramesEstuvoJuntoAlObjeto() {
+        String log = captureLog(this::ownerLeavesTheBag);
+
+        assertTrue(log.contains("Objeto #1: dueno = persona #1 (junto al objeto en 2 de 2 frames mientras se asentaba)"), log);
+    }
+
+    @Test
+    void sinDuenoElLogDiceCuantoDistabaLaPersonaMasCercana() {
+        Detection farBag = new Detection("backpack", 0.9f, 700, 300, 80, 60);
+        String log = captureLog(() -> {
+            tracker.onFrame(scene(BEIGE), List.of(farBag, PERSON));
+            clock.advance(Duration.ofSeconds(4));
+            tracker.onFrame(scene(BEIGE), List.of(farBag, PERSON));
+        });
+
+        assertTrue(log.contains("Objeto #1 queda SIN dueno: la persona mas cercana estuvo a 360 px del objeto y \"junto al objeto\" es hasta 100 px (2 frames)"), log);
+        assertNull(store.lastOwner("REGISTERED_AT_REST"));
+    }
+
+    @Test
+    void sinNingunaPersonaElLogDiceQueNoSeVioANadie() {
+        String log = captureLog(() -> {
+            tracker.onFrame(scene(null), List.of(BAG));
+            clock.advance(Duration.ofSeconds(4));
+            tracker.onFrame(scene(null), List.of(BAG));
+        });
+
+        assertTrue(log.contains("Objeto #1 queda SIN dueno: no se vio a ninguna persona mientras se asentaba (2 frames)"), log);
+    }
+
+    @Test
+    void elLogDelRetiroDiceDeDondeSalioCadaPersonaCercana() {
+        String log = captureLog(() -> {
+            ownerLeavesTheBag();
+            frame(scene(null));
+            frame(scene(WHITE_SHIRT), PERSON);
+            frame(scene(WHITE_SHIRT), PERSON);
+            frame(scene(WHITE_SHIRT), PERSON);
+        });
+
+        assertTrue(log.contains("Retiro del objeto #1: dueno=#1; junto al objeto: en el ultimo frame quieto"), log);
+        assertTrue(log.contains("=> BY_OTHER"), log);
     }
 
     @Test

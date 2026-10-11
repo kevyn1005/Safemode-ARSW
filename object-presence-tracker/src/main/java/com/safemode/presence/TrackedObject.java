@@ -69,6 +69,9 @@ public class TrackedObject {
     private Map<Long, NearPerson> lastNearPersons = new LinkedHashMap<>();
     private final Map<Long, NearPerson> disappearanceNear = new LinkedHashMap<>();
     private int displacedFrames = 0;
+    private int framesAsNew = 0;
+    private double closestPersonPx = Double.MAX_VALUE;
+    private double ownerRadiusPx;
     private OwnerInfo owner;
     private BufferedImage ownerCrop;
     private PoseEstimator.Keypoint[] ownerPose;
@@ -171,6 +174,32 @@ public class TrackedObject {
     BufferedImage evidenceCropOf(long personId) {
         Sighting s = nearPersons.get(personId);
         return s == null ? null : s.evidenceCrop;
+    }
+
+    /** Anota un frame mientras el objeto es NEW: la persona mas cercana que hubo y hasta donde cuenta como "junto al objeto". */
+    void noteOwnerFrame(double closestPersonDistance, double ownerRadius) {
+        framesAsNew++;
+        closestPersonPx = Math.min(closestPersonPx, closestPersonDistance);
+        ownerRadiusPx = ownerRadius;
+    }
+
+    int getFramesAsNew() {
+        return framesAsNew;
+    }
+
+    /** En cuantos frames estuvo esta persona junto al objeto mientras se asentaba. */
+    int nearFramesOf(long personId) {
+        Sighting s = nearPersons.get(personId);
+        return s == null ? 0 : s.frames;
+    }
+
+    /** Por que no se pudo elegir un dueno, para el log. */
+    String noOwnerReason() {
+        if (closestPersonPx == Double.MAX_VALUE) {
+            return "no se vio a ninguna persona mientras se asentaba (" + framesAsNew + " frames)";
+        }
+        return "la persona mas cercana estuvo a " + Math.round(closestPersonPx) + " px del objeto y \"junto al objeto\" es hasta "
+                + Math.round(ownerRadiusPx) + " px (" + framesAsNew + " frames)";
     }
 
     /** Id de la persona que mas frames estuvo cerca del objeto, o null si nadie lo estuvo. */

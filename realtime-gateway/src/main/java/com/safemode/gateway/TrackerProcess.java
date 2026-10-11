@@ -75,6 +75,7 @@ public class TrackerProcess implements TrackerControl {
         if (logFile.getParent() != null) {
             Files.createDirectories(logFile.getParent());
         }
+        keepPreviousLog();
         ProcessBuilder builder = new ProcessBuilder(command)
                 .directory(workDir.toFile())
                 .redirectErrorStream(true)
@@ -83,6 +84,22 @@ public class TrackerProcess implements TrackerControl {
         builder.environment().put("SAFEMODE_CAMERAS", Integer.toString(cameras));
         process = builder.start();
         stopRequested = false;
+    }
+
+    /**
+     * Cada inicio reemplaza el log: la corrida anterior queda copiada como "<nombre>.previous.log" para poder revisar que paso
+     * en ella aunque ya se haya vuelto a iniciar la vigilancia. Si no se puede copiar, el log nuevo reemplaza al viejo como siempre.
+     */
+    private void keepPreviousLog() {
+        try {
+            if (Files.isRegularFile(logFile) && Files.size(logFile) > 0) {
+                String name = logFile.getFileName().toString();
+                String base = name.endsWith(".log") ? name.substring(0, name.length() - 4) : name;
+                Files.copy(logFile, logFile.resolveSibling(base + ".previous.log"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException e) {
+            // no es esencial para vigilar
+        }
     }
 
     @Override

@@ -81,6 +81,22 @@ class TrackerProcessTest {
     }
 
     @Test
+    void alIniciarDeNuevoSeConservaElLogDeLaCorridaAnterior() throws Exception {
+        Path logs = tmp.resolve("logs");
+        tracker("normal", Duration.ofSeconds(10)).start();
+        tracker.requestStop();
+        waitFor(TrackerControl.State.STOPPED);
+        assertFalse(Files.exists(logs.resolve("t.previous.log")), "la primera corrida no tiene una anterior");
+
+        tracker.start();
+        tracker.requestStop();
+        waitFor(TrackerControl.State.STOPPED);
+
+        assertTrue(Files.readString(logs.resolve("t.previous.log")).contains("parando"), "queda guardada la corrida anterior");
+        assertTrue(Files.readString(logs.resolve("t.log")).contains("parando"), "el log actual sigue siendo el de la corrida nueva");
+    }
+
+    @Test
     void elHijoRecibeLasVariablesDeEntornoFijas() throws Exception {
         tracker("normal", Duration.ofSeconds(10)).start();
         tracker.requestStop();
