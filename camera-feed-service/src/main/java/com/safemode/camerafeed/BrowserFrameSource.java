@@ -15,7 +15,9 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 
 /**
@@ -24,17 +26,25 @@ import java.util.concurrent.CountDownLatch;
  * A diferencia de {@link FrameCapturer}, captura la ventana elegida aunque haya otras ventanas encima.
  * Si el navegador deja de enviar (ventana de la camara minimizada, pestana cerrada), {@link #getLatestFrame()} devuelve
  * {@code null} pasado {@code staleAfter}: asi el tracker no procesa una y otra vez una imagen congelada.
+ * <p>
+ * Varias camaras: cada mensaje puede empezar con UN byte con el numero de camara (1 a {@link #MAX_CAMERAS}) seguido de la
+ * imagen; un mensaje que empieza directamente por una imagen (JPEG {@code 0xFF}, PNG {@code 0x89}) es de la camara 1, que es
+ * el formato de antes. {@link #forCamera(int)} da la vista de una camara como {@link FrameSource}.
  */
 public class BrowserFrameSource implements FrameSource {
 
     private static final int MAX_FRAME_BYTES = 8 * 1024 * 1024;
+    /** Cantidad maxima de camaras (ids de 1 a este valor); igual que PresenceEventStore.MAX_CAMERAS. */
+    public static final int MAX_CAMERAS = 8;
 
     private final Receiver server;
     private final Clock clock;
     private final Duration staleAfter;
     private final CountDownLatch started = new CountDownLatch(1);
-    private volatile BufferedImage latestFrame;
-    private volatile long latestAtMillis;
+    private final Map<Integer, Latest> latest = new ConcurrentHashMap<>();
+
+    /** El ultimo fotograma de una camara y cuando llego. */
+    private record Latest(BufferedImage image, long atMillis) {}
 
     /**
      * @param port           puerto del WebSocket (0 = uno libre, util en pruebas; ver {@link #boundPort()})
@@ -62,13 +72,37 @@ public class BrowserFrameSource implements FrameSource {
         return server.getPort();
     }
 
+    /** El fotograma mas reciente de la camara 1 (el formato de una sola camara). */
     @Override
     public BufferedImage getLatestFrame() {
-        BufferedImage frame = latestFrame;
-        if (frame == null || clock.millis() - latestAtMillis > staleAfter.toMillis()) {
+        return getLatestFrame(1);
+    }
+
+    /** El fotograma mas reciente de esa camara, o {@code null} si no hay o ya es demasiado viejo. */
+    public BufferedImage getLatestFrame(int cameraId) {
+        Latest frame = latest.get(cameraId);
+        if (frame == null || clock.millis() - frame.atMillis() > staleAfter.toMillis()) {
             return null;
         }
-        return frame;
+        return frame.image();
+    }
+
+    /** La vista de una camara como fuente de fotogramas; detenerla no detiene el servidor (es de todas las camaras). */
+    public FrameSource forCamera(int cameraId) {
+        if (cameraId < 1 || cameraId > MAX_CAMERAS) {
+            throw new IllegalArgumentException("Camara fuera de rango: " + cameraId);
+        }
+        return new FrameSource() {
+            @Override
+            public BufferedImage getLatestFrame() {
+                return BrowserFrameSource.this.getLatestFrame(cameraId);
+            }
+
+            @Override
+            public void stop() {
+                // el servidor es compartido: lo detiene quien lo creo
+            }
+        };
     }
 
     @Override
@@ -81,7 +115,17 @@ public class BrowserFrameSource implements FrameSource {
     }
 
     private void accept(ByteBuffer message) {
-        if (message.remaining() > MAX_FRAME_BYTES) {
+        if (message.remaining() < 2 || message.remaining() > MAX_FRAME_BYTES) {
+            return;
+        }
+        // un byte de 1 a 99 al inicio es el numero de camara; una imagen empieza por 0xFF (JPEG) o 0x89 (PNG): camara 1
+        int cameraId = 1;
+        int first = message.get(message.position()) & 0xFF;
+        if (first >= 1 && first <= 99) {
+            cameraId = first;
+            message.get();
+        }
+        if (cameraId > MAX_CAMERAS) {
             return;
         }
         byte[] bytes = new byte[message.remaining()];
@@ -89,8 +133,7 @@ public class BrowserFrameSource implements FrameSource {
         try {
             BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
             if (image != null) {
-                latestFrame = image;
-                latestAtMillis = clock.millis();
+                latest.put(cameraId, new Latest(image, clock.millis()));
             }
         } catch (IOException e) {
             System.err.println("[CAMARA] Frame del navegador ilegible: " + e.getMessage());

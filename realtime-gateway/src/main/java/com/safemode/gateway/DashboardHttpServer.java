@@ -8,6 +8,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -22,10 +23,13 @@ import java.util.Set;
 public class DashboardHttpServer {
 
     private final HttpServer server;
+    private static final int MAX_BODY_BYTES = 2048;
+
     private final Path dashboardDir;
     private final Path photosDir;
     private final TrackerControl tracker;     // null = sin boton de vigilancia (las rutas /tracker/* dan 404)
     private final Set<String> allowedOrigins;
+    private CameraDirectory cameras;           // null = sin edicion de camaras (las rutas /cameras dan 404)
 
     public DashboardHttpServer(int port, Path dashboardDir, Path photosDir) throws IOException {
         this("localhost", port, dashboardDir, photosDir);
@@ -50,6 +54,12 @@ public class DashboardHttpServer {
         server.createContext("/", this::handle);
     }
 
+    /** Activa las rutas {@code GET /cameras} y {@code POST /cameras/<id>} (renombrar). Se llama antes de {@link #start()}. */
+    public DashboardHttpServer withCameraDirectory(CameraDirectory directory) {
+        this.cameras = directory;
+        return this;
+    }
+
     public void start() {
         server.start();
     }
@@ -69,13 +79,19 @@ public class DashboardHttpServer {
                 handleTracker(exchange, path);
                 return;
             }
+            if (cameras != null && (path.equals("/cameras") || path.startsWith("/cameras/"))) {
+                handleCameras(exchange, path);
+                return;
+            }
             if (!"GET".equals(exchange.getRequestMethod())) {
                 send(exchange, 405, "text/plain; charset=utf-8", "Metodo no permitido".getBytes());
                 return;
             }
             if (path.equals("/") || path.equals("/index.html")) {
                 serveFile(exchange, dashboardDir, "index.html");
-            } else if (path.equals("/camera-share.js") || path.equals("/tracker-control.js")) {
+            } else if (path.equals("/camera-share.js") || path.equals("/tracker-control.js")
+                    || path.equals("/camera-zones.js") || path.equals("/camera-names.js")
+                    || path.equals("/mosaico-prueba.html")) {
                 serveFile(exchange, dashboardDir, path.substring(1));
             } else if (path.startsWith(AlertJson.PHOTO_PREFIX)) {
                 serveFile(exchange, photosDir, path.substring(AlertJson.PHOTO_PREFIX.length()));
@@ -115,8 +131,13 @@ public class DashboardHttpServer {
             return;
         }
         if (start) {
+            int cameraCount = parseCameras(exchange.getRequestURI().getRawQuery());
+            if (cameraCount < 0) {
+                send(exchange, 400, "text/plain; charset=utf-8", "Numero de camaras invalido".getBytes());
+                return;
+            }
             try {
-                tracker.start();
+                tracker.start(cameraCount);
             } catch (IllegalStateException e) {
                 sendStatus(exchange, 409);
                 return;
@@ -129,6 +150,84 @@ public class DashboardHttpServer {
             tracker.requestStop();
         }
         sendStatus(exchange, 200);
+    }
+
+    /**
+     * Numero de camaras pedido en {@code ?cameras=N}: 1 si no viene, el entero (de 1 a 8) si es valido y -1 si no lo es. Solo
+     * se aceptan digitos: el valor llega a una variable de entorno del tracker y nunca debe ser texto libre.
+     */
+    static int parseCameras(String rawQuery) {
+        if (rawQuery == null || rawQuery.isEmpty()) {
+            return 1;
+        }
+        String[] parts = rawQuery.split("&");
+        if (parts.length != 1 || !parts[0].startsWith("cameras=")) {
+            return -1;
+        }
+        String value = parts[0].substring("cameras=".length());
+        return value.matches("[1-8]") ? Integer.parseInt(value) : -1;
+    }
+
+    private void handleCameras(HttpExchange exchange, String path) throws IOException {
+        String method = exchange.getRequestMethod();
+        if (path.equals("/cameras")) {
+            if (!"GET".equals(method)) {
+                send(exchange, 405, "text/plain; charset=utf-8", "Metodo no permitido".getBytes());
+                return;
+            }
+            sendCameras(exchange, 200);
+            return;
+        }
+        String idText = path.substring("/cameras/".length());
+        if (!idText.matches("[1-9]")) {
+            send(exchange, 404, "text/plain; charset=utf-8", "No encontrado".getBytes());
+            return;
+        }
+        if (!"POST".equals(method)) {
+            send(exchange, 405, "text/plain; charset=utf-8", "Metodo no permitido".getBytes());
+            return;
+        }
+        if (!fromOurOwnPanel(exchange)) {
+            send(exchange, 403, "text/plain; charset=utf-8", "Origen no autorizado".getBytes());
+            return;
+        }
+        String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
+        if (contentType == null || !contentType.toLowerCase().startsWith("application/json")) {
+            send(exchange, 415, "text/plain; charset=utf-8", "Se espera application/json".getBytes());
+            return;
+        }
+        byte[] body = exchange.getRequestBody().readNBytes(MAX_BODY_BYTES + 1);
+        if (body.length > MAX_BODY_BYTES) {
+            send(exchange, 413, "text/plain; charset=utf-8", "Cuerpo demasiado grande".getBytes());
+            return;
+        }
+        String name;
+        try {
+            var json = com.google.gson.JsonParser.parseString(new String(body, java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
+            name = json.get("name").getAsString();
+        } catch (RuntimeException e) {
+            send(exchange, 400, "text/plain; charset=utf-8", "Se espera {\"name\": \"...\"}".getBytes());
+            return;
+        }
+        try {
+            cameras.rename(Integer.parseInt(idText), name);
+        } catch (IllegalArgumentException e) {
+            send(exchange, 400, "text/plain; charset=utf-8", e.getMessage().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return;
+        }
+        sendCameras(exchange, 200);
+    }
+
+    private void sendCameras(HttpExchange exchange, int httpStatus) throws IOException {
+        var array = new com.google.gson.JsonArray();
+        for (Map.Entry<Integer, String> camera : cameras.names().entrySet()) {
+            var json = new com.google.gson.JsonObject();
+            json.addProperty("id", camera.getKey());
+            json.addProperty("name", camera.getValue());
+            array.add(json);
+        }
+        exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        send(exchange, httpStatus, "application/json; charset=utf-8", array.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     /** Un POST valido trae la cabecera Origin de una pagina del panel y un Host esperado (nada de otros sitios web ni de otros nombres). */

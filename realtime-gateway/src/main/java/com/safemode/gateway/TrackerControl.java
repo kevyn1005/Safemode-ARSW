@@ -23,6 +23,11 @@ public interface TrackerControl {
     /** Lanza el tracker. {@link IllegalStateException} si ya hay uno corriendo o cerrandose. */
     void start() throws java.io.IOException;
 
+    /** Lanza el tracker para vigilar ese numero de camaras (por defecto lo mismo que {@link #start()}, una camara). */
+    default void start(int cameras) throws java.io.IOException {
+        start();
+    }
+
     /** Pide detenerlo de forma ordenada y vuelve enseguida; no hace nada si no esta corriendo. */
     void requestStop();
 }

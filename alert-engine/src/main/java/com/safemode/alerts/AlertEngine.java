@@ -83,6 +83,21 @@ public class AlertEngine implements AutoCloseable {
         return events.findById(alert.eventId());
     }
 
+    /** Nombre de la camara (el que le puso el usuario o "CAM n"). */
+    public String cameraName(int cameraId) {
+        return events.cameraName(cameraId);
+    }
+
+    /** Nombres de todas las camaras soportadas. */
+    public java.util.Map<Integer, String> cameraNames() {
+        return events.cameraNames();
+    }
+
+    /** Cambia el nombre de una camara (vacio = el nombre por defecto). */
+    public void renameCamera(int cameraId, String name) {
+        events.renameCamera(cameraId, name);
+    }
+
     /** Revisa cada cierto tiempo, en un hilo aparte, hasta {@link #stop()} o {@link #close()}. */
     public synchronized void start(Duration every) {
         if (scheduler != null) {

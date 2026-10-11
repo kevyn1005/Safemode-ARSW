@@ -77,6 +77,8 @@ public class ObjectTracker {
     private OwnerVisionDescriber visionDescriber;
     // opcional: comparar la imagen de la zona antes de dar por retirado un objeto que el detector dejo de ver
     private boolean verifyRemovalByImage;
+    // camara a la que pertenece este seguimiento (1 por defecto); con dos camaras hay un ObjectTracker por camara
+    private int cameraId = 1;
     // persona -> dato de tatuajes ya obtenido de sus antebrazos en esta corrida (ver tattoosFromArms)
     private final Map<Long, String> tattooCheckByPerson = new java.util.concurrent.ConcurrentHashMap<>();
     private Executor aiExecutor;
@@ -375,7 +377,7 @@ public class ObjectTracker {
         String framePath = saveFrameSnapshot(frame, t.getId(), "REGISTERED_AT_REST", now);
         OwnerInfo owner = resolveOwner(t, now);
         t.setOwner(owner);
-        long eventId = store.recordRegistered(t.getId(), t.getClassName(), t.getX(), t.getY(), t.getWidth(), t.getHeight(), now, framePath, owner);
+        long eventId = store.recordRegistered(cameraId, t.getId(), t.getClassName(), t.getX(), t.getY(), t.getWidth(), t.getHeight(), now, framePath, owner);
         t.setRegisteredEventId(eventId);
         requestAiDescription(t, t.takeOwnerCrop(), t.takeOwnerPose(), owner == null ? null : owner.personId());
     }
@@ -391,7 +393,7 @@ public class ObjectTracker {
                 .anyMatch(p -> distanceToBox(ox, oy, p) <= personRadius);
         String framePath = saveFrameSnapshot(frame, t.getId(), "REMOVED", now);
         RemovalAnalysis analysis = analyzeRemoval(t, personDetections, personIds, frame, now);
-        long eventId = store.recordRemoved(t.getId(), t.getClassName(), t.getX(), t.getY(), t.getWidth(), t.getHeight(), now,
+        long eventId = store.recordRemoved(cameraId, t.getId(), t.getClassName(), t.getX(), t.getY(), t.getWidth(), t.getHeight(), now,
                 personNearby, framePath, t.getOwner(), analysis.info());
         String aiDescription = t.registerRemovedEvent(eventId);
         if (aiDescription != null) {
@@ -454,7 +456,7 @@ public class ObjectTracker {
 
         String cropPath = remover.crop == null ? null
                 : writePng(remover.evidenceCrop != null ? remover.evidenceCrop : remover.crop,
-                        "obj" + t.getId() + "_REMOVER_person" + remover.personId + "_" + now.toEpochMilli() + ".png");
+                        photoPrefix() + "obj" + t.getId() + "_REMOVER_person" + remover.personId + "_" + now.toEpochMilli() + ".png");
         Keypoint[] pose = (remover.crop == null || poseFinder == null) ? null : poseFinder.apply(remover.crop);
         String description = PersonDescriber.describe(remover.crop, remover.objectInCrop, pose);
         return new RemovalAnalysis(new RemovalInfo(kind.name(), remover.personId, description, cropPath), kind, remover, pose);
@@ -499,6 +501,22 @@ public class ObjectTracker {
      * su zona se ve casi igual, se espera en vez de declararlo retirado (una persona que se cruza lo tapa). Necesita que
      * onFrame reciba el frame real; con frames null no hace nada. Devuelve este mismo tracker.
      */
+    /**
+     * Indica a que camara pertenece este seguimiento: se guarda en cada evento y, para las camaras 2 en adelante, las fotos
+     * llevan el prefijo "camN_" (con dos camaras los ids de objeto y de persona se repiten entre trackers).
+     */
+    public ObjectTracker withCameraId(int cameraId) {
+        if (cameraId < 1) {
+            throw new IllegalArgumentException("El id de camara debe ser 1 o mayor");
+        }
+        this.cameraId = cameraId;
+        return this;
+    }
+
+    private String photoPrefix() {
+        return cameraId == 1 ? "" : "cam" + cameraId + "_";
+    }
+
     public ObjectTracker withRemovalVerification() {
         this.verifyRemovalByImage = true;
         return this;
@@ -834,7 +852,7 @@ public class ObjectTracker {
         // la foto guardada muestra a la persona junto al objeto; el color y la pose se leen solo del recorte de la persona
         String cropPath = crop == null ? null
                 : writePng(evidence != null ? evidence : crop,
-                        "obj" + t.getId() + "_OWNER_person" + ownerId + "_" + now.toEpochMilli() + ".png");
+                        photoPrefix() + "obj" + t.getId() + "_OWNER_person" + ownerId + "_" + now.toEpochMilli() + ".png");
         Keypoint[] pose = (crop == null || poseFinder == null) ? null : poseFinder.apply(crop);
         String description = PersonDescriber.describe(crop, t.objectInCropOf(ownerId), pose);
         t.setOwnerCrop(crop);
@@ -853,7 +871,7 @@ public class ObjectTracker {
         if (frame == null) {
             return null;
         }
-        return writePng(frame, "obj" + trackedId + "_" + eventType + "_" + now.toEpochMilli() + ".png");
+        return writePng(frame, photoPrefix() + "obj" + trackedId + "_" + eventType + "_" + now.toEpochMilli() + ".png");
     }
 
     private String writePng(BufferedImage image, String filename) {

@@ -35,7 +35,19 @@ public class GatewayRunner {
             AlertGateway gateway = new AlertGateway(engine, alerts, bindHost, WS_PORT, panelOrigins);
             TrackerProcess tracker = trackerButtonAllowed(bindHost) ? newTrackerProcess() : null;
             DashboardHttpServer http = new DashboardHttpServer(bindHost, HTTP_PORT, Path.of("security-dashboard"),
-                    Path.of("object-presence-tracker", "data", "frames"), tracker, panelOrigins);
+                    Path.of("object-presence-tracker", "data", "frames"), tracker, panelOrigins)
+                    .withCameraDirectory(new CameraDirectory() {
+                        @Override
+                        public java.util.Map<Integer, String> names() {
+                            return engine.cameraNames();
+                        }
+
+                        @Override
+                        public void rename(int cameraId, String name) {
+                            engine.renameCamera(cameraId, name);
+                            gateway.broadcastCameras();
+                        }
+                    });
             gateway.startAndWait();
             http.start();
             engine.start(Duration.ofSeconds(1));

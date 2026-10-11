@@ -99,7 +99,7 @@ class DashboardHttpServerTest {
 
     /** Control falso: cuenta las llamadas y guarda el estado que se le diga. */
     private static class FakeTracker implements TrackerControl {
-        int starts, stops;
+        int starts, stops, lastCameras = -1;
         State state = State.STOPPED;
         boolean failToStart;
 
@@ -110,6 +110,11 @@ class DashboardHttpServerTest {
             if (state == State.RUNNING) throw new IllegalStateException("ya corre");
             starts++;
             state = State.RUNNING;
+        }
+
+        @Override public void start(int cameras) throws IOException {
+            start();
+            lastCameras = cameras;
         }
 
         @Override public void requestStop() {
@@ -148,6 +153,126 @@ class DashboardHttpServerTest {
             request.header("Origin", origin);
         }
         return client.send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> sendJson(String path, String origin, String contentType, String body) throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(panelOrigin + path))
+                .POST(HttpRequest.BodyPublishers.ofString(body));
+        if (origin != null) {
+            request.header("Origin", origin);
+        }
+        if (contentType != null) {
+            request.header("Content-Type", contentType);
+        }
+        return client.send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** Directorio de camaras falso: guarda los nombres en un mapa y valida como lo haria la base. */
+    private static class FakeCameras implements CameraDirectory {
+        final java.util.Map<Integer, String> names = new java.util.TreeMap<>(java.util.Map.of(1, "CAM 1", 2, "CAM 2"));
+
+        @Override public java.util.Map<Integer, String> names() { return names; }
+
+        @Override public void rename(int cameraId, String name) {
+            if (!names.containsKey(cameraId)) {
+                throw new IllegalArgumentException("Camara fuera de rango: " + cameraId);
+            }
+            if (name.strip().length() > 10) {
+                throw new IllegalArgumentException("Nombre demasiado largo");
+            }
+            names.put(cameraId, name.isBlank() ? "CAM " + cameraId : name.strip());
+        }
+    }
+
+    private FakeCameras startServerWithCameras() throws IOException {
+        startServerWithTracker();
+        trackerServer.stop();
+        int port = Integer.parseInt(panelOrigin.substring(panelOrigin.lastIndexOf(':') + 1));
+        FakeCameras directory = new FakeCameras();
+        trackerServer = new DashboardHttpServer("localhost", port, tmp.resolve("dashboard"), tmp.resolve("photos"), fake,
+                java.util.Set.of(panelOrigin)).withCameraDirectory(directory);
+        trackerServer.start();
+        return directory;
+    }
+
+    @Test
+    void iniciarPuedePedirDosCamaras() throws Exception {
+        startServerWithTracker();
+        HttpResponse<String> response = send("POST", "/tracker/start?cameras=2", panelOrigin);
+        assertEquals(200, response.statusCode());
+        assertEquals(2, fake.lastCameras);
+    }
+
+    @Test
+    void iniciarSinCamarasEsUnaCamara() throws Exception {
+        startServerWithTracker();
+        assertEquals(200, send("POST", "/tracker/start", panelOrigin).statusCode());
+        assertEquals(1, fake.lastCameras);
+    }
+
+    @Test
+    void unNumeroDeCamarasQueNoEsUnDigitoValidoSeRechazaSinLanzarNada() throws Exception {
+        startServerWithTracker();
+        for (String bad : new String[]{"0", "9", "10", "-1", "abc", "2;rm", "1&x=1", "", "%32"}) {
+            assertEquals(400, send("POST", "/tracker/start?cameras=" + bad, panelOrigin).statusCode(), "cameras=" + bad);
+        }
+        assertEquals(400, send("POST", "/tracker/start?otra=1", panelOrigin).statusCode());
+        assertEquals(0, fake.starts);
+    }
+
+    @Test
+    void sinDirectorioDeCamarasLasRutasDeCamarasNoExisten() throws Exception {
+        startServerWithTracker();
+        assertEquals(404, send("GET", "/cameras", null).statusCode());
+    }
+
+    @Test
+    void sePuedenListarLasCamaras() throws Exception {
+        startServerWithCameras();
+        HttpResponse<String> response = send("GET", "/cameras", null);
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("\"name\":\"CAM 2\""));
+        assertEquals("no-store", response.headers().firstValue("Cache-Control").orElse(""));
+    }
+
+    @Test
+    void sePuedeRenombrarUnaCamaraDesdeElPropioPanel() throws Exception {
+        FakeCameras directory = startServerWithCameras();
+        HttpResponse<String> response = sendJson("/cameras/2", panelOrigin, "application/json", "{\"name\":\"  Cancha sur \"}");
+        assertEquals(200, response.statusCode());
+        assertEquals("Cancha sur", directory.names.get(2));
+        assertTrue(response.body().contains("Cancha sur"));
+    }
+
+    @Test
+    void renombrarExigeOrigenDelPanelYJson() throws Exception {
+        FakeCameras directory = startServerWithCameras();
+        assertEquals(403, sendJson("/cameras/2", null, "application/json", "{\"name\":\"x\"}").statusCode());
+        assertEquals(403, sendJson("/cameras/2", "http://evil.example", "application/json", "{\"name\":\"x\"}").statusCode());
+        assertEquals(415, sendJson("/cameras/2", panelOrigin, "text/plain", "{\"name\":\"x\"}").statusCode());
+        assertEquals(415, sendJson("/cameras/2", panelOrigin, null, "{\"name\":\"x\"}").statusCode());
+        assertEquals("CAM 2", directory.names.get(2), "ninguna de las peticiones rechazadas cambia el nombre");
+    }
+
+    @Test
+    void renombrarRechazaCuerposIdsYNombresInvalidos() throws Exception {
+        FakeCameras directory = startServerWithCameras();
+        assertEquals(400, sendJson("/cameras/2", panelOrigin, "application/json", "no es json").statusCode());
+        assertEquals(400, sendJson("/cameras/2", panelOrigin, "application/json", "{\"otro\":1}").statusCode());
+        assertEquals(400, sendJson("/cameras/2", panelOrigin, "application/json", "{\"name\":\"un nombre muy largo\"}").statusCode());
+        assertEquals(400, sendJson("/cameras/9", panelOrigin, "application/json", "{\"name\":\"x\"}").statusCode());
+        assertEquals(404, sendJson("/cameras/abc", panelOrigin, "application/json", "{\"name\":\"x\"}").statusCode());
+        assertEquals(404, sendJson("/cameras/2/../1", panelOrigin, "application/json", "{\"name\":\"x\"}").statusCode());
+        assertEquals(413, sendJson("/cameras/2", panelOrigin, "application/json",
+                "{\"name\":\"" + "x".repeat(3000) + "\"}").statusCode());
+        assertEquals("CAM 2", directory.names.get(2));
+    }
+
+    @Test
+    void renombrarSoloAceptaPostYListarSoloGet() throws Exception {
+        startServerWithCameras();
+        assertEquals(405, send("GET", "/cameras/2", panelOrigin).statusCode());
+        assertEquals(405, send("POST", "/cameras", panelOrigin).statusCode());
     }
 
     @Test
@@ -226,6 +351,23 @@ class DashboardHttpServerTest {
         HttpResponse<String> response = send("POST", "/tracker/start", panelOrigin);
         assertEquals(500, response.statusCode());
         assertFalse(response.body().contains("mvn"));
+    }
+
+    @Test
+    void entregaLosScriptsYLaPaginaDePruebaDelPanel() throws Exception {
+        startServerWithTracker();
+        for (String name : new String[]{"camera-zones.js", "camera-names.js", "camera-share.js", "tracker-control.js"}) {
+            Files.writeString(tmp.resolve("dashboard").resolve(name), "// " + name);
+            HttpResponse<String> response = send("GET", "/" + name, null);
+            assertEquals(200, response.statusCode(), name);
+            assertEquals("// " + name, response.body());
+            assertTrue(response.headers().firstValue("Content-Type").orElse("").startsWith("text/javascript"), name);
+        }
+        Files.writeString(tmp.resolve("dashboard").resolve("mosaico-prueba.html"), "<html>mosaico</html>");
+        HttpResponse<String> page = send("GET", "/mosaico-prueba.html", null);
+        assertEquals(200, page.statusCode());
+        assertTrue(page.headers().firstValue("Content-Type").orElse("").startsWith("text/html"));
+        assertEquals(404, send("GET", "/otro-script.js", null).statusCode(), "solo se entregan los archivos de la lista");
     }
 
     @Test

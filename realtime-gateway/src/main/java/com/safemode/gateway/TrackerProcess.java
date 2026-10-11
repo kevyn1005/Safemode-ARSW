@@ -58,7 +58,16 @@ public class TrackerProcess implements TrackerControl {
     }
 
     @Override
-    public synchronized void start() throws IOException {
+    public void start() throws IOException {
+        start(1);
+    }
+
+    /** Lanza el tracker con la variable SAFEMODE_CAMERAS: un numero entero, nunca texto del navegador. */
+    @Override
+    public synchronized void start(int cameras) throws IOException {
+        if (cameras < 1) {
+            throw new IllegalArgumentException("Debe haber al menos una camara");
+        }
         State state = status().state();
         if (state == State.RUNNING || state == State.STOPPING) {
             throw new IllegalStateException("El tracker ya esta " + (state == State.RUNNING ? "corriendo" : "cerrandose"));
@@ -71,6 +80,7 @@ public class TrackerProcess implements TrackerControl {
                 .redirectErrorStream(true)
                 .redirectOutput(logFile.toFile());
         builder.environment().putAll(extraEnv);
+        builder.environment().put("SAFEMODE_CAMERAS", Integer.toString(cameras));
         process = builder.start();
         stopRequested = false;
     }

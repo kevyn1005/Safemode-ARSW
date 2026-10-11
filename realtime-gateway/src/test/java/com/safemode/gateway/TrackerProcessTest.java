@@ -21,7 +21,7 @@ class TrackerProcessTest {
     public static class FakeChild {
         public static void main(String[] args) throws Exception {
             String mode = args.length > 0 ? args[0] : "normal";
-            System.out.println("listo env=" + System.getenv("SAFEMODE_PRUEBA"));
+            System.out.println("listo env=" + System.getenv("SAFEMODE_PRUEBA") + " cameras=" + System.getenv("SAFEMODE_CAMERAS"));
             switch (mode) {
                 case "crash" -> System.exit(3);
                 case "ignore" -> Thread.sleep(600_000);
@@ -89,6 +89,27 @@ class TrackerProcessTest {
     }
 
     @Test
+    void elNumeroDeCamarasLlegaAlTrackerComoVariableDeEntorno() throws Exception {
+        tracker("normal", Duration.ofSeconds(10)).start(2);
+        tracker.requestStop();
+        waitFor(TrackerControl.State.STOPPED);
+        assertTrue(Files.readString(tmp.resolve("logs").resolve("t.log")).contains("cameras=2"));
+    }
+
+    @Test
+    void sinIndicarCamarasSeVigilaUna() throws Exception {
+        tracker("normal", Duration.ofSeconds(10)).start();
+        tracker.requestStop();
+        waitFor(TrackerControl.State.STOPPED);
+        assertTrue(Files.readString(tmp.resolve("logs").resolve("t.log")).contains("cameras=1"));
+    }
+
+    @Test
+    void noSeAceptaUnNumeroDeCamarasMenorQueUno() {
+        assertThrows(IllegalArgumentException.class, () -> tracker("normal", Duration.ofSeconds(1)).start(0));
+    }
+
+    @Test
     void noSeLanzaUnSegundoTrackerMientrasUnoCorre() throws Exception {
         tracker("normal", Duration.ofSeconds(10)).start();
         assertThrows(IllegalStateException.class, tracker::start);
@@ -105,7 +126,7 @@ class TrackerProcessTest {
     void despuesDeCaerseSePuedeIniciarOtraVez() throws Exception {
         tracker("crash", Duration.ofSeconds(5)).start();
         waitFor(TrackerControl.State.CRASHED);
-        assertDoesNotThrow(tracker::start);
+        assertDoesNotThrow(() -> tracker.start());
     }
 
     @Test

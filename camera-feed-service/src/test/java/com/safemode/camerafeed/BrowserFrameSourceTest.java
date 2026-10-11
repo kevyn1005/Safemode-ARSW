@@ -112,6 +112,92 @@ class BrowserFrameSourceTest {
         assertFalse(client.isOpen());
     }
 
+    /** Un mensaje del navegador con varias camaras: un byte con la camara y despues la imagen. */
+    private static byte[] forCamera(int cameraId, byte[] image) {
+        byte[] message = new byte[image.length + 1];
+        message[0] = (byte) cameraId;
+        System.arraycopy(image, 0, message, 1, image.length);
+        return message;
+    }
+
+    private void waitForFrame(int cameraId) throws Exception {
+        long deadline = System.currentTimeMillis() + 5000;
+        while (source.getLatestFrame(cameraId) == null && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20);
+        }
+    }
+
+    @Test
+    void cadaCamaraGuardaSuPropioFotograma() throws Exception {
+        WebSocketClient client = connect(Map.of("Origin", PANEL_ORIGIN));
+        client.send(forCamera(1, jpeg(320, 200)));
+        client.send(forCamera(2, jpeg(160, 120)));
+        waitForFrame(1);
+        waitForFrame(2);
+
+        assertEquals(320, source.getLatestFrame(1).getWidth());
+        assertEquals(160, source.getLatestFrame(2).getWidth());
+        assertEquals(320, source.getLatestFrame().getWidth(), "getLatestFrame() sin argumento es la camara 1");
+        assertNull(source.getLatestFrame(3));
+        client.closeBlocking();
+    }
+
+    @Test
+    void elFormatoDeAntesSinByteDeCamaraSigueSiendoLaCamara1() throws Exception {
+        WebSocketClient client = connect(Map.of("Origin", PANEL_ORIGIN));
+        client.send(jpeg(100, 50));
+        waitForFrame(1);
+
+        assertEquals(100, source.getLatestFrame(1).getWidth());
+        assertNull(source.getLatestFrame(2));
+        client.closeBlocking();
+    }
+
+    @Test
+    void forCameraDaLaVistaDeEsaCamara() throws Exception {
+        WebSocketClient client = connect(Map.of("Origin", PANEL_ORIGIN));
+        client.send(forCamera(2, jpeg(80, 40)));
+        waitForFrame(2);
+
+        FrameSource camera2 = source.forCamera(2);
+        assertEquals(80, camera2.getLatestFrame().getWidth());
+        assertNull(source.forCamera(1).getLatestFrame());
+        camera2.stop(); // no debe detener el servidor compartido
+        client.send(forCamera(2, jpeg(90, 40)));
+        Thread.sleep(300);
+        assertEquals(90, source.getLatestFrame(2).getWidth());
+        assertThrows(IllegalArgumentException.class, () -> source.forCamera(0));
+        assertThrows(IllegalArgumentException.class, () -> source.forCamera(BrowserFrameSource.MAX_CAMERAS + 1));
+        client.closeBlocking();
+    }
+
+    @Test
+    void cadaCamaraSeVuelveViejaPorSeparado() throws Exception {
+        WebSocketClient client = connect(Map.of("Origin", PANEL_ORIGIN));
+        client.send(forCamera(1, jpeg(64, 64)));
+        waitForFrame(1);
+        clock.advance(Duration.ofSeconds(2));
+        client.send(forCamera(2, jpeg(64, 64)));
+        waitForFrame(2);
+        clock.advance(Duration.ofSeconds(2)); // la camara 1 lleva 4 s sin enviar; la 2, solo 2 s
+
+        assertNull(source.getLatestFrame(1));
+        assertNotNull(source.getLatestFrame(2));
+        client.closeBlocking();
+    }
+
+    @Test
+    void unaCamaraFueraDeRangoSeIgnora() throws Exception {
+        WebSocketClient client = connect(Map.of("Origin", PANEL_ORIGIN));
+        client.send(forCamera(BrowserFrameSource.MAX_CAMERAS + 1, jpeg(64, 64)));
+        Thread.sleep(300);
+
+        for (int camera = 1; camera <= BrowserFrameSource.MAX_CAMERAS + 1; camera++) {
+            assertNull(source.getLatestFrame(camera));
+        }
+        client.closeBlocking();
+    }
+
     @Test
     void ignoraBasuraQueNoEsUnaImagen() throws Exception {
         WebSocketClient client = connect(Map.of("Origin", PANEL_ORIGIN));
