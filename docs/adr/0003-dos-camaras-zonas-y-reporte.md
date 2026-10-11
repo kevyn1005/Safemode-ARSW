@@ -1,8 +1,11 @@
 # ADR 0003: dos camaras desde una ventana compartida, zonas dibujadas y reporte de alertas
 
 ## Estado
-Propuesto. Ninguna parte esta implementada todavia; este documento fija el diseno acordado por el equipo antes de
-construirlo. Se actualizara a "Aceptado" cuando se verifique con camaras reales.
+Parcialmente implementado (oct-2026). Hecho y probado: `camera_id` en eventos, nombres de camara editables, un seguimiento
+independiente por camara, protocolo de fotogramas por camara, modo de 1 o 2 camaras en el panel, zonas dibujadas con
+prueba previa, modelo segun el modo y una pagina de prueba (`mosaico-prueba.html`). El boton "Generar reporte" (seccion 7).
+Pendiente: la pista "puede ser el dueno que volvio" (seccion 8). Se pasara a "Aceptado" cuando se verifique con una
+corrida real con camara (ver "Como probarlo").
 
 ## Contexto
 Hasta ahora el sistema vigila **una sola camara**: el tracker recibe la imagen completa de la ventana compartida (ADR
@@ -100,6 +103,16 @@ siempre visible y los chequeos automaticos son una ayuda.
     alerta; los margenes de color calibrados ya son cortos.
   - Reidentificacion por modelo de apariencia (C): queda como **mejora futura** en el Release Plan; es la que mas cierra el
     problema pero cuesta un modelo nuevo, mas CPU y calibracion, y habria que declararla como identidad por apariencia.
+- **Refinamiento tras las pruebas con una camara (oct-2026, decidido por el equipo): D pasa a B.** En 4 de 5 ciclos el dueno salio
+  de cuadro de 6 a 11 fotogramas (7 a 15 s), el seguimiento lo olvido (a los 6 fotogramas sin verlo) y al volver vestido igual su
+  retiro salio como posible robo con severidad ALTA. Ahora, si TODAS las personas junto al objeto se visten parecido al dueno (color
+  medio del torso a 60 o menos de distancia; mas estricto que el 80 de la identidad, porque de esto depende la severidad), la alerta
+  es `POSSIBLE_OWNER_RETURN` ("Posible dueno que volvio", severidad MEDIA) con las fotos del dueno y de quien retiro lado a lado.
+  **Sigue sin silenciarse**: queda visible y, al ser MEDIA, tambien notifica (ADR 0004). Si alguna persona se ve distinta, o falta la
+  ropa del dueno (sin imagen), sigue siendo posible robo ALTA. Limite declarado: un ladron vestido de un color parecido al del dueno
+  (p. ej. ropa oscura) saldra como MEDIA en vez de ALTA. Se guarda en la columna `remover_looks_like_owner`; el umbral de 60 se
+  calibra con el log (`Retiro por otra persona, comparada con el dueno #N: persona #M color a X`): los retornos del mismo dueno
+  midieron de 14 a 44 y las personas distintas de 93 a 180.
 
 ### 9. Dueno probable (alcance)
 - El alcance de la sustentacion se corrige: el **dueno probable** (por cercania, con foto y descripcion) pasa de "Won't" a
@@ -142,6 +155,39 @@ siempre visible y los chequeos automaticos son una ayuda.
   estampadas: es una ayuda para el operador, no una regla. Hay que escribir sus pruebas y mostrarla sin cambiar la
   severidad de la alerta.
 - Las fotos siguen ocupando disco (~3 MB cada una): conviene una politica de retencion mas adelante.
+
+## Implementacion (que quedo hecho)
+- **Protocolo de fotogramas**: cada mensaje binario del navegador empieza con UN byte con la camara (1 a 8) y despues el
+  JPEG; un mensaje que empieza directo por la imagen (JPEG `0xFF`, PNG `0x89`) es de la camara 1 (formato anterior).
+  `BrowserFrameSource.forCamera(n)` da la vista de cada camara; cada una caduca por separado a los 3 s.
+- **Tracker**: `SAFEMODE_CAMERAS` (1 a 8, por defecto 1) crea un detector y un `ObjectTracker.withCameraId(n)` por camara,
+  cada uno en su hilo; el modelo y los hilos salen de `SAFEMODE_MODEL` / `SAFEMODE_DETECTOR_THREADS` o de la regla 3b. Una
+  camara que falla detiene todo de forma ordenada. El boton del panel lo lanza con `POST /tracker/start?cameras=N` (solo
+  digitos de 1 a 8).
+- **Datos**: columna `camera_id` y tabla `camera (id, name)`; `GET /cameras` y `POST /cameras/<id>` (JSON `{"name": ...}`,
+  con `Origin`, `Host` y `Content-Type` validados); el WebSocket envia `cameras` al conectar y al renombrar, y cada alerta
+  lleva `cameraId` y `cameraName`.
+- **Panel**: `camera-zones.js` (logica pura, 13 pruebas en Node), `camera-share.js` (selector, dialogo de zonas, prueba previa y
+  envio), `camera-names.js` (editor de nombres). Las zonas se guardan en el `localStorage` del navegador (por operador y
+  equipo, en fracciones de la ventana). `mosaico-prueba.html` simula un mosaico con tu camara.
+- **Reporte** (seccion 7): `GET /report` (solo lectura, sin parametros, con `Host` validado) devuelve los ultimos 200 eventos; el
+  boton "Generar reporte" (`security-dashboard/report.js`) los muestra en una tabla con fecha, hora, camara, que paso, objeto,
+  dueno probable, quien lo retiro, si genero alerta y fotos. A diferencia del centro de alertas, lista TAMBIEN lo que no alerta
+  (cada objeto registrado en reposo y los retiros del propio dueno) y dice por que: "Sin alerta: lo retiro su dueno". Asi, si no
+  salta ninguna alerta, el reporte permite ver si el sistema reconocio el objeto. Las fotos solo se aceptan si su URL es
+  `/photo/<archivo>` y todo el texto se pinta con `textContent`.
+- **Verificado de extremo a extremo** (tracker real con 2 camaras, deteccion real, protocolo real): una maleta en CAM 1 y CAM 2,
+  retirada solo de la CAM 2; en la base quedaron `camera_id` 1 y 2 con el objeto #1 en cada una, el retiro solo de la CAM 2 y
+  fotos `cam2_...` solo para la CAM 2.
+
+## Como probarlo con una sola camara fisica
+1. Gateway: `mvn -pl realtime-gateway exec:java "-Dexec.mainClass=com.safemode.gateway.GatewayRunner"`; abrir
+   `http://localhost:8080`, en el selector **Camaras** poner **2** y pulsar **Iniciar vigilancia**.
+2. En **otra ventana** de Chrome abrir `http://localhost:8080/mosaico-prueba.html`, pulsar **Activar camara** (el recuadro B
+   repite tu camara espejada, o un video).
+3. En el panel pulsar **Compartir ventana de la camara**, elegir la ventana del mosaico, dibujar la zona de CAM 1 y de CAM 2
+   y pulsar **Iniciar**.
+4. Dejar un objeto en un recuadro, esperar 3 s y retirarlo; la alerta debe decir de que camara es.
 
 ## Pendientes relacionados
 - **Decidir como cumplir el ritmo con 2 camaras** (resultados en "Consecuencias"): (a) pasar a `yolov8s`, que cabe holgado

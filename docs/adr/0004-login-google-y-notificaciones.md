@@ -27,7 +27,8 @@ rediseñado es hoy solo una maqueta.
 ### 2. Servicio de notificaciones
 - Un **Notification Service** se engancha al motor de alertas (`AlertEngine.addListener`, misma JVM del gateway) y avisa
   **solo de alertas nuevas** (no de las actualizaciones por IA ni de las marcadas como revisadas).
-- **Solo severidad ALTA y MEDIA** notifican (`POSSIBLE_THEFT`, `AMBIGUOUS_REMOVAL`, `OBJECT_VANISHED`). La BAJA
+- **Solo severidad ALTA y MEDIA** notifican (`POSSIBLE_THEFT`, `AMBIGUOUS_REMOVAL`, `OBJECT_VANISHED`,
+  `POSSIBLE_OWNER_RETURN`). La BAJA
   (`UNKNOWN_OWNER_REMOVAL`) queda solo en el panel, para no saturar al operador.
 - Cada aviso se envia **una sola vez por alerta, usuario y canal** (registro `notification_log`, unico por esos tres
   datos), en un pool aparte: **un canal que falla o tarda nunca retrasa ni bloquea la alerta ni a los otros canales**

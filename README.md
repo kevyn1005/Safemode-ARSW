@@ -66,6 +66,24 @@ Se puede tapar la ventana de la camara con otras y trabajar en el resto del comp
 ventana de la camara (Windows deja de dibujarla) ni cerrar la pestana del panel; minimizar todo Chrome puede ralentizar
 el envio. Los frames viajan solo por `localhost` (puerto 8091) y el tracker solo acepta paginas del panel (`Origin`).
 
+### Dos camaras (con una sola camara fisica para probar)
+
+Con el selector **Camaras = 2** del panel, la ventana compartida es un mosaico (como el de un software de camaras) y se dibuja
+con el mouse la zona de **CAM 1** y la de **CAM 2**; cada zona se vigila por separado y las alertas dicen de que camara son. Los
+nombres de camara se editan con **Nombres de camaras**. Para probar sin dos camaras: abre
+`http://localhost:8080/mosaico-prueba.html` en otra ventana de Chrome (muestra tu camara en dos recuadros), pulsa
+**Compartir ventana de la camara** en el panel y elige esa ventana. Detalles y limites en el
+[ADR 0003](docs/adr/0003-dos-camaras-zonas-y-reporte.md).
+
+### Reporte de detecciones (boton "Generar reporte")
+
+El centro de alertas solo muestra los retiros sospechosos. El boton **Generar reporte** del panel abre una tabla con **todo lo que
+registro el sistema**: cada objeto que quedo en reposo y cada retiro, con fecha, hora, camara, objeto, dueno probable, quien lo
+retiro, fotos y si genero alerta (y por que no: por ejemplo, "Sin alerta: lo retiro su dueno"). Sirve para comprobar que el sistema
+esta reconociendo aunque no haya saltado ninguna alerta. Para ver ademas lo que detecta fotograma a fotograma, revisa
+`object-presence-tracker/data/tracker.log`: explica cada decision (si una persona es nueva o la misma, por que un objeto no tiene
+dueno, de donde sale cada retiro). Al volver a iniciar la vigilancia desde el panel, el log anterior queda en `tracker.previous.log`.
+
 ### Boton "Iniciar vigilancia" (una sola terminal)
 
 Con el gateway corriendo en el computador (no en Docker) el panel ofrece **Iniciar vigilancia** / **Detener vigilancia**: el
