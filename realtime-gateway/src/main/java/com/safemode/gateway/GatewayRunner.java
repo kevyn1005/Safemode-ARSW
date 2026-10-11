@@ -47,6 +47,17 @@ public class GatewayRunner {
                             engine.renameCamera(cameraId, name);
                             gateway.broadcastCameras();
                         }
+                    })
+                    .withEventReport(new EventReport() {
+                        @Override
+                        public java.util.List<PresenceEventStore.StoredEvent> recent(int limit) {
+                            return engine.recentEvents(limit);
+                        }
+
+                        @Override
+                        public String cameraName(int cameraId) {
+                            return engine.cameraName(cameraId);
+                        }
                     });
             gateway.startAndWait();
             http.start();

@@ -195,6 +195,77 @@ class DashboardHttpServerTest {
         return directory;
     }
 
+    /** Reporte falso: devuelve dos eventos fijos y recuerda el limite que se le pidio. */
+    private static class FakeReport implements EventReport {
+        int lastLimit = -1;
+
+        @Override public java.util.List<com.safemode.presence.PresenceEventStore.StoredEvent> recent(int limit) {
+            lastLimit = limit;
+            java.time.Instant when = java.time.Instant.parse("2026-10-11T17:48:50Z");
+            return java.util.List.of(
+                    new com.safemode.presence.PresenceEventStore.StoredEvent(2, 1, "backpack", "REMOVED", when.plusSeconds(9), 1, 2, 3, 4,
+                            true, "frames/obj1_REMOVED.png", 1L, "persona con camisa blanca", null, null, "BY_OTHER", 2L,
+                            "persona con camisa negra", null, null, 2),
+                    new com.safemode.presence.PresenceEventStore.StoredEvent(1, 1, "backpack", "REGISTERED_AT_REST", when, 1, 2, 3, 4,
+                            null, "frames/obj1_REGISTERED.png", 1L, "persona con camisa blanca", null, null, null, null, null, null,
+                            null, 1));
+        }
+
+        @Override public String cameraName(int cameraId) { return cameraId == 2 ? "Cancha sur" : "CAM " + cameraId; }
+    }
+
+    private FakeReport startServerWithReport() throws IOException {
+        startServerWithTracker();
+        trackerServer.stop();
+        int port = Integer.parseInt(panelOrigin.substring(panelOrigin.lastIndexOf(':') + 1));
+        FakeReport eventReport = new FakeReport();
+        trackerServer = new DashboardHttpServer("localhost", port, tmp.resolve("dashboard"), tmp.resolve("photos"), fake,
+                java.util.Set.of(panelOrigin)).withEventReport(eventReport);
+        trackerServer.start();
+        return eventReport;
+    }
+
+    @Test
+    void sinReporteLaRutaDeReporteNoExiste() throws Exception {
+        startServerWithTracker();
+        assertEquals(404, send("GET", "/report", null).statusCode());
+    }
+
+    @Test
+    void elReporteSeEntregaEnJsonSinCacheConLosNombresDeCamara() throws Exception {
+        FakeReport eventReport = startServerWithReport();
+        HttpResponse<String> response = send("GET", "/report", null);
+        assertEquals(200, response.statusCode());
+        assertTrue(response.headers().firstValue("Content-Type").orElse("").startsWith("application/json"));
+        assertEquals("no-store", response.headers().firstValue("Cache-Control").orElse(""));
+        assertEquals(ReportJson.MAX_ROWS, eventReport.lastLimit);
+        var events = com.google.gson.JsonParser.parseString(response.body()).getAsJsonObject().getAsJsonArray("events");
+        assertEquals(2, events.size());
+        assertEquals("Cancha sur", events.get(0).getAsJsonObject().get("cameraName").getAsString());
+        assertEquals("POSSIBLE_THEFT", events.get(0).getAsJsonObject().get("alertType").getAsString());
+        assertEquals("/photo/obj1_REGISTERED.png", events.get(1).getAsJsonObject().get("framePhoto").getAsString());
+    }
+
+    @Test
+    void elReporteSoloAceptaGet() throws Exception {
+        startServerWithReport();
+        assertEquals(405, send("POST", "/report", panelOrigin).statusCode());
+        assertEquals(405, send("DELETE", "/report", panelOrigin).statusCode());
+    }
+
+    @Test
+    void elReporteRechazaUnHostRaroContraDnsRebinding() throws Exception {
+        startServerWithReport();
+        int port = trackerServer.boundPort();
+        try (java.net.Socket socket = new java.net.Socket("localhost", port)) {
+            String request = "GET /report HTTP/1.1\r\nHost: evil.example:" + port + "\r\nConnection: close\r\n\r\n";
+            socket.getOutputStream().write(request.getBytes());
+            socket.getOutputStream().flush();
+            String statusLine = new java.io.BufferedReader(new java.io.InputStreamReader(socket.getInputStream())).readLine();
+            assertTrue(statusLine.contains("403"), statusLine);
+        }
+    }
+
     @Test
     void iniciarPuedePedirDosCamaras() throws Exception {
         startServerWithTracker();
@@ -356,7 +427,7 @@ class DashboardHttpServerTest {
     @Test
     void entregaLosScriptsYLaPaginaDePruebaDelPanel() throws Exception {
         startServerWithTracker();
-        for (String name : new String[]{"camera-zones.js", "camera-names.js", "camera-share.js", "tracker-control.js"}) {
+        for (String name : new String[]{"camera-zones.js", "camera-names.js", "camera-share.js", "tracker-control.js", "report.js"}) {
             Files.writeString(tmp.resolve("dashboard").resolve(name), "// " + name);
             HttpResponse<String> response = send("GET", "/" + name, null);
             assertEquals(200, response.statusCode(), name);

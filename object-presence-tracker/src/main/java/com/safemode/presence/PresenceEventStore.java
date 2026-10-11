@@ -281,24 +281,41 @@ public class PresenceEventStore implements AutoCloseable {
         return query("id = ?", id).stream().findFirst();
     }
 
+    /** Los ultimos eventos (registros y retiros), del mas nuevo al mas viejo: lo que muestra el reporte del panel. */
+    public List<StoredEvent> findRecent(int limit) {
+        String sql = "SELECT " + EVENT_COLUMNS + " FROM object_presence_event ORDER BY id DESC LIMIT ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setInt(1, Math.max(1, limit));
+            try (var rs = ps.executeQuery()) {
+                return readEvents(rs);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("No se pudo leer object_presence_event", e);
+        }
+    }
+
     private List<StoredEvent> query(String where, long param) {
         String sql = "SELECT " + EVENT_COLUMNS + " FROM object_presence_event WHERE " + where + " ORDER BY id";
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setLong(1, param);
             try (var rs = ps.executeQuery()) {
-                List<StoredEvent> events = new ArrayList<>();
-                while (rs.next()) {
-                    events.add(new StoredEvent(rs.getLong(1), rs.getLong(2), rs.getString(3), rs.getString(4),
-                            rs.getTimestamp(5).toInstant(), rs.getInt(6), rs.getInt(7), rs.getInt(8), rs.getInt(9),
-                            nullableBoolean(rs, 10), rs.getString(11), nullableLong(rs, 12), rs.getString(13),
-                            rs.getString(14), rs.getString(15), rs.getString(16), nullableLong(rs, 17), rs.getString(18),
-                            rs.getString(19), rs.getString(20), rs.getInt(21)));
-                }
-                return events;
+                return readEvents(rs);
             }
         } catch (SQLException e) {
             throw new IllegalStateException("No se pudo leer object_presence_event", e);
         }
+    }
+
+    private static List<StoredEvent> readEvents(java.sql.ResultSet rs) throws SQLException {
+        List<StoredEvent> events = new ArrayList<>();
+        while (rs.next()) {
+            events.add(new StoredEvent(rs.getLong(1), rs.getLong(2), rs.getString(3), rs.getString(4),
+                    rs.getTimestamp(5).toInstant(), rs.getInt(6), rs.getInt(7), rs.getInt(8), rs.getInt(9),
+                    nullableBoolean(rs, 10), rs.getString(11), nullableLong(rs, 12), rs.getString(13),
+                    rs.getString(14), rs.getString(15), rs.getString(16), nullableLong(rs, 17), rs.getString(18),
+                    rs.getString(19), rs.getString(20), rs.getInt(21)));
+        }
+        return events;
     }
 
     private static Long nullableLong(java.sql.ResultSet rs, int column) throws SQLException {

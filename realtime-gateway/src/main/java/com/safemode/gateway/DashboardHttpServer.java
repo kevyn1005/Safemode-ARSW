@@ -30,6 +30,7 @@ public class DashboardHttpServer {
     private final TrackerControl tracker;     // null = sin boton de vigilancia (las rutas /tracker/* dan 404)
     private final Set<String> allowedOrigins;
     private CameraDirectory cameras;           // null = sin edicion de camaras (las rutas /cameras dan 404)
+    private EventReport report;                // null = sin reporte (la ruta /report da 404)
 
     public DashboardHttpServer(int port, Path dashboardDir, Path photosDir) throws IOException {
         this("localhost", port, dashboardDir, photosDir);
@@ -60,6 +61,12 @@ public class DashboardHttpServer {
         return this;
     }
 
+    /** Activa {@code GET /report} (el reporte de eventos del panel). Se llama antes de {@link #start()}. */
+    public DashboardHttpServer withEventReport(EventReport eventReport) {
+        this.report = eventReport;
+        return this;
+    }
+
     public void start() {
         server.start();
     }
@@ -83,6 +90,10 @@ public class DashboardHttpServer {
                 handleCameras(exchange, path);
                 return;
             }
+            if (report != null && path.equals("/report")) {
+                handleReport(exchange);
+                return;
+            }
             if (!"GET".equals(exchange.getRequestMethod())) {
                 send(exchange, 405, "text/plain; charset=utf-8", "Metodo no permitido".getBytes());
                 return;
@@ -90,7 +101,7 @@ public class DashboardHttpServer {
             if (path.equals("/") || path.equals("/index.html")) {
                 serveFile(exchange, dashboardDir, "index.html");
             } else if (path.equals("/camera-share.js") || path.equals("/tracker-control.js")
-                    || path.equals("/camera-zones.js") || path.equals("/camera-names.js")
+                    || path.equals("/camera-zones.js") || path.equals("/camera-names.js") || path.equals("/report.js")
                     || path.equals("/mosaico-prueba.html")) {
                 serveFile(exchange, dashboardDir, path.substring(1));
             } else if (path.startsWith(AlertJson.PHOTO_PREFIX)) {
@@ -216,6 +227,25 @@ public class DashboardHttpServer {
             return;
         }
         sendCameras(exchange, 200);
+    }
+
+    /**
+     * {@code GET /report}: los ultimos eventos con su detalle, en JSON. Solo lectura y sin parametros del navegador. Como lleva
+     * descripciones de personas, exige un {@code Host} esperado (contra el "DNS rebinding", igual que los POST).
+     */
+    private void handleReport(HttpExchange exchange) throws IOException {
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            send(exchange, 405, "text/plain; charset=utf-8", "Metodo no permitido".getBytes());
+            return;
+        }
+        String host = exchange.getRequestHeaders().getFirst("Host");
+        if (host == null || !allowedOrigins.contains("http://" + host)) {
+            send(exchange, 403, "text/plain; charset=utf-8", "Origen no autorizado".getBytes());
+            return;
+        }
+        String json = ReportJson.toJson(report.recent(ReportJson.MAX_ROWS), report::cameraName).toString();
+        exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        send(exchange, 200, "application/json; charset=utf-8", json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     private void sendCameras(HttpExchange exchange, int httpStatus) throws IOException {

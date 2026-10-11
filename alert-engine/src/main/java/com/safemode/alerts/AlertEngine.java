@@ -83,6 +83,11 @@ public class AlertEngine implements AutoCloseable {
         return events.findById(alert.eventId());
     }
 
+    /** Los ultimos eventos de presencia (registros y retiros), del mas nuevo al mas viejo: el reporte del panel. */
+    public List<StoredEvent> recentEvents(int limit) {
+        return events.findRecent(limit);
+    }
+
     /** Nombre de la camara (el que le puso el usuario o "CAM n"). */
     public String cameraName(int cameraId) {
         return events.cameraName(cameraId);

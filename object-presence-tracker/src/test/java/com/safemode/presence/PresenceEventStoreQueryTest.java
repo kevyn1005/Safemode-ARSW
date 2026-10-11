@@ -36,6 +36,29 @@ class PresenceEventStoreQueryTest {
     }
 
     @Test
+    void findRecentDevuelveLosUltimosEventosDeCualquierTipoDelMasNuevoAlMasViejo() {
+        try (PresenceEventStore store = newStore()) {
+            Instant now = Instant.now();
+            long first = store.recordRegistered(1, "backpack", 10, 20, 30, 40, now, "a.png", null);
+            long second = store.recordRemoved(1, "backpack", 10, 20, 30, 40, now, false, "b.png", null,
+                    new RemovalInfo("BY_OWNER", 1L, null, null));
+            long third = store.recordRegistered(2, "suitcase", 1, 2, 3, 4, now, "c.png", null);
+
+            assertEquals(List.of(third, second, first), store.findRecent(10).stream().map(StoredEvent::id).toList());
+            assertEquals(List.of(third, second), store.findRecent(2).stream().map(StoredEvent::id).toList());
+            assertEquals(List.of(third), store.findRecent(0).stream().map(StoredEvent::id).toList(), "un limite menor que 1 se toma como 1");
+            assertEquals("REGISTERED_AT_REST", store.findRecent(1).get(0).eventType());
+        }
+    }
+
+    @Test
+    void findRecentSinEventosDevuelveUnaListaVacia() {
+        try (PresenceEventStore store = newStore()) {
+            assertTrue(store.findRecent(50).isEmpty());
+        }
+    }
+
+    @Test
     void findByIdDevuelveTodosLosCamposIncluidosLosNulos() {
         try (PresenceEventStore store = newStore()) {
             Instant now = Instant.parse("2026-03-04T05:06:07Z");
