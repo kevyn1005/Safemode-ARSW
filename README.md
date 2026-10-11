@@ -49,7 +49,7 @@ $env:SAFEMODE_DB_URL = "jdbc:h2:tcp://localhost:9093/presence"
 mvn -pl object-presence-tracker exec:java "-Dexec.mainClass=com.safemode.presence.ObjectPresenceTrackerTest"
 ```
 
-Sin Docker sigue funcionando como antes (no definir `SAFEMODE_DB_URL`; ver la lista de pasos en `CLAUDE.md`).
+Sin Docker sigue funcionando como antes (no definir `SAFEMODE_DB_URL`).
 Detalles y motivos en [ADR 0002](docs/adr/0002-docker-compose-gateway-y-base-de-datos.md).
 
 ### Compartir la ventana de la camara (en vez de capturar una zona de la pantalla)
@@ -79,6 +79,13 @@ gateway lanza el tracker por ti (con la fuente "ventana compartida", sin limite 
 La salida del tracker queda en `object-presence-tracker/data/tracker.log`. Seguridad: el comando esta fijo en el servidor,
 los POST solo se aceptan desde el propio panel (`Origin` y `Host`), el boton no se ofrece si el gateway escucha fuera de
 `localhost` (Docker), y si el gateway se cierra el tracker se detiene con el.
+
+## Decisiones de arquitectura (ADR)
+
+- [ADR 0001](docs/adr/0001-contenerizacion-servicios-captura-pantalla.md): contenerizacion de los servicios de captura.
+- [ADR 0002](docs/adr/0002-docker-compose-gateway-y-base-de-datos.md): docker-compose para el gateway y la base de datos.
+- [ADR 0003](docs/adr/0003-dos-camaras-zonas-y-reporte.md): dos camaras desde una ventana compartida, zonas dibujadas y
+  reporte de alertas (propuesto, aun no implementado).
 
 ## Notas
 
