@@ -49,6 +49,13 @@ la vigilancia y avisa.
 Limite honesto: el sistema no puede saber con certeza que el operador reacomodo las camaras; por eso la vista previa es
 siempre visible y los chequeos automaticos son una ayuda.
 
+### 3b. Modelo de deteccion segun el modo (decidido)
+- **1 camara: `yolov8m`**, como hoy (mejor calidad; ~0.37 s por fotograma cabe en el ritmo del tracker).
+- **2 camaras: `yolov8s` con 8 hilos por detector** (los 8 nucleos fisicos de la CPU de desarrollo repartidos entre los dos
+  detectores): cabe a ~2.6-2.9 fps por camara. Antes de adoptarlo hay que comprobar con una corrida real que no pierde
+  objetos frente a `yolov8m`. El modelo y los hilos se eligen al arrancar segun el numero de camaras elegido en el panel
+  (no se escribe a mano en el codigo). Se implementa junto con las dos camaras.
+
 ### 4. Estado independiente por camara (concurrencia)
 - Un **seguimiento independiente por camara** (objetos, personas, ids y duenos no se mezclan).
 - `camera_id` en los eventos y en las alertas; el id de objeto y de persona pasa a ser unico **por camara**. Las fotos
@@ -121,10 +128,9 @@ siempre visible y los chequeos automaticos son una ayuda.
 - **Calidad de `yolov8s` frente a `yolov8m`**: en la unica escena de prueba con objetos ven lo mismo (persona 0.95; mochila
   0.86 con m y 0.81 con s). Es un solo caso: no demuestra que s no pierda objetos tapados o lejanos; hay que comprobarlo con
   una corrida real antes de cambiar de modelo.
-- **Memoria nativa del detector**: `ObjectDetector.detect` no cierra los tensores ni el resultado de ONNX Runtime; en 600
-  fotogramas la memoria virtual del proceso subio de ~0.35 GB a ~2.4 GB y se estabilizo (la libera el recolector de basura).
-  Con la vigilancia ahora sin limite de tiempo conviene cerrarlos (`try-with-resources`), un cambio pequeno que requiere el
-  visto bueno del equipo porque toca codigo que ya funciona.
+- **Memoria nativa del detector (corregido)**: `ObjectDetector.detect` no cerraba los tensores ni el resultado de ONNX
+  Runtime; en 600 fotogramas la memoria virtual del proceso subia de ~0.35 GB a ~2.4 GB hasta que corria el recolector de
+  basura. Se cierran con `try-with-resources` y la memoria queda plana en ~440 MB con las mismas detecciones.
 - **Latencia medida** (`AlertLatencyBenchmark`, componentes reales con base en memoria): del evento de retiro al panel por
   WebSocket, media ~0.5 s y p95 ~0.92 s (domina el intervalo de lectura del motor, 1 s). Sumando confirmar el retiro (3
   fotogramas), el peor caso estimado es ~3.5 s con 1 camara y `yolov8m`, ~4.3-4.5 s con 2 camaras y `yolov8m` (poco
