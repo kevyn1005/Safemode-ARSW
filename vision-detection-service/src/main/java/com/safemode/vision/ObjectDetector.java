@@ -34,6 +34,17 @@ public class ObjectDetector {
         this.session = env.createSession(modelPath, new OrtSession.SessionOptions());
     }
 
+    /**
+     * Igual, pero limitando los hilos de calculo de este detector. Por defecto ONNX Runtime usa todos los nucleos; con dos
+     * detectores en paralelo (dos camaras) se estorban entre si, asi que a cada uno se le da la mitad.
+     */
+    public ObjectDetector(String modelPath, int intraOpThreads) throws OrtException {
+        this.env = OrtEnvironment.getEnvironment();
+        OrtSession.SessionOptions options = new OrtSession.SessionOptions();
+        options.setIntraOpNumThreads(intraOpThreads);
+        this.session = env.createSession(modelPath, options);
+    }
+
     public List<Detection> detect(BufferedImage frame) throws OrtException {
         Letterbox lb = letterbox(frame, INPUT_SIZE);
         float[] inputData = imageToCHWArray(lb.image);

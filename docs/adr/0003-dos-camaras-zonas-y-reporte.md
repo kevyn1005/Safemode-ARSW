@@ -113,6 +113,18 @@ siempre visible y los chequeos automaticos son una ayuda.
   Con `yolov8m` dos camaras **no alcanzan 2 fps** por camara (maximo ~1.6); con `yolov8s` si (~2.6-2.9). Ademas el bucle del
   tracker duerme 500 ms **despues** de detectar, asi que un fotograma real dura inferencia + 500 ms (~0.87 s con `yolov8m`
   y una camara, ~1.1 fps), no 500 ms. Ver las decisiones abiertas en "Pendientes relacionados".
+- **Opcion (c), limitar los hilos de cada detector, probada** (`ObjectDetector(modelPath, intraOpThreads)`, constructor
+  nuevo y opcional; el equipo tiene una CPU de 8 nucleos fisicos y 16 logicos). Con `yolov8m` y **8 hilos por detector**: 1
+  camara 296-358 ms y 2 camaras en paralelo 588-794 ms por fotograma (las corridas varian por la carga del equipo). Con 4 o
+  6 hilos no mejora y con 10 o 12 hilos por detector (mas que los nucleos fisicos entre los dos) empeora mucho (1.2 s).
+  Conclusion: ayuda entre ~8 % y ~20 %, pero **no alcanza los 2 fps por camara con `yolov8m`** (maximo ~1.7).
+- **Calidad de `yolov8s` frente a `yolov8m`**: en la unica escena de prueba con objetos ven lo mismo (persona 0.95; mochila
+  0.86 con m y 0.81 con s). Es un solo caso: no demuestra que s no pierda objetos tapados o lejanos; hay que comprobarlo con
+  una corrida real antes de cambiar de modelo.
+- **Memoria nativa del detector**: `ObjectDetector.detect` no cierra los tensores ni el resultado de ONNX Runtime; en 600
+  fotogramas la memoria virtual del proceso subio de ~0.35 GB a ~2.4 GB y se estabilizo (la libera el recolector de basura).
+  Con la vigilancia ahora sin limite de tiempo conviene cerrarlos (`try-with-resources`), un cambio pequeno que requiere el
+  visto bueno del equipo porque toca codigo que ya funciona.
 - **Latencia medida** (`AlertLatencyBenchmark`, componentes reales con base en memoria): del evento de retiro al panel por
   WebSocket, media ~0.5 s y p95 ~0.92 s (domina el intervalo de lectura del motor, 1 s). Sumando confirmar el retiro (3
   fotogramas), el peor caso estimado es ~3.5 s con 1 camara y `yolov8m`, ~4.3-4.5 s con 2 camaras y `yolov8m` (poco

@@ -15,7 +15,7 @@ import java.util.concurrent.CountDownLatch;
 // Script de medicion manual (no es JUnit): cuanto tarda el detector por fotograma en ESTE computador y si alcanzan 2 camaras
 // a 2 fps (presupuesto de 500 ms por ciclo). No necesita camara: usa las fotos de escena que ya guardo el tracker.
 //   mvn -pl object-presence-tracker exec:java "-Dexec.mainClass=com.safemode.presence.DetectionBenchmark"
-// Argumentos opcionales: fotogramas medidos por escenario (por defecto 30) y ruta de otro modelo .onnx (por defecto yolov8m).
+// Argumentos opcionales: fotogramas medidos por escenario (por defecto 30) ruta de otro modelo .onnx (por defecto yolov8m) y hilos por detector (por defecto: todos los nucleos).
 public class DetectionBenchmark {
     private static final double TARGET_FPS = 2.0;
 
@@ -27,14 +27,15 @@ public class DetectionBenchmark {
                 : "vision-detection-service/src/main/resources/models/yolov8s.onnx";
 
         System.out.println("=== Medicion del detector ===");
-        System.out.println("Modelo: " + modelPath);
+        int threads = args.length > 2 ? Integer.parseInt(args[2].trim()) : 0; // 0 = por defecto (todos los nucleos)
+        System.out.println("Modelo: " + modelPath + " | hilos por detector: " + (threads > 0 ? threads : "por defecto"));
         System.out.println("Nucleos: " + Runtime.getRuntime().availableProcessors()
                 + " | memoria maxima de la JVM: " + Runtime.getRuntime().maxMemory() / (1024 * 1024) + " MB");
         System.out.println("Escenas de prueba: " + scenes.size() + " (" + scenes.get(0).getWidth() + "x" + scenes.get(0).getHeight()
                 + ") | fotogramas por escenario: " + frames);
         System.out.println("Meta: " + TARGET_FPS + " fps por camara = ciclo de " + (long) (1000 / TARGET_FPS) + " ms\n");
 
-        ObjectDetector detector = new ObjectDetector(modelPath);
+        ObjectDetector detector = open(modelPath, threads);
         for (int i = 0; i < 5; i++) { // calentamiento: la primera inferencia es mucho mas lenta
             detector.detect(scenes.get(i % scenes.size()));
         }
@@ -56,7 +57,7 @@ public class DetectionBenchmark {
         double b = mean(cycles);
 
         // C) dos camaras, un detector por camara, en paralelo
-        ObjectDetector second = new ObjectDetector(modelPath);
+        ObjectDetector second = open(modelPath, threads);
         second.detect(scenes.get(0));
         List<Double> c1 = Collections.synchronizedList(new ArrayList<>());
         List<Double> c2 = Collections.synchronizedList(new ArrayList<>());
@@ -84,6 +85,10 @@ public class DetectionBenchmark {
                 + "Bajar la frecuencia o usar un modelo mas chico (yolov8s).", TARGET_FPS, best));
         System.out.println("Nota: se mide solo el detector (lo que se repite en cada fotograma). La pose (~300 ms) y la IA se "
                 + "ejecutan una vez por evento, en segundo plano.");
+    }
+
+    private static ObjectDetector open(String modelPath, int threads) throws Exception {
+        return threads > 0 ? new ObjectDetector(modelPath, threads) : new ObjectDetector(modelPath);
     }
 
     private static Thread worker(ObjectDetector detector, List<BufferedImage> scenes, int frames, List<Double> out,
