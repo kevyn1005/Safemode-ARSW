@@ -2,6 +2,7 @@ package com.safemode.gateway;
 
 import com.safemode.alerts.AlertEngine;
 import com.safemode.alerts.AlertStore;
+import com.safemode.gateway.notify.NotificationService;
 import com.safemode.presence.PresenceEventStore;
 
 import java.nio.file.Path;
@@ -33,6 +34,15 @@ public class GatewayRunner {
              AlertEngine engine = new AlertEngine(events, alerts)) {
             Set<String> panelOrigins = Set.of("http://localhost:" + HTTP_PORT, "http://127.0.0.1:" + HTTP_PORT);
             AlertGateway gateway = new AlertGateway(engine, alerts, bindHost, WS_PORT, panelOrigins);
+            // Avisos de las alertas nuevas altas y medias por Telegram (clave y chats solo por variables de entorno; ver ADR 0004)
+            NotificationService notifications = NotificationService.fromEnvironment(System.getenv(),
+                    alert -> engine.evidenceOf(alert).map(event -> engine.cameraName(event.cameraId())).orElse(null));
+            if (notifications.isActive()) {
+                engine.addListener(notifications::onAlert);
+                System.out.println("Avisos de alertas altas y medias por: " + notifications.describe());
+            } else {
+                System.out.println("Avisos por Telegram: desactivados (define SAFEMODE_TELEGRAM_BOT_TOKEN y SAFEMODE_TELEGRAM_CHAT_IDS para activarlos)");
+            }
             TrackerProcess tracker = trackerButtonAllowed(bindHost) ? newTrackerProcess() : null;
             DashboardHttpServer http = new DashboardHttpServer(bindHost, HTTP_PORT, Path.of("security-dashboard"),
                     Path.of("object-presence-tracker", "data", "frames"), tracker, panelOrigins)
@@ -71,6 +81,7 @@ public class GatewayRunner {
                     if (tracker != null) {
                         tracker.stopAndWait();
                     }
+                    notifications.close();
                     engine.stop();
                     http.stop();
                     gateway.shutdown();
