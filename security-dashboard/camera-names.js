@@ -51,39 +51,39 @@
   function openEditor(cameras) {
     var dialog = document.createElement('dialog');
     dialog.setAttribute('aria-labelledby', 'safemodeNamesTitle');
-    dialog.style.cssText = 'background:#12161c;color:#e8ebf0;border:1px solid #2f3644;border-radius:10px;padding:16px;' +
+    dialog.style.cssText = 'background:var(--surface);color:var(--text);border:1px solid var(--line-2);border-radius:10px;padding:16px;' +
       'width:calc(100% - 32px);max-width:420px;font:14px/1.45 system-ui,sans-serif';
     var title = el('h2', 'Nombres de las cámaras', 'margin:0 0 4px;font-size:18px');
     title.id = 'safemodeNamesTitle';
     dialog.appendChild(title);
     dialog.appendChild(el('p', 'Se muestran en las alertas y en los reportes. Déjalo vacío para volver a «CAM n».',
-      'margin:0 0 12px;color:#9aa7b2;font-size:13px'));
+      'margin:0 0 12px;color:var(--muted);font-size:13px'));
 
     var inputs = [];
     cameras.filter(function (c) { return c.id <= VISIBLE_CAMERAS; }).forEach(function (camera) {
-      var label = el('label', 'Cámara ' + camera.id, 'display:block;margin:0 0 10px;font-size:13px;color:#c3ccd3');
+      var label = el('label', 'Cámara ' + camera.id, 'display:block;margin:0 0 10px;font-size:13px;color:var(--text-2)');
       var input = document.createElement('input');
       input.type = 'text';
       input.value = camera.name;
       input.maxLength = MAX_NAME;
-      input.style.cssText = 'display:block;width:100%;margin-top:4px;padding:6px 8px;border-radius:6px;border:1px solid #2f3644;' +
-        'background:#0b0f13;color:#e8ebf0;font:inherit;box-sizing:border-box';
+      input.style.cssText = 'display:block;width:100%;margin-top:4px;padding:6px 8px;border-radius:6px;border:1px solid var(--line-2);' +
+        'background:var(--bg);color:var(--text);font:inherit;box-sizing:border-box';
       label.appendChild(input);
       dialog.appendChild(label);
       inputs.push({ id: camera.id, original: camera.name, input: input });
     });
 
-    var message = el('p', '', 'min-height:1.4em;margin:0 0 8px;font-size:13px;color:#FF9A8B');
+    var message = el('p', '', 'min-height:1.4em;margin:0 0 8px;font-size:13px;color:var(--high)');
     message.setAttribute('role', 'alert');
     var actions = el('div', '', 'display:flex;gap:8px;justify-content:flex-end');
     var cancel = el('button', 'Cancelar');
     var saveButton = el('button', 'Guardar');
     [cancel, saveButton].forEach(function (b) {
       b.type = 'button';
-      b.style.cssText = 'font:inherit;padding:6px 14px;border-radius:6px;border:1px solid #4FD1C5;background:transparent;color:#4FD1C5;cursor:pointer';
+      b.style.cssText = 'font:inherit;padding:6px 14px;border-radius:6px;border:1px solid var(--cyan);background:transparent;color:var(--cyan);cursor:pointer';
     });
-    saveButton.style.background = '#4FD1C5'; saveButton.style.color = '#0b0f13'; saveButton.style.fontWeight = '700';
-    cancel.style.borderColor = '#2f3644'; cancel.style.color = '#9aa7b2';
+    saveButton.style.background = 'var(--cyan)'; saveButton.style.color = 'var(--bg)'; saveButton.style.fontWeight = '700';
+    cancel.style.borderColor = 'var(--line-2)'; cancel.style.color = 'var(--muted)';
     actions.appendChild(cancel);
     actions.appendChild(saveButton);
     dialog.appendChild(message);

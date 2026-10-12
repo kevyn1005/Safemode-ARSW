@@ -428,13 +428,18 @@ class DashboardHttpServerTest {
     void entregaLosScriptsYLaPaginaDePruebaDelPanel() throws Exception {
         startServerWithTracker();
         for (String name : new String[]{"camera-zones.js", "camera-names.js", "camera-share.js", "tracker-control.js", "report.js",
-                "browser-notifications.js"}) {
+                "browser-notifications.js", "panel.js"}) {
             Files.writeString(tmp.resolve("dashboard").resolve(name), "// " + name);
             HttpResponse<String> response = send("GET", "/" + name, null);
             assertEquals(200, response.statusCode(), name);
             assertEquals("// " + name, response.body());
             assertTrue(response.headers().firstValue("Content-Type").orElse("").startsWith("text/javascript"), name);
         }
+        Files.writeString(tmp.resolve("dashboard").resolve("panel.css"), "/* estilos */");
+        HttpResponse<String> css = send("GET", "/panel.css", null);
+        assertEquals(200, css.statusCode());
+        assertEquals("/* estilos */", css.body());
+        assertTrue(css.headers().firstValue("Content-Type").orElse("").startsWith("text/css"));
         Files.writeString(tmp.resolve("dashboard").resolve("mosaico-prueba.html"), "<html>mosaico</html>");
         HttpResponse<String> page = send("GET", "/mosaico-prueba.html", null);
         assertEquals(200, page.statusCode());

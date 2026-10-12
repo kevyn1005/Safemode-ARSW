@@ -7,7 +7,7 @@ COPY vision-detection-service vision-detection-service
 COPY object-presence-tracker object-presence-tracker
 COPY alert-engine alert-engine
 COPY realtime-gateway realtime-gateway
-# el panel entero (pagina, scripts, secuencia de imagenes y video); el gateway lo entrega en http://localhost:8080. Es la misma
+# el panel entero (pagina, estilos y scripts); el gateway lo entrega en http://localhost:8080. Es la misma
 # carpeta que usa el gateway al correr en el computador: un solo panel para los dos modos.
 COPY security-dashboard security-dashboard
 

@@ -14,7 +14,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -24,14 +23,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
- * Contra el panel REAL del repositorio ({@code security-dashboard/}): todo lo local que la pagina referencia (scripts, video, secuencia
- * de imagenes) lo tiene que entregar el gateway. Asi, un script nuevo que se agrega a la pagina y se olvida en la lista de archivos
+ * Contra el panel REAL del repositorio ({@code security-dashboard/}): todo lo local que la pagina referencia (estilos y scripts)
+ * lo tiene que entregar el gateway. Asi, un script nuevo que se agrega a la pagina y se olvida en la lista de archivos
  * permitidos falla aqui y no en el navegador. Es el mismo panel en el computador y en Docker.
  */
 class PanelAssetsTest {
-
-    /** Referencias que el panel prueba en orden y pueden faltar sin romper nada (el video cae al siguiente {@code <source>}). */
-    private static final Set<String> OPTIONAL = Set.of("safemode-lens.mp4");
 
     @TempDir
     Path photos;
@@ -55,9 +51,13 @@ class PanelAssetsTest {
         }
     }
 
-    private int status(String path) throws Exception {
+    private HttpResponse<String> get(String path) throws Exception {
         return client.send(HttpRequest.newBuilder(URI.create("http://localhost:" + server.boundPort() + "/" + path)).build(),
-                HttpResponse.BodyHandlers.discarding()).statusCode();
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    private int status(String path) throws Exception {
+        return get(path).statusCode();
     }
 
     private String html() throws Exception {
@@ -80,9 +80,6 @@ class PanelAssetsTest {
         }
         assertFalse(local.isEmpty(), "la pagina referencia al menos sus scripts");
         for (String path : local) {
-            if (OPTIONAL.contains(path)) {
-                continue;
-            }
             assertEquals(200, status(path), "el gateway no entrega lo que la pagina pide: " + path);
         }
     }
@@ -91,20 +88,24 @@ class PanelAssetsTest {
     void estanLosScriptsDeLasFuncionesDelPanel() throws Exception {
         String html = html();
         for (String script : new String[]{"tracker-control.js", "camera-zones.js", "camera-share.js", "camera-names.js", "report.js",
-                "browser-notifications.js"}) {
+                "browser-notifications.js", "panel.js"}) {
             assertTrue(html.contains("src=\"" + script + "\""), "la pagina debe incluir " + script);
         }
     }
 
     @Test
-    void laSecuenciaDeImagenesDelEncabezadoSeEntregaCompleta() throws Exception {
-        Matcher count = Pattern.compile("FRAME_COUNT\\s*=\\s*(\\d+)").matcher(html());
-        assertTrue(count.find(), "la pagina define cuantas imagenes tiene la secuencia");
-        int frames = Integer.parseInt(count.group(1));
-        assertTrue(frames > 1);
-        for (int i : new int[]{0, 1, frames - 1}) {
-            assertEquals(200, status("lens-frames/f" + String.format("%03d", i) + ".webp"), "falta la imagen " + i);
-        }
+    void losEstilosDelPanelSeEntreganComoCss() throws Exception {
+        assertTrue(html().contains("href=\"panel.css\""), "la pagina debe incluir panel.css");
+        HttpResponse<String> css = get("panel.css");
+        assertEquals(200, css.statusCode());
+        assertTrue(css.headers().firstValue("Content-Type").orElse("").startsWith("text/css"));
+    }
+
+    @Test
+    void elPanelYaNoCargaElVideoNiLaSecuenciaDeImagenesDelEncabezado() throws Exception {
+        String html = html();
+        assertFalse(html.contains(".mp4"), "el panel ya no lleva el video del encabezado");
+        assertFalse(html.contains("lens-frames"), "el panel ya no lleva la secuencia de imagenes del encabezado");
     }
 
     @Test
