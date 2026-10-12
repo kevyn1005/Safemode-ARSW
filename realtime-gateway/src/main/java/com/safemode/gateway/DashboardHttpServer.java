@@ -102,6 +102,7 @@ public class DashboardHttpServer {
                 serveFile(exchange, dashboardDir, "index.html");
             } else if (path.equals("/camera-share.js") || path.equals("/tracker-control.js")
                     || path.equals("/camera-zones.js") || path.equals("/camera-names.js") || path.equals("/report.js")
+                    || path.equals("/browser-notifications.js")
                     || path.equals("/mosaico-prueba.html")) {
                 serveFile(exchange, dashboardDir, path.substring(1));
             } else if (path.startsWith(AlertJson.PHOTO_PREFIX)) {

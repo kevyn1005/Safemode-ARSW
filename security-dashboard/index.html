@@ -57,6 +57,7 @@
   <div id="cameraShareSlot"></div>
   <div id="cameraNamesSlot"></div>
   <div id="reportSlot"></div>
+  <div id="notifySlot"></div>
   <label><input type="checkbox" id="showDone"> ver revisadas</label>
   <label><input type="checkbox" id="soundToggle"> sonido de alarma</label>
   <button id="unlockSound" hidden>🔇 Activar sonido</button>
@@ -68,6 +69,7 @@
 <script src="camera-share.js"></script>
 <script src="camera-names.js"></script>
 <script src="report.js"></script>
+<script src="browser-notifications.js"></script>
 
 <script>
 (function () {
@@ -248,7 +250,10 @@
         alerts.set(message.alert.id, message.alert);
         // Solo suena con una alerta nueva ('alert'); una 'update' (p.ej. llegó la
         // descripción de la IA unos segundos después) no debe volver a sonar.
-        if (message.type === 'alert') playAlarm();
+        if (message.type === 'alert') {
+          playAlarm();
+          if (window.SafemodeNotify) window.SafemodeNotify.onNewAlert(message.alert);
+        }
       }
       render();
     };

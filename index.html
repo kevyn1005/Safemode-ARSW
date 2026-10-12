@@ -1622,6 +1622,7 @@
             <div id="cameraShareSlot" data-button-class="btn"></div>
             <div id="cameraNamesSlot" data-button-class="btn"></div>
             <div id="reportSlot" data-button-class="btn"></div>
+            <div id="notifySlot" data-button-class="btn"></div>
             <button type="button" class="btn btn-unlock blink" id="unlockBtn">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M4 9h4l5-4v14l-5-4H4z"/>
@@ -1810,6 +1811,7 @@
 <script src="camera-share.js"></script>
 <script src="camera-names.js"></script>
 <script src="report.js"></script>
+<script src="browser-notifications.js"></script>
 <!-- ============ Lógica JavaScript de Interacción y WebSockets ============ -->
 <script>
   (function () {
@@ -2381,6 +2383,7 @@
         } else if (msg.type === 'alert') {
           upsert(msg.alert, true);
           playAlarm();
+          if (window.SafemodeNotify) window.SafemodeNotify.onNewAlert(msg.alert);
         } else if (msg.type === 'update') {
           upsert(msg.alert, false);
         } else { return; }
