@@ -13,7 +13,7 @@ de video, organizado como un conjunto de microservicios.
 | `object-presence-tracker` | Implementado | Seguimiento de mochilas, bolsos y maletas: dueno, retiro (por el dueno o por otra persona) y registro en H2 con fotos. |
 | `alert-engine` | Implementado | Convierte los retiros sospechosos en alertas guardadas en H2 y avisa a quien se suscriba. |
 | `realtime-gateway` | Implementado | Servidor WebSocket que empuja cada alerta al panel en cuanto se crea, y servidor HTTP para la pagina y las fotos. |
-| `security-dashboard` | Implementado | Pagina `index.html` (sin build) con el centro de alertas en vivo: severidad, fotos de evidencia y boton de revisada. |
+| `security-dashboard` | Implementado | **El panel**, una sola pagina `index.html` (sin build) que entrega el gateway tanto en el computador como en Docker: centro de alertas en vivo (severidad, fotos de evidencia, revisada, alarma), compartir la ventana de camaras, zonas, nombres, reporte, avisos del navegador y boton de vigilancia. |
 
 Ver el diagrama en [docs/diagramas/arquitectura-general.md](docs/diagramas/arquitectura-general.md).
 
