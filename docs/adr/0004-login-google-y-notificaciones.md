@@ -1,7 +1,9 @@
 # ADR 0004: inicio de sesion con Google y notificaciones (navegador, Telegram y correo)
 
 ## Estado
-Propuesto. Nada de esto esta implementado todavia; fija el diseno acordado por el equipo antes de construirlo.
+Parcialmente implementado (oct-2026): el **aviso del navegador** y el **servicio de notificaciones con el canal de Telegram**. Falta el
+inicio de sesion con Google, las preferencias de canales por usuario, la vinculacion de Telegram por enlace de un solo uso, el canal de
+correo y el registro `notification_log`. El resto del documento fija el diseno acordado por el equipo.
 
 ## Contexto
 Hoy una alerta solo se entera quien esta mirando el panel, y el panel no tiene usuarios: la unica proteccion es que el
@@ -75,6 +77,23 @@ Then recibe un mensaje de texto sin fotos que le dice que revise el panel para v
 - El login con Google necesita registrar en Google Cloud los origenes `http://localhost:8080` (y el de Docker si aplica).
 - Se cierra la brecha de seguridad actual del panel (acciones solo protegidas por `Origin`).
 - Cambia la sustentacion: componente nuevo, sistemas externos y HU nuevas en el Release Plan (sprint 8).
+
+## Implementacion (que quedo hecho)
+- **Navegador**: `security-dashboard/browser-notifications.js` (boton "Avisos del navegador", permiso pedido con un clic, preferencia en
+  `localStorage`). Los paneles lo llaman solo con los mensajes `alert` del WebSocket (no con `snapshot` ni `update`). Con la pestana
+  abierta; Web Push sigue como mejora futura. La logica de formato es pura y se prueba con Node.
+- **Servicio** (`realtime-gateway`, paquete `com.safemode.gateway.notify`): `NotificationService` se engancha con
+  `AlertEngine.addListener`; solo avisan ALTA y MEDIA; un aviso por alerta, canal y destinatario; todo en un grupo de hilos aparte
+  (`onAlert` vuelve al instante y un canal lento no frena a los demas); hasta 3 intentos con espera entre ellos sin bloquear hilos;
+  el fallo se registra sin claves, URLs ni destinatarios.
+- **Canal Telegram** (`NotificationChannel` -> `TelegramChannel`): `sendMessage` en texto plano (sin `parse_mode`), solo `chat_id`, `text` y
+  `disable_web_page_preview`. `SAFEMODE_TELEGRAM_BOT_TOKEN` y `SAFEMODE_TELEGRAM_CHAT_IDS` solo por variables de entorno; la clave se
+  valida (`numeros:letras`) porque va dentro de la URL, y los mensajes de error nunca la llevan. `TelegramChatIds` ayuda a averiguar el
+  numero del chat. **Hasta que exista el login, los chats son una lista fija** (no una vinculacion por usuario).
+- **Texto**: `SafeMode: posible robo en CAM 1 a las 15:42. Revisa el panel para verificar.` Nada de fotos, descripciones, rutas ni el
+  mensaje de la alerta.
+- **Pruebas**: servidor falso local (sin red ni claves reales), canal falso para el servicio y navegador falso para Node. Verificado con el
+  panel real: la alerta alta y la media mostraron su notificacion y la baja no.
 
 ## Pendientes
 - El equipo crea el proyecto de Google Cloud, el bot de Telegram y la contrasena de aplicacion de correo.

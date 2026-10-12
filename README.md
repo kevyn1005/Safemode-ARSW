@@ -84,6 +84,23 @@ esta reconociendo aunque no haya saltado ninguna alerta. Para ver ademas lo que 
 `object-presence-tracker/data/tracker.log`: explica cada decision (si una persona es nueva o la misma, por que un objeto no tiene
 dueno, de donde sale cada retiro). Al volver a iniciar la vigilancia desde el panel, el log anterior queda en `tracker.previous.log`.
 
+### Avisos de alertas (navegador y Telegram)
+
+Una alerta **nueva** de severidad **alta o media** puede avisarte aunque no estes mirando el panel. El aviso es solo texto
+(`SafeMode: posible robo en CAM 1 a las 15:42. Revisa el panel para verificar.`): sin fotos ni datos de personas, que se ven solo en el
+panel. Las alertas de severidad baja no avisan.
+
+- **Navegador**: pulsa **Avisos del navegador** en el panel y acepta el permiso. Funciona con la pestana del panel abierta, aunque
+  este en segundo plano o en otra ventana.
+- **Telegram** (gratis): 1) en Telegram habla con `@BotFather` y crea un bot con `/newbot`; 2) guarda la clave que te da **solo como
+  variable de entorno**, sin pegarla en el chat ni en el repo (`setx SAFEMODE_TELEGRAM_BOT_TOKEN "..."` y abre una terminal nueva);
+  3) abre tu bot en Telegram y escribe `/start`; 4) `mvn -pl realtime-gateway exec:java
+  "-Dexec.mainClass=com.safemode.gateway.notify.TelegramChatIds"` muestra el numero de tu chat; 5) `setx SAFEMODE_TELEGRAM_CHAT_IDS
+  "123456789"` (varios, separados por comas) y reinicia el gateway. Al arrancar dice `Avisos de alertas altas y medias por: telegram`.
+  Para comprobarlo sin camara ni alertas: `mvn -pl realtime-gateway exec:java
+  "-Dexec.mainClass=com.safemode.gateway.notify.TelegramTestMessage"` manda un mensaje de prueba a tu chat.
+  Mientras no haya inicio de sesion, los chats son esa lista fija (ADR 0004).
+
 ### Boton "Iniciar vigilancia" (una sola terminal)
 
 Con el gateway corriendo en el computador (no en Docker) el panel ofrece **Iniciar vigilancia** / **Detener vigilancia**: el
