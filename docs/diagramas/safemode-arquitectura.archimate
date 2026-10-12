@@ -96,6 +96,7 @@
     <element xsi:type="archimate:ServingRelationship" name="ejecuta" id="id-e142a074693a458aa478644379609cdc" source="id-ee97561a10e84a87a0516b54820b99d3" target="id-0d1820cfab3d4527868168fda1993483"/>
     <element xsi:type="archimate:ServingRelationship" name="ejecuta" id="id-838cfca295c447d5bc02ffc3afd14fe8" source="id-ee97561a10e84a87a0516b54820b99d3" target="id-6ed0ce23d1ec407ba97a575ab8aff8c7"/>
     <element xsi:type="archimate:ServingRelationship" name="ejecuta" id="id-377208f79d9c42f6a0953fb7b79377c5" source="id-ee97561a10e84a87a0516b54820b99d3" target="id-3facd5538382498e8c4e85f395e8b468"/>
+    <element xsi:type="archimate:FlowRelationship" name="alerta alta o media" id="id-418ad86cdc0348c5bf22460576e46370" source="id-0d1820cfab3d4527868168fda1993483" target="id-ca5ed928c92a4726941b80554ea7cee0"/>
   </folder>
   <folder name="Views" id="id-001322f57f554ea8bcbe3aef2b571cb8" type="diagrams">
     <element xsi:type="archimate:ArchimateDiagramModel" name="1 · Vista de aplicación / componentes (To-Be, 2 cámaras)" id="id-7f7b0661b4ef4570ba0d98d696c6ce02">
@@ -302,6 +303,7 @@ Tecnologías candidatas: AWS o Azure, a justificar con su Well-Architected Frame
           <bounds x="576" y="290" width="170" height="60"/>
           <sourceConnection xsi:type="archimate:Connection" id="id-556ad06d45314c6386c106b52be41a0a" source="id-237c5f6eed83493ca86c537ccef1bd6c" target="id-e03308172e1f40e0b83f64a8e234436f" archimateRelationship="id-0c64ba96e1744c15a4dde05f054dadb9"/>
           <sourceConnection xsi:type="archimate:Connection" id="id-0b3740ac43dd4f378306f0a164cc99d7" source="id-237c5f6eed83493ca86c537ccef1bd6c" target="id-335c74c3f61c4f948c5bf5e220197d61" archimateRelationship="id-baf4ddfd4c3a4d68aa8c925c5999f153"/>
+          <sourceConnection xsi:type="archimate:Connection" id="id-fcbf317da61c479795adac9655ec1104" source="id-237c5f6eed83493ca86c537ccef1bd6c" target="id-2a0525e476f14d67951ad6a0eb696ca5" archimateRelationship="id-418ad86cdc0348c5bf22460576e46370"/>
         </child>
         <child xsi:type="archimate:DiagramObject" id="id-e03308172e1f40e0b83f64a8e234436f" targetConnections="id-556ad06d45314c6386c106b52be41a0a" archimateElement="id-6ed0ce23d1ec407ba97a575ab8aff8c7">
           <bounds x="250" y="290" width="170" height="60"/>
@@ -317,6 +319,17 @@ Tecnologías candidatas: AWS o Azure, a justificar con su Well-Architected Frame
           <bounds x="912" y="290" width="170" height="60"/>
           <sourceConnection xsi:type="archimate:Connection" id="id-50ecd42ef69e41d69c1c3be91b3f482d" source="id-0b241ca8200d4a08b043a3286bf34082" target="id-237c5f6eed83493ca86c537ccef1bd6c" archimateRelationship="id-a2dd28d1d6ed4b0194103496d132039c"/>
         </child>
+        <child xsi:type="archimate:DiagramObject" id="id-2a0525e476f14d67951ad6a0eb696ca5" targetConnections="id-fcbf317da61c479795adac9655ec1104" archimateElement="id-ca5ed928c92a4726941b80554ea7cee0">
+          <bounds x="250" y="400" width="170" height="55"/>
+          <sourceConnection xsi:type="archimate:Connection" id="id-45ff41cfd4424b1cb6944fb3e4dc0681" source="id-2a0525e476f14d67951ad6a0eb696ca5" target="id-4d7e6073ba434eb48760df311b6f1a9e" archimateRelationship="id-43d42250a91e416cb21f03934f12c90c"/>
+        </child>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-4d7e6073ba434eb48760df311b6f1a9e" targetConnections="id-45ff41cfd4424b1cb6944fb3e4dc0681" archimateElement="id-bf62605e3557445dbb68a366cbada7b2">
+        <bounds x="250" y="640" width="170" height="60"/>
+      </child>
+      <child xsi:type="archimate:Note" id="id-3df42b1b9a2c46a38ccdaf3fde9191cf" textAlignment="1" fillColor="#f6f6d8">
+        <bounds x="460" y="630" width="480" height="80"/>
+        <content>Construido: aviso de texto por Telegram (lista fija de chats, solo alertas altas y medias); el aviso del navegador lo muestra el propio panel. Pendiente: correo (SMTP), inicio de sesion con Google y canales por usuario (vista To-Be).</content>
       </child>
       <child xsi:type="archimate:Note" id="id-b028f13e91ff4909bca3bb9497c9daf7" textAlignment="1" fillColor="#f6f6d8">
         <bounds x="700" y="400" width="470" height="80"/>
