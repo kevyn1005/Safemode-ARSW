@@ -329,7 +329,7 @@ Tecnologías candidatas: AWS o Azure, a justificar con su Well-Architected Frame
       </child>
       <child xsi:type="archimate:Note" id="id-3df42b1b9a2c46a38ccdaf3fde9191cf" textAlignment="1" fillColor="#f6f6d8">
         <bounds x="460" y="630" width="480" height="80"/>
-        <content>Construido: aviso de texto por Telegram (lista fija de chats, solo alertas altas y medias); el aviso del navegador lo muestra el propio panel. Pendiente: correo (SMTP), inicio de sesion con Google y canales por usuario (vista To-Be).</content>
+        <content>Construido: aviso de texto por Telegram (lista fija de chats, solo alertas altas y medias); el aviso del navegador lo muestra el propio panel. Pendiente: correo (SMTP), inicio de sesión con Google y canales por usuario (vista To-Be).</content>
       </child>
       <child xsi:type="archimate:Note" id="id-b028f13e91ff4909bca3bb9497c9daf7" textAlignment="1" fillColor="#f6f6d8">
         <bounds x="700" y="400" width="470" height="80"/>
