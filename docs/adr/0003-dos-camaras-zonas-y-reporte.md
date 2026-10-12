@@ -3,9 +3,10 @@
 ## Estado
 Parcialmente implementado (oct-2026). Hecho y probado: `camera_id` en eventos, nombres de camara editables, un seguimiento
 independiente por camara, protocolo de fotogramas por camara, modo de 1 o 2 camaras en el panel, zonas dibujadas con
-prueba previa, modelo segun el modo y una pagina de prueba (`mosaico-prueba.html`). El boton "Generar reporte" (seccion 7).
-Pendiente: la pista "puede ser el dueno que volvio" (seccion 8). Se pasara a "Aceptado" cuando se verifique con una
-corrida real con camara (ver "Como probarlo").
+prueba previa, modelo segun el modo y una pagina de prueba (`mosaico-prueba.html`), el boton "Generar reporte" (seccion 7) y la
+alerta "posible dueno que volvio" (seccion 8, opcion B). Verificado de extremo a extremo con un mosaico y con una camara real.
+Pendiente: la corrida con **dos camaras fisicas** (y comprobar la calidad de `yolov8s`). Se pasara a "Aceptado" cuando se haga
+(ver "Como probarlo").
 
 ## Contexto
 Hasta ahora el sistema vigila **una sola camara**: el tracker recibe la imagen completa de la ventana compartida (ADR
@@ -151,9 +152,10 @@ siempre visible y los chequeos automaticos son una ayuda.
 - Las zonas pueden quedar mal puestas si el operador reacomoda el software; se mitiga con la prueba previa, pero no se
   elimina.
 - Una ventana de camaras minimizada o con otro tamano deja de dar la imagen correcta (limite del sistema operativo).
-- La pista "puede ser el dueno que volvio" compara color de ropa, que ya se sabe poco fiable con prendas claras o
-  estampadas: es una ayuda para el operador, no una regla. Hay que escribir sus pruebas y mostrarla sin cambiar la
-  severidad de la alerta.
+- La alerta "posible dueno que volvio" compara color de ropa, que ya se sabe poco fiable con prendas claras o
+  estampadas: es una ayuda para el operador, no una regla. **Actualizado:** ya esta implementada (seccion 8, opcion B) y probada
+  (`OwnerReturnTest`); en vez de mantener la severidad, baja de alta a media cuando TODAS las personas junto al objeto se
+  visten parecido al dueno. Riesgo residual: un ladron vestido de un color parecido saldria en media.
 - Las fotos siguen ocupando disco (~3 MB cada una): conviene una politica de retencion mas adelante.
 
 ## Implementacion (que quedo hecho)

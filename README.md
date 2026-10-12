@@ -119,10 +119,19 @@ los POST solo se aceptan desde el propio panel (`Origin` y `Host`), el boton no 
 
 - [ADR 0001](docs/adr/0001-contenerizacion-servicios-captura-pantalla.md): contenerizacion de los servicios de captura.
 - [ADR 0002](docs/adr/0002-docker-compose-gateway-y-base-de-datos.md): docker-compose para el gateway y la base de datos.
-- [ADR 0003](docs/adr/0003-dos-camaras-zonas-y-reporte.md): dos camaras desde una ventana compartida, zonas dibujadas y
-  reporte de alertas (propuesto, aun no implementado).
+- [ADR 0003](docs/adr/0003-dos-camaras-zonas-y-reporte.md): dos camaras desde una ventana compartida, zonas dibujadas,
+  reporte de alertas y el dueno que vuelve (implementado; falta la prueba con dos camaras fisicas).
 - [ADR 0004](docs/adr/0004-login-google-y-notificaciones.md): inicio de sesion con Google y notificaciones por navegador,
-  Telegram y correo (propuesto, aun no implementado).
+  Telegram y correo (parcial: navegador y Telegram hechos; faltan el login, el correo y las preferencias por usuario).
+
+## Documentacion del producto
+
+- [Backlog](docs/backlog.md): epicas, features y 38 historias de usuario con criterios Gherkin, DoR, DoD, MoSCoW y story map.
+- [Release Plan](docs/release-plan.md): 8 sprints con su estado real, evidencia, lo que falta y los riesgos.
+- [Sustentacion](docs/sustentacion.md): que actualizar en la presentacion, respuestas a las preguntas de defensa y chequeo contra
+  la rubrica.
+- [Arquitectura general](docs/diagramas/arquitectura-general.md) (estado actual) y el modelo ArchiMate
+  `docs/diagramas/safemode-arquitectura.archimate` (vistas As-Is y To-Be).
 
 ## Notas
 
