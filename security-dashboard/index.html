@@ -1415,6 +1415,7 @@
       font-size: 12px;
       color: var(--muted-2);
     }
+    .google-wrap { display: flex; justify-content: center; min-height: 44px; }
 
     /* =========================================================
        7. Footer y Responsive
@@ -1778,24 +1779,16 @@
           <p>Consola de Autenticación de Seguridad</p>
         </div>
       </div>
-      <form class="login-form" id="loginForm" novalidate>
-        <div class="field">
-          <label for="usuario">Identificador de Operador</label>
-          <input id="usuario" name="usuario" type="text" autocomplete="username" placeholder="op.seguridad">
-        </div>
-        <div class="field">
-          <label for="clave">Credencial de Acceso</label>
-          <input id="clave" name="clave" type="password" autocomplete="current-password" placeholder="••••••••">
-        </div>
+      <div class="login-form">
+        <div class="google-wrap" id="googleBtn"></div>
         <div class="form-error" id="loginError" role="alert" hidden>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px">
             <circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16h.01"/>
           </svg>
-          <span>Credenciales no válidas. Introduce un identificador y contraseña.</span>
+          <span id="loginErrorText">No se pudo iniciar sesión con Google.</span>
         </div>
-        <button type="submit" class="btn btn-primary">Ingresar al sistema</button>
-      </form>
-      <p class="login-hint">Demo: cualquier usuario y clave son aceptados.</p>
+      </div>
+      <p class="login-hint">Solo cuentas de Google autorizadas por el administrador.</p>
       <div class="login-foot">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>
@@ -1806,6 +1799,7 @@
   </div>
 </dialog>
 
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="tracker-control.js"></script>
 <script src="camera-zones.js"></script>
 <script src="camera-share.js"></script>
@@ -2051,7 +2045,7 @@
       alerts: [],
       showDone: false,
       soundOn: store.get('localStorage', 'safemode.sound') !== 'off',
-      operator: store.get('sessionStorage', 'safemode.operator')
+      operator: null
     };
     var DEMO = /[?&]demo\b/.test(location.search);
     function resetAlerts() { state.alerts = DEMO ? SEED.map(function (a) { return Object.assign({}, a); }) : []; }
@@ -2307,42 +2301,77 @@
       scene.appendChild(tile);
     });
 
+
     var loginDialog = $('loginDialog');
-    var loginForm = $('loginForm');
+    var googleReady = false;
+
+    function showLoginError(msg) {
+      $('loginErrorText').textContent = msg;
+      $('loginError').hidden = false;
+    }
+    function setOperator(user, silent) {
+      state.operator = user.name || user.email;
+      loginDialog.close();
+      render();
+      startRealtime();
+      if (state.soundOn) ensureAudio();
+      if (!silent) $('consola').scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth' });
+    }
+    function initGoogle() {
+      if (googleReady || !window.google || !google.accounts) return;
+      fetch('/auth/config', { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (cfg) {
+          google.accounts.id.initialize({ client_id: cfg.clientId, callback: onGoogleCredential });
+          google.accounts.id.renderButton($('googleBtn'),
+            { type: 'standard', theme: 'filled_black', size: 'large', shape: 'pill', text: 'continue_with', locale: 'es', width: 320 });
+          googleReady = true;
+        })
+        .catch(function () { showLoginError('No se pudo cargar el inicio de sesión de Google.'); });
+    }
+    function onGoogleCredential(resp) {
+      $('loginError').hidden = true;
+      fetch('/auth/google', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential: resp.credential })
+      })
+        .then(function (r) {
+          if (r.status === 403) throw new Error('Esta cuenta de Google no está autorizada.');
+          if (!r.ok) throw new Error('No se pudo verificar la cuenta de Google.');
+          return r.json();
+        })
+        .then(setOperator)
+        .catch(function (err) { showLoginError(err.message); });
+    }
     function openLogin() {
-      loginForm.reset();
       $('loginError').hidden = true;
       loginDialog.showModal();
-      $('usuario').focus();
+      initGoogle();
     }
     function logout() {
+      fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(function () {});
+      if (window.google && google.accounts) google.accounts.id.disableAutoSelect();
       state.operator = null;
-      store.remove('sessionStorage', 'safemode.operator');
+      state.alerts = [];
+      if (ws) ws.close();
       render();
     }
     $('authBtn').addEventListener('click', function () { if (state.operator) logout(); else openLogin(); });
     $('lockedLogin').addEventListener('click', openLogin);
     $('loginClose').addEventListener('click', function () { loginDialog.close(); });
-    loginForm.addEventListener('submit', function (e) {
-      e.preventDefault();
-      var user = $('usuario').value.trim();
-      var pass = $('clave').value;
-      if (!user || !pass) {
-        $('loginError').hidden = false;
-        (user ? $('clave') : $('usuario')).focus();
-        return;
-      }
-      state.operator = user;
-      store.set('sessionStorage', 'safemode.operator', user);
-      loginDialog.close();
-      render();
-      if (state.soundOn) ensureAudio();
-      $('consola').scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth' });
-    });
+    window.addEventListener('load', initGoogle);
 
-    /* =========================================================
+    // Recupera la sesión si ya hay cookie válida (para no pedir login al recargar)
+    fetch('/auth/me', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (u) { if (u) setOperator(u, true); })
+      .catch(function () {});
+
+   /* =========================================================
        6. Conexión WebSocket en Tiempo Real (realtime-gateway)
        ========================================================= */
+
     var ws = null;
     var WS_URL = new URLSearchParams(location.search).get('ws') ||
             ((location.protocol === 'https:' ? 'wss://' : 'ws://') + (location.hostname || 'localhost') + ':8090');
@@ -2372,6 +2401,7 @@
       $('connDot').style.background = ok ? 'var(--accent)' : 'var(--rec)';
     }
     function connect() {
+      if (ws) return;
       ws = new WebSocket(WS_URL);
       ws.onopen = function () { setConn(true); };
       ws.onmessage = function (e) {
@@ -2389,16 +2419,16 @@
         } else { return; }
         render();
       };
-      ws.onclose = function () { setConn(false); setTimeout(connect, 2000); };
+      ws.onclose = function () { setConn(false); ws = null; if (state.operator) setTimeout(connect, 2000); };
       ws.onerror = function () { ws.close(); };
     }
-    if (DEMO) {
+        if (DEMO) {
       $('demoTag').hidden = false;
       $('connText').textContent = 'Modo demo';
     } else {
       $('resetDemo').hidden = true;
-      connect();
     }
+        function startRealtime() { if (!DEMO) connect(); }
 
     render();
   })();

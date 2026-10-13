@@ -29,11 +29,18 @@ public class GatewayRunner {
     public static void main(String[] args) throws Exception {
         int seconds = args.length > 0 ? Integer.parseInt(args[0]) : 600;
         String bindHost = bindHost(System.getenv("SAFEMODE_BIND_HOST"));
+        String googleClientId = System.getenv("SAFEMODE_GOOGLE_CLIENT_ID");
+        Set<String> allowedEmails = AuthService.parseEmails(System.getenv("SAFEMODE_ALLOWED_EMAILS"));
+        if (googleClientId == null || googleClientId.isBlank() || allowedEmails.isEmpty()) {
+            throw new IllegalStateException("Faltan SAFEMODE_GOOGLE_CLIENT_ID y/o SAFEMODE_ALLOWED_EMAILS: "
+                    + "el panel solo permite iniciar sesion con Google (ver ADR 0004)");
+        }
+        AuthService auth = AuthService.google(googleClientId.trim(), allowedEmails);
         try (PresenceEventStore events = PresenceEventStore.fromEnvironment(DB_PATH);
              AlertStore alerts = AlertStore.fromEnvironment(DB_PATH);
              AlertEngine engine = new AlertEngine(events, alerts)) {
             Set<String> panelOrigins = Set.of("http://localhost:" + HTTP_PORT, "http://127.0.0.1:" + HTTP_PORT);
-            AlertGateway gateway = new AlertGateway(engine, alerts, bindHost, WS_PORT, panelOrigins);
+            AlertGateway gateway = new AlertGateway(engine, alerts, bindHost, WS_PORT, panelOrigins).withAuth(auth);
             // Avisos de las alertas nuevas altas y medias por Telegram (clave y chats solo por variables de entorno; ver ADR 0004)
             NotificationService notifications = NotificationService.fromEnvironment(System.getenv(),
                     alert -> engine.evidenceOf(alert).map(event -> engine.cameraName(event.cameraId())).orElse(null));
@@ -68,11 +75,12 @@ public class GatewayRunner {
                         public String cameraName(int cameraId) {
                             return engine.cameraName(cameraId);
                         }
-                    });
+                    })
+                    .withAuth(auth);
             gateway.startAndWait();
             http.start();
             engine.start(Duration.ofSeconds(1));
-            System.out.println("Dashboard: http://localhost:" + HTTP_PORT + "  (WebSocket en ws://localhost:" + WS_PORT + ")");
+            System.out.println("Inicio de sesion con Google: " + allowedEmails.size() + " correo(s) autorizado(s)");
             System.out.println(seconds > 0 ? "Escuchando durante " + seconds + " s..." : "Escuchando hasta que lo detengan...");
             // Parada unica: al terminar el tiempo, o con docker stop (SIGTERM), que dispara el hook de cierre
             AtomicBoolean stopped = new AtomicBoolean();

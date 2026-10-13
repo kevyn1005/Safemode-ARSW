@@ -10,6 +10,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 
 /**
  * Servidor HTTP minimo: entrega la pagina del dashboard ({@code /}) y las fotos de evidencia ({@code /photo/<archivo>}).
@@ -31,6 +35,7 @@ public class DashboardHttpServer {
     private final Set<String> allowedOrigins;
     private CameraDirectory cameras;           // null = sin edicion de camaras (las rutas /cameras dan 404)
     private EventReport report;                // null = sin reporte (la ruta /report da 404)
+    private AuthService auth;                   // null = sin inicio de sesion (rutas abiertas, como antes)
 
     public DashboardHttpServer(int port, Path dashboardDir, Path photosDir) throws IOException {
         this("localhost", port, dashboardDir, photosDir);
@@ -67,6 +72,12 @@ public class DashboardHttpServer {
         return this;
     }
 
+    /** Exige sesion de Google en la API y las fotos, y activa las rutas {@code /auth/*}. Se llama antes de {@link #start()}. */
+    public DashboardHttpServer withAuth(AuthService authService) {
+        this.auth = authService;
+        return this;
+    }
+
     public void start() {
         server.start();
     }
@@ -82,6 +93,15 @@ public class DashboardHttpServer {
     private void handle(HttpExchange exchange) throws IOException {
         try {
             String path = exchange.getRequestURI().getPath();
+            if (auth != null && path.startsWith("/auth/")) {
+                handleAuth(exchange, path);
+                return;
+            }
+            if (auth != null && requiresSession(path)
+                    && auth.userFor(exchange.getRequestHeaders().getFirst("Cookie")).isEmpty()) {
+                send(exchange, 401, "text/plain; charset=utf-8", "Sesion requerida".getBytes());
+                return;
+            }
             if (tracker != null && path.startsWith("/tracker/")) {
                 handleTracker(exchange, path);
                 return;
@@ -117,6 +137,97 @@ public class DashboardHttpServer {
         } finally {
             exchange.close();
         }
+    }
+    private static final int MAX_AUTH_BODY_BYTES = 8192; // un ID token de Google pesa ~1-2 KB
+
+    /** Rutas que dan datos o ejecutan acciones: exigen sesion. */
+    private static boolean requiresSession(String path) {
+        return path.startsWith("/tracker/") || path.equals("/cameras") || path.startsWith("/cameras/")
+                || path.equals("/report") || path.startsWith(AlertJson.PHOTO_PREFIX);
+    }
+
+    private void handleAuth(HttpExchange exchange, String path) throws IOException {
+        String method = exchange.getRequestMethod();
+        String cookie = exchange.getRequestHeaders().getFirst("Cookie");
+        exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        if (path.equals("/auth/config") && "GET".equals(method)) {
+            JsonObject json = new JsonObject();
+            json.addProperty("clientId", auth.clientId());
+            sendJson(exchange, 200, json);
+        } else if (path.equals("/auth/me") && "GET".equals(method)) {
+            Optional<AuthService.User> user = auth.userFor(cookie);
+            if (user.isPresent()) {
+                sendJson(exchange, 200, userJson(user.get()));
+            } else {
+                send(exchange, 401, "text/plain; charset=utf-8", "Sesion requerida".getBytes());
+            }
+        } else if (path.equals("/auth/google") && "POST".equals(method)) {
+            loginWithGoogle(exchange);
+        } else if (path.equals("/auth/logout") && "POST".equals(method)) {
+            if (!fromOurOwnPanel(exchange)) {
+                send(exchange, 403, "text/plain; charset=utf-8", "Origen no autorizado".getBytes());
+                return;
+            }
+            auth.logout(cookie);
+            exchange.getResponseHeaders().add("Set-Cookie", sessionCookie("", 0));
+            sendJson(exchange, 200, new JsonObject());
+        } else {
+            send(exchange, 404, "text/plain; charset=utf-8", "No encontrado".getBytes());
+        }
+    }
+
+    private void loginWithGoogle(HttpExchange exchange) throws IOException {
+        if (!fromOurOwnPanel(exchange)) {
+            send(exchange, 403, "text/plain; charset=utf-8", "Origen no autorizado".getBytes());
+            return;
+        }
+        String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
+        if (contentType == null || !contentType.toLowerCase().startsWith("application/json")) {
+            send(exchange, 415, "text/plain; charset=utf-8", "Se espera application/json".getBytes());
+            return;
+        }
+        byte[] body = exchange.getRequestBody().readNBytes(MAX_AUTH_BODY_BYTES + 1);
+        if (body.length > MAX_AUTH_BODY_BYTES) {
+            send(exchange, 413, "text/plain; charset=utf-8", "Cuerpo demasiado grande".getBytes());
+            return;
+        }
+        String credential;
+        try {
+            credential = JsonParser.parseString(new String(body, StandardCharsets.UTF_8))
+                    .getAsJsonObject().get("credential").getAsString();
+        } catch (RuntimeException e) {
+            send(exchange, 400, "text/plain; charset=utf-8", "Se espera {\"credential\": \"...\"}".getBytes());
+            return;
+        }
+        Optional<AuthService.User> user = auth.authenticate(credential);
+        if (user.isEmpty()) {
+            send(exchange, 401, "text/plain; charset=utf-8", "Token de Google no valido".getBytes());
+            return;
+        }
+        if (!auth.isAllowed(user.get())) {
+            System.err.println("[AUTH] Cuenta de Google no autorizada: " + user.get().email());
+            send(exchange, 403, "text/plain; charset=utf-8", "Cuenta no autorizada".getBytes());
+            return;
+        }
+        String session = auth.createSession(user.get());
+        exchange.getResponseHeaders().add("Set-Cookie", sessionCookie(session, AuthService.SESSION_TTL.toSeconds()));
+        sendJson(exchange, 200, userJson(user.get()));
+    }
+
+    /** HttpOnly: el JavaScript de la pagina no la puede leer. Strict: no viaja desde otros sitios. */
+    private static String sessionCookie(String value, long maxAgeSeconds) {
+        return AuthService.COOKIE_NAME + "=" + value + "; Path=/; HttpOnly; SameSite=Strict; Max-Age=" + maxAgeSeconds;
+    }
+
+    private static JsonObject userJson(AuthService.User user) {
+        JsonObject json = new JsonObject();
+        json.addProperty("email", user.email());
+        json.addProperty("name", user.name());
+        return json;
+    }
+
+    private static void sendJson(HttpExchange exchange, int status, JsonObject json) throws IOException {
+        send(exchange, status, "application/json; charset=utf-8", json.toString().getBytes(StandardCharsets.UTF_8));
     }
 
     private void handleTracker(HttpExchange exchange, String path) throws IOException {
