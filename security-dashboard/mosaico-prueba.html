@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SafeMode · Mosaico de prueba</title>
+<style>
+  :root { color-scheme: dark; --bg: #0b0f13; --card: #151b21; --line: #2f3644; --text: #e8ebf0; --muted: #9aa7b2; --accent: #4FD1C5; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, sans-serif; }
+  header { padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+  h1 { margin: 0; font-size: 17px; flex: 1 1 auto; }
+  label { font-size: 13px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+  select, button, input[type=file] { font: inherit; background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; }
+  button { cursor: pointer; border-color: var(--accent); color: var(--accent); }
+  p.help { margin: 0; padding: 8px 16px; color: var(--muted); font-size: 13px; border-bottom: 1px solid var(--line); }
+  main { padding: 12px; }
+  .grid { display: grid; gap: 8px; }
+  .grid.side { grid-template-columns: 1fr 1fr; }
+  .grid.stacked { grid-template-columns: 1fr; max-width: 760px; margin: 0 auto; }
+  .grid.quad { grid-template-columns: 1fr 1fr; }
+  .tile { position: relative; background: #000; border: 1px solid var(--line); aspect-ratio: 16 / 9; overflow: hidden; }
+  .tile video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .tile.mirror video { transform: scaleX(-1); }
+  .tile .tag { position: absolute; left: 8px; top: 8px; background: rgba(0, 0, 0, .65); color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 700; }
+  .tile.filler { display: grid; place-items: center; color: var(--muted); background: repeating-linear-gradient(45deg, #11161b, #11161b 14px, #0e1216 14px, #0e1216 28px); }
+  #note { color: #F5C065; font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Mosaico de prueba · simula el software de cámaras</h1>
+  <label>Disposición
+    <select id="layout">
+      <option value="side">Lado a lado</option>
+      <option value="stacked">Una sobre otra</option>
+      <option value="quad">Cuadrícula 2×2 (CAM 3 y 4 se ignoran)</option>
+    </select>
+  </label>
+  <label>Recuadro B
+    <select id="sourceB">
+      <option value="mirror">La misma cámara, espejada</option>
+      <option value="same">La misma cámara</option>
+      <option value="file">Un archivo de video…</option>
+    </select>
+  </label>
+  <input type="file" id="file" accept="video/*" hidden>
+  <button id="start" type="button">Activar cámara</button>
+</header>
+<p class="help">Sirve para probar 2 cámaras con una sola: el recuadro A es tu cámara y el B repite la imagen (espejada, para que sea distinta) o un
+  video. Abre esta página en una <b>ventana aparte</b> de Chrome, y desde el panel pulsa «Compartir ventana de la cámara» y elige
+  <b>esa ventana</b>. <span id="note"></span></p>
+<main><div id="grid" class="grid side"></div></main>
+
+<script>
+(function () {
+  var grid = document.getElementById('grid');
+  var layout = document.getElementById('layout');
+  var sourceB = document.getElementById('sourceB');
+  var file = document.getElementById('file');
+  var note = document.getElementById('note');
+  var cameraStream = null, fileUrl = null;
+
+  function tile(label, extraClass) {
+    var box = document.createElement('div');
+    box.className = 'tile ' + (extraClass || '');
+    var tag = document.createElement('span');
+    tag.className = 'tag';
+    tag.textContent = label;
+    box.appendChild(tag);
+    return box;
+  }
+
+  function videoTile(label, extraClass, source) {
+    var box = tile(label, extraClass);
+    var video = document.createElement('video');
+    video.muted = true; video.playsInline = true; video.loop = true;
+    if (source instanceof MediaStream) video.srcObject = source; else video.src = source;
+    video.play().catch(function () { /* el navegador lo reintenta */ });
+    box.insertBefore(video, box.firstChild);
+    return box;
+  }
+
+  function filler(label) {
+    var box = tile(label, 'filler');
+    var text = document.createElement('span');
+    text.textContent = 'sin imagen (no se vigila)';
+    box.appendChild(text);
+    return box;
+  }
+
+  function render() {
+    grid.textContent = '';
+    grid.className = 'grid ' + layout.value;
+    if (!cameraStream) {
+      grid.appendChild(filler('A'));
+      grid.appendChild(filler('B'));
+      return;
+    }
+    var a = videoTile('A · tu cámara', '', cameraStream);
+    var b;
+    if (sourceB.value === 'file') {
+      b = fileUrl ? videoTile('B · video', '', fileUrl) : filler('B · elige un video');
+    } else {
+      b = videoTile('B · misma cámara' + (sourceB.value === 'mirror' ? ' (espejada)' : ''), sourceB.value === 'mirror' ? 'mirror' : '', cameraStream);
+    }
+    grid.appendChild(a);
+    grid.appendChild(b);
+    if (layout.value === 'quad') {
+      grid.appendChild(filler('CAM 3'));
+      grid.appendChild(filler('CAM 4'));
+    }
+  }
+
+  document.getElementById('start').addEventListener('click', function () {
+    navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false })
+      .then(function (stream) { cameraStream = stream; note.textContent = ''; render(); })
+      .catch(function (err) { note.textContent = 'No se pudo abrir la cámara: ' + (err && err.message || err); });
+  });
+  layout.addEventListener('change', render);
+  sourceB.addEventListener('change', function () {
+    if (sourceB.value === 'file') file.click();
+    render();
+  });
+  file.addEventListener('change', function () {
+    if (fileUrl) URL.revokeObjectURL(fileUrl);
+    fileUrl = file.files && file.files[0] ? URL.createObjectURL(file.files[0]) : null;
+    render();
+  });
+  render();
+})();
+</script>
+</body>
+</html>

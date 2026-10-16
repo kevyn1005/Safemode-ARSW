@@ -38,8 +38,11 @@ public class TrackedObject {
     private int framesUnseen = 0;
     private RegionFingerprint restFingerprint;
 
+    private static final int MAX_LOOKS = 12;
+
     private static final class Sighting {
         int frames;
+        final java.util.List<PersonAppearance> looks = new java.util.ArrayList<>();
         BufferedImage crop;
         Rectangle objectInCrop;
         BufferedImage evidenceCrop;
@@ -55,13 +58,21 @@ public class TrackedObject {
         final BufferedImage crop;
         final BufferedImage evidenceCrop;
         final Rectangle objectInCrop;
+        /** Como se veia su ropa (color del torso) en ese frame; null si no habia imagen. */
+        final PersonAppearance appearance;
 
         NearPerson(long personId, double distance, BufferedImage crop, BufferedImage evidenceCrop, Rectangle objectInCrop) {
+            this(personId, distance, crop, evidenceCrop, objectInCrop, null);
+        }
+
+        NearPerson(long personId, double distance, BufferedImage crop, BufferedImage evidenceCrop, Rectangle objectInCrop,
+                   PersonAppearance appearance) {
             this.personId = personId;
             this.distance = distance;
             this.crop = crop;
             this.evidenceCrop = evidenceCrop;
             this.objectInCrop = objectInCrop;
+            this.appearance = appearance;
         }
     }
 
@@ -69,6 +80,10 @@ public class TrackedObject {
     private Map<Long, NearPerson> lastNearPersons = new LinkedHashMap<>();
     private final Map<Long, NearPerson> disappearanceNear = new LinkedHashMap<>();
     private int displacedFrames = 0;
+    private PersonAppearance ownerAppearance;
+    private int framesAsNew = 0;
+    private double closestPersonPx = Double.MAX_VALUE;
+    private double ownerRadiusPx;
     private OwnerInfo owner;
     private BufferedImage ownerCrop;
     private PoseEstimator.Keypoint[] ownerPose;
@@ -167,10 +182,63 @@ public class TrackedObject {
         }
     }
 
+    /** Anota como se veia la ropa de esta persona junto al objeto en este frame (se guardan las ultimas para sacar un promedio). */
+    void recordNearAppearance(long personId, PersonAppearance look) {
+        if (look == null) {
+            return;
+        }
+        Sighting s = nearPersons.computeIfAbsent(personId, k -> new Sighting());
+        if (s.looks.size() >= MAX_LOOKS) {
+            s.looks.remove(0);
+        }
+        s.looks.add(look);
+    }
+
+    /** Color medio de la ropa de esa persona mientras estuvo junto al objeto, o null si no se pudo ver. */
+    PersonAppearance averageLookOf(long personId) {
+        Sighting s = nearPersons.get(personId);
+        return s == null ? null : PersonAppearance.average(s.looks);
+    }
+
+    /** Como se veia el dueno cuando se registro el objeto (para reconocerlo si vuelve despues de salir de cuadro). */
+    PersonAppearance getOwnerAppearance() {
+        return ownerAppearance;
+    }
+
+    void setOwnerAppearance(PersonAppearance appearance) {
+        this.ownerAppearance = appearance;
+    }
+
     /** Recorte que abarca a la persona y al objeto juntos (foto de evidencia), o null. */
     BufferedImage evidenceCropOf(long personId) {
         Sighting s = nearPersons.get(personId);
         return s == null ? null : s.evidenceCrop;
+    }
+
+    /** Anota un frame mientras el objeto es NEW: la persona mas cercana que hubo y hasta donde cuenta como "junto al objeto". */
+    void noteOwnerFrame(double closestPersonDistance, double ownerRadius) {
+        framesAsNew++;
+        closestPersonPx = Math.min(closestPersonPx, closestPersonDistance);
+        ownerRadiusPx = ownerRadius;
+    }
+
+    int getFramesAsNew() {
+        return framesAsNew;
+    }
+
+    /** En cuantos frames estuvo esta persona junto al objeto mientras se asentaba. */
+    int nearFramesOf(long personId) {
+        Sighting s = nearPersons.get(personId);
+        return s == null ? 0 : s.frames;
+    }
+
+    /** Por que no se pudo elegir un dueno, para el log. */
+    String noOwnerReason() {
+        if (closestPersonPx == Double.MAX_VALUE) {
+            return "no se vio a ninguna persona mientras se asentaba (" + framesAsNew + " frames)";
+        }
+        return "la persona mas cercana estuvo a " + Math.round(closestPersonPx) + " px del objeto y \"junto al objeto\" es hasta "
+                + Math.round(ownerRadiusPx) + " px (" + framesAsNew + " frames)";
     }
 
     /** Id de la persona que mas frames estuvo cerca del objeto, o null si nadie lo estuvo. */

@@ -45,6 +45,8 @@ services:
         condition: service_healthy
     environment:
       SAFEMODE_DB_URL: jdbc:h2:tcp://h2-db:9092/presence
+      SAFEMODE_GOOGLE_CLIENT_ID: ${SAFEMODE_GOOGLE_CLIENT_ID}
+      SAFEMODE_ALLOWED_EMAILS: ${SAFEMODE_ALLOWED_EMAILS}
     ports:
       - "127.0.0.1:8080:8080"   # pagina del panel y fotos
       - "127.0.0.1:8090:8090"   # alertas en tiempo real (WebSocket)

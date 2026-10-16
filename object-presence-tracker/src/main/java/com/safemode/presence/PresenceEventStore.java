@@ -117,6 +117,12 @@ public class PresenceEventStore implements AutoCloseable {
             st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS remover_description VARCHAR(200)");
             st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS remover_crop_path VARCHAR(500)");
             st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS remover_ai_description VARCHAR(1000)");
+            // Camara que origino el evento (1 por defecto: las filas y el codigo de antes del modo de dos camaras son la camara 1)
+            st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS camera_id INT DEFAULT 1");
+            // Solo en los REMOVED por otra persona: quien lo retiro se viste parecido al dueno (puede ser el que volvio de salir de cuadro)
+            st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS remover_looks_like_owner BOOLEAN");
+            // Nombres que el usuario le puso a las camaras; las que no tienen fila se llaman "CAM <id>"
+            st.execute("CREATE TABLE IF NOT EXISTS camera (id INT PRIMARY KEY, name VARCHAR(60) NOT NULL)");
         }
     }
 
@@ -130,24 +136,103 @@ public class PresenceEventStore implements AutoCloseable {
     /**
      * Como se retiro un objeto: el tipo (nombre de {@link RemovalKind}) y, si hubo alguien a quien atribuirselo, esa
      * persona (id, descripcion por color y foto junto al objeto). personId es null en NO_ONE_NEAR; los demas campos
-     * pueden ser null (ej. sin imagen no hay foto ni descripcion).
+     * pueden ser null (ej. sin imagen no hay foto ni descripcion). looksLikeOwner: el retiro fue de una persona distinta del
+     * dueno registrado, pero todas las que estaban junto al objeto se visten parecido a el (puede ser el dueno que volvio).
      */
-    public record RemovalInfo(String kind, Long personId, String description, String cropPath) {}
-
-    /** Guarda el evento y devuelve el id de la fila. */
-    public long recordRegistered(long trackedId, String className, int x, int y, int w, int h, Instant when, String framePath, OwnerInfo owner) {
-        return insert(trackedId, className, "REGISTERED_AT_REST", x, y, w, h, when, null, framePath, owner, null);
+    public record RemovalInfo(String kind, Long personId, String description, String cropPath, boolean looksLikeOwner) {
+        /** Sin la pista del dueno que vuelve (como antes de existir). */
+        public RemovalInfo(String kind, Long personId, String description, String cropPath) {
+            this(kind, personId, description, cropPath, false);
+        }
     }
 
-    /** Guarda el evento y devuelve el id de la fila. */
+    /** Cantidad maxima de camaras soportadas (ids de 1 a este valor). */
+    public static final int MAX_CAMERAS = 8;
+    private static final int MAX_CAMERA_NAME_LENGTH = 40;
+
+    /** Guarda el evento (de la camara 1) y devuelve el id de la fila. */
+    public long recordRegistered(long trackedId, String className, int x, int y, int w, int h, Instant when, String framePath, OwnerInfo owner) {
+        return recordRegistered(1, trackedId, className, x, y, w, h, when, framePath, owner);
+    }
+
+    /** Guarda el evento de esa camara y devuelve el id de la fila. */
+    public long recordRegistered(int cameraId, long trackedId, String className, int x, int y, int w, int h, Instant when,
+                                 String framePath, OwnerInfo owner) {
+        return insert(cameraId, trackedId, className, "REGISTERED_AT_REST", x, y, w, h, when, null, framePath, owner, null);
+    }
+
+    /** Guarda el evento (de la camara 1) y devuelve el id de la fila. */
     public long recordRemoved(long trackedId, String className, int x, int y, int w, int h, Instant when, boolean personNearby,
                               String framePath, OwnerInfo owner, RemovalInfo removal) {
-        return insert(trackedId, className, "REMOVED", x, y, w, h, when, personNearby, framePath, owner, removal);
+        return recordRemoved(1, trackedId, className, x, y, w, h, when, personNearby, framePath, owner, removal);
+    }
+
+    /** Guarda el evento de esa camara y devuelve el id de la fila. */
+    public long recordRemoved(int cameraId, long trackedId, String className, int x, int y, int w, int h, Instant when,
+                              boolean personNearby, String framePath, OwnerInfo owner, RemovalInfo removal) {
+        return insert(cameraId, trackedId, className, "REMOVED", x, y, w, h, when, personNearby, framePath, owner, removal);
+    }
+
+    /** Nombre de la camara: el que le puso el usuario o "CAM <id>" si no tiene. */
+    public String cameraName(int cameraId) {
+        return cameraNames().getOrDefault(cameraId, defaultCameraName(cameraId));
+    }
+
+    /** Nombres de las camaras 1 a {@link #MAX_CAMERAS} (los editados por el usuario y "CAM <id>" para el resto). */
+    public java.util.Map<Integer, String> cameraNames() {
+        java.util.Map<Integer, String> names = new java.util.TreeMap<>();
+        for (int id = 1; id <= MAX_CAMERAS; id++) {
+            names.put(id, defaultCameraName(id));
+        }
+        try (var st = connection.createStatement(); var rs = st.executeQuery("SELECT id, name FROM camera")) {
+            while (rs.next()) {
+                if (names.containsKey(rs.getInt(1))) {
+                    names.put(rs.getInt(1), rs.getString(2));
+                }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("No se pudo leer la tabla camera", e);
+        }
+        return names;
+    }
+
+    /**
+     * Le pone nombre a una camara. Se recorta, sin caracteres de control y de 1 a 40 caracteres; un nombre vacio devuelve la
+     * camara a su nombre por defecto. {@link IllegalArgumentException} si el id esta fuera de rango o el nombre es muy largo.
+     */
+    public void renameCamera(int cameraId, String name) {
+        if (cameraId < 1 || cameraId > MAX_CAMERAS) {
+            throw new IllegalArgumentException("Camara fuera de rango: " + cameraId);
+        }
+        String clean = name == null ? "" : name.replaceAll("\\p{Cntrl}", " ").strip();
+        if (clean.length() > MAX_CAMERA_NAME_LENGTH) {
+            throw new IllegalArgumentException("El nombre de la camara no puede pasar de " + MAX_CAMERA_NAME_LENGTH + " caracteres");
+        }
+        try {
+            if (clean.isEmpty()) {
+                try (PreparedStatement ps = connection.prepareStatement("DELETE FROM camera WHERE id = ?")) {
+                    ps.setInt(1, cameraId);
+                    ps.executeUpdate();
+                }
+            } else {
+                try (PreparedStatement ps = connection.prepareStatement("MERGE INTO camera (id, name) KEY (id) VALUES (?, ?)")) {
+                    ps.setInt(1, cameraId);
+                    ps.setString(2, clean);
+                    ps.executeUpdate();
+                }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("No se pudo guardar el nombre de la camara", e);
+        }
+    }
+
+    private static String defaultCameraName(int cameraId) {
+        return "CAM " + cameraId;
     }
 
     /** Da como se retiro el objeto en el ultimo evento REMOVED, o null si no hay (usado en las pruebas). */
     RemovalInfo lastRemoval() {
-        String sql = "SELECT removal_kind, remover_person_id, remover_description, remover_crop_path FROM object_presence_event "
+        String sql = "SELECT removal_kind, remover_person_id, remover_description, remover_crop_path, remover_looks_like_owner FROM object_presence_event "
                 + "WHERE event_type = 'REMOVED' ORDER BY id DESC LIMIT 1";
         try (var st = connection.createStatement(); var rs = st.executeQuery(sql)) {
             if (!rs.next()) {
@@ -155,7 +240,7 @@ public class PresenceEventStore implements AutoCloseable {
             }
             long personId = rs.getLong(2);
             Long id = rs.wasNull() ? null : personId;
-            return new RemovalInfo(rs.getString(1), id, rs.getString(3), rs.getString(4));
+            return new RemovalInfo(rs.getString(1), id, rs.getString(3), rs.getString(4), Boolean.TRUE.equals(nullableBoolean(rs, 5)));
         } catch (SQLException e) {
             throw new IllegalStateException("No se pudo consultar object_presence_event", e);
         }
@@ -166,12 +251,34 @@ public class PresenceEventStore implements AutoCloseable {
                               int x, int y, int width, int height, Boolean personNearby, String framePath,
                               Long ownerPersonId, String ownerDescription, String ownerCropPath, String ownerAiDescription,
                               String removalKind, Long removerPersonId, String removerDescription, String removerCropPath,
-                              String removerAiDescription) {}
+                              String removerAiDescription, int cameraId, boolean removerLooksLikeOwner) {
+        /** Igual que antes de existir la pista del dueno que vuelve: quien retiro no se parece al dueno. */
+        public StoredEvent(long id, long trackedObjectId, String className, String eventType, Instant occurredAt,
+                           int x, int y, int width, int height, Boolean personNearby, String framePath,
+                           Long ownerPersonId, String ownerDescription, String ownerCropPath, String ownerAiDescription,
+                           String removalKind, Long removerPersonId, String removerDescription, String removerCropPath,
+                           String removerAiDescription, int cameraId) {
+            this(id, trackedObjectId, className, eventType, occurredAt, x, y, width, height, personNearby, framePath,
+                    ownerPersonId, ownerDescription, ownerCropPath, ownerAiDescription, removalKind, removerPersonId,
+                    removerDescription, removerCropPath, removerAiDescription, cameraId, false);
+        }
+
+        /** Igual que antes de existir las camaras: el evento es de la camara 1. */
+        public StoredEvent(long id, long trackedObjectId, String className, String eventType, Instant occurredAt,
+                           int x, int y, int width, int height, Boolean personNearby, String framePath,
+                           Long ownerPersonId, String ownerDescription, String ownerCropPath, String ownerAiDescription,
+                           String removalKind, Long removerPersonId, String removerDescription, String removerCropPath,
+                           String removerAiDescription) {
+            this(id, trackedObjectId, className, eventType, occurredAt, x, y, width, height, personNearby, framePath,
+                    ownerPersonId, ownerDescription, ownerCropPath, ownerAiDescription, removalKind, removerPersonId,
+                    removerDescription, removerCropPath, removerAiDescription, 1, false);
+        }
+    }
 
     private static final String EVENT_COLUMNS = "id, tracked_object_id, class_name, event_type, occurred_at, pos_x, pos_y, "
             + "width, height, person_nearby, frame_path, owner_person_id, owner_description, owner_crop_path, "
             + "owner_ai_description, removal_kind, remover_person_id, remover_description, remover_crop_path, "
-            + "remover_ai_description";
+            + "remover_ai_description, camera_id, remover_looks_like_owner";
 
     /** Eventos REMOVED con id mayor que el dado, del mas viejo al mas nuevo: asi se lee lo que falta por procesar. */
     public List<StoredEvent> findRemovedAfter(long lastEventId) {
@@ -193,24 +300,41 @@ public class PresenceEventStore implements AutoCloseable {
         return query("id = ?", id).stream().findFirst();
     }
 
+    /** Los ultimos eventos (registros y retiros), del mas nuevo al mas viejo: lo que muestra el reporte del panel. */
+    public List<StoredEvent> findRecent(int limit) {
+        String sql = "SELECT " + EVENT_COLUMNS + " FROM object_presence_event ORDER BY id DESC LIMIT ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setInt(1, Math.max(1, limit));
+            try (var rs = ps.executeQuery()) {
+                return readEvents(rs);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("No se pudo leer object_presence_event", e);
+        }
+    }
+
     private List<StoredEvent> query(String where, long param) {
         String sql = "SELECT " + EVENT_COLUMNS + " FROM object_presence_event WHERE " + where + " ORDER BY id";
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setLong(1, param);
             try (var rs = ps.executeQuery()) {
-                List<StoredEvent> events = new ArrayList<>();
-                while (rs.next()) {
-                    events.add(new StoredEvent(rs.getLong(1), rs.getLong(2), rs.getString(3), rs.getString(4),
-                            rs.getTimestamp(5).toInstant(), rs.getInt(6), rs.getInt(7), rs.getInt(8), rs.getInt(9),
-                            nullableBoolean(rs, 10), rs.getString(11), nullableLong(rs, 12), rs.getString(13),
-                            rs.getString(14), rs.getString(15), rs.getString(16), nullableLong(rs, 17), rs.getString(18),
-                            rs.getString(19), rs.getString(20)));
-                }
-                return events;
+                return readEvents(rs);
             }
         } catch (SQLException e) {
             throw new IllegalStateException("No se pudo leer object_presence_event", e);
         }
+    }
+
+    private static List<StoredEvent> readEvents(java.sql.ResultSet rs) throws SQLException {
+        List<StoredEvent> events = new ArrayList<>();
+        while (rs.next()) {
+            events.add(new StoredEvent(rs.getLong(1), rs.getLong(2), rs.getString(3), rs.getString(4),
+                    rs.getTimestamp(5).toInstant(), rs.getInt(6), rs.getInt(7), rs.getInt(8), rs.getInt(9),
+                    nullableBoolean(rs, 10), rs.getString(11), nullableLong(rs, 12), rs.getString(13),
+                    rs.getString(14), rs.getString(15), rs.getString(16), nullableLong(rs, 17), rs.getString(18),
+                    rs.getString(19), rs.getString(20), rs.getInt(21), Boolean.TRUE.equals(nullableBoolean(rs, 22))));
+        }
+        return events;
     }
 
     private static Long nullableLong(java.sql.ResultSet rs, int column) throws SQLException {
@@ -307,15 +431,15 @@ public class PresenceEventStore implements AutoCloseable {
         }
     }
 
-    private long insert(long trackedId, String className, String eventType,
+    private long insert(int cameraId, long trackedId, String className, String eventType,
                          int x, int y, int w, int h, Instant when, Boolean personNearby, String framePath, OwnerInfo owner,
                          RemovalInfo removal) {
         String sql = """
             INSERT INTO object_presence_event
                 (tracked_object_id, class_name, event_type, occurred_at, pos_x, pos_y, width, height, person_nearby, frame_path,
                  owner_person_id, owner_description, owner_crop_path,
-                 removal_kind, remover_person_id, remover_description, remover_crop_path)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 removal_kind, remover_person_id, remover_description, remover_crop_path, camera_id, remover_looks_like_owner)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
         long eventId;
         try (PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
@@ -348,6 +472,12 @@ public class PresenceEventStore implements AutoCloseable {
             }
             ps.setString(16, removal == null ? null : removal.description());
             ps.setString(17, removal == null ? null : removal.cropPath());
+            ps.setInt(18, cameraId);
+            if (removal == null) {
+                ps.setNull(19, Types.BOOLEAN);
+            } else {
+                ps.setBoolean(19, removal.looksLikeOwner());
+            }
             ps.executeUpdate();
             try (var keys = ps.getGeneratedKeys()) {
                 keys.next();
@@ -368,7 +498,7 @@ public class PresenceEventStore implements AutoCloseable {
                 : " - RETIRO " + removal.kind()
                         + (removal.personId() != null ? " por persona #" + removal.personId()
                                 + (removal.description() != null ? " (" + removal.description() + ")" : "") : "");
-        System.out.println("[" + when + "] Objeto #" + trackedId + " (" + className + ") " + label + personInfo + frameInfo
+        System.out.println("[" + when + "]" + (cameraId == 1 ? "" : " [CAM " + cameraId + "]") + " Objeto #" + trackedId + " (" + className + ") " + label + personInfo + frameInfo
                 + ownerInfo + removalInfo);
         return eventId;
     }

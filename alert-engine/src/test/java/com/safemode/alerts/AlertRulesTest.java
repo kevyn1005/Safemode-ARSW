@@ -8,6 +8,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AlertRulesTest {
@@ -25,6 +26,28 @@ class AlertRulesTest {
         assertEquals(Severity.HIGH, d.severity());
         assertTrue(d.message().contains("maleta"));
         assertFalse(d.message().contains("camisa"), "el titular no repite colores aproximados: van en las tarjetas del panel");
+    }
+
+    private static StoredEvent removedLookingLikeOwner(String kind) {
+        return new StoredEvent(7, 1, "suitcase", "REMOVED", Instant.parse("2026-01-01T10:00:00Z"), 100, 100, 50, 80,
+                true, "frame.png", 1L, null, null, null, kind, 2L, null, null, null, 1, true);
+    }
+
+    @Test
+    void retiroPorOtraPersonaQueSePareceAlDuenoEsPosibleDuenoQueVolvioYNoPosibleRobo() {
+        AlertRules.Decision d = AlertRules.evaluate(removedLookingLikeOwner("BY_OTHER")).orElseThrow();
+        assertEquals(AlertType.POSSIBLE_OWNER_RETURN, d.type());
+        assertEquals(Severity.MEDIUM, d.severity(), "no se silencia: queda visible con severidad media");
+        assertTrue(d.message().contains("dueño que volvió"));
+        assertTrue(d.message().contains("maleta"));
+    }
+
+    @Test
+    void laPistaDelDuenoSoloCambiaElRetiroPorOtraPersona() {
+        for (String kind : new String[]{"NO_ONE_NEAR", "OWNER_UNKNOWN", "OWNER_AND_OTHER_NEAR"}) {
+            assertNotEquals(AlertType.POSSIBLE_OWNER_RETURN, AlertRules.evaluate(removedLookingLikeOwner(kind)).orElseThrow().type(), kind);
+        }
+        assertTrue(AlertRules.evaluate(removedLookingLikeOwner("BY_OWNER")).isEmpty(), "el dueno que retira sigue sin generar alerta");
     }
 
     @Test

@@ -49,6 +49,23 @@ final class PersonAppearance {
         return new PersonAppearance(r / n, g / n, b / n);
     }
 
+    /** Color medio de varias firmas (las de una misma persona vista en varios frames), o null si no hay ninguna. */
+    static PersonAppearance average(java.util.Collection<PersonAppearance> looks) {
+        if (looks == null || looks.isEmpty()) {
+            return null;
+        }
+        double r = 0;
+        double g = 0;
+        double b = 0;
+        for (PersonAppearance look : looks) {
+            r += look.red;
+            g += look.green;
+            b += look.blue;
+        }
+        int n = looks.size();
+        return new PersonAppearance(r / n, g / n, b / n);
+    }
+
     double distanceTo(PersonAppearance other) {
         return Math.sqrt(Math.pow(red - other.red, 2) + Math.pow(green - other.green, 2) + Math.pow(blue - other.blue, 2));
     }

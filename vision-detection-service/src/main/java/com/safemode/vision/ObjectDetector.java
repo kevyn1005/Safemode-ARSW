@@ -34,17 +34,31 @@ public class ObjectDetector {
         this.session = env.createSession(modelPath, new OrtSession.SessionOptions());
     }
 
+    /**
+     * Igual, pero limitando los hilos de calculo de este detector. Por defecto ONNX Runtime usa todos los nucleos; con dos
+     * detectores en paralelo (dos camaras) se estorban entre si, asi que a cada uno se le da la mitad.
+     */
+    public ObjectDetector(String modelPath, int intraOpThreads) throws OrtException {
+        this.env = OrtEnvironment.getEnvironment();
+        OrtSession.SessionOptions options = new OrtSession.SessionOptions();
+        options.setIntraOpNumThreads(intraOpThreads);
+        this.session = env.createSession(modelPath, options);
+    }
+
     public List<Detection> detect(BufferedImage frame) throws OrtException {
         Letterbox lb = letterbox(frame, INPUT_SIZE);
         float[] inputData = imageToCHWArray(lb.image);
 
-        OnnxTensor inputTensor = OnnxTensor.createTensor(env,
-                FloatBuffer.wrap(inputData), new long[]{1, 3, INPUT_SIZE, INPUT_SIZE});
-
         String inputName = session.getInputNames().iterator().next();
-        OrtSession.Result result = session.run(Map.of(inputName, inputTensor));
-
-        float[][][] output = (float[][][]) result.get(0).getValue(); // [1][84][8400]
+        float[][][] output;
+        // El tensor de entrada y el resultado viven en memoria nativa de ONNX Runtime: hay que cerrarlos en cada fotograma
+        // (antes no se cerraban y la memoria del proceso crecia varios GB hasta que corria el recolector de basura).
+        // getValue() copia a arreglos de Java, asi que es seguro cerrarlos antes de interpretar la salida.
+        try (OnnxTensor inputTensor = OnnxTensor.createTensor(env,
+                FloatBuffer.wrap(inputData), new long[]{1, 3, INPUT_SIZE, INPUT_SIZE});
+             OrtSession.Result result = session.run(Map.of(inputName, inputTensor))) {
+            output = (float[][][]) result.get(0).getValue(); // [1][84][8400]
+        }
 
         return parseDetections(output, lb);
     }

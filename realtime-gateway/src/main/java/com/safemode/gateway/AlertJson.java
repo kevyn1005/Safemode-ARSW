@@ -6,7 +6,9 @@ import com.safemode.alerts.Alert;
 import com.safemode.presence.PresenceEventStore.StoredEvent;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.function.IntFunction;
 
 /**
  * Convierte una alerta (y la evidencia del evento que la origino) al JSON que recibe el dashboard. Las fotos no viajan
@@ -19,6 +21,11 @@ final class AlertJson {
     private AlertJson() {}
 
     static JsonObject toJson(Alert alert, Optional<StoredEvent> evidence) {
+        return toJson(alert, evidence, id -> "CAM " + id);
+    }
+
+    /** Igual, con el nombre de la camara que le puso el usuario ({@code cameraName} lo da a partir del id). */
+    static JsonObject toJson(Alert alert, Optional<StoredEvent> evidence, IntFunction<String> cameraName) {
         JsonObject json = new JsonObject();
         json.addProperty("id", alert.id());
         json.addProperty("eventId", alert.eventId());
@@ -32,10 +39,14 @@ final class AlertJson {
         json.addProperty("framePhoto", photoUrl(alert.framePath()));
 
         StoredEvent event = evidence.orElse(null);
+        int cameraId = event == null ? 1 : event.cameraId();
+        json.addProperty("cameraId", cameraId);
+        json.addProperty("cameraName", cameraName.apply(cameraId));
         json.addProperty("removalKind", event == null ? null : event.removalKind());
         json.addProperty("ownerPhoto", event == null ? null : photoUrl(event.ownerCropPath()));
         json.addProperty("ownerDescription", event == null ? null : event.ownerDescription());
         json.addProperty("ownerAiDescription", event == null ? null : event.ownerAiDescription());
+        json.addProperty("removerLooksLikeOwner", event != null && event.removerLooksLikeOwner());
         json.addProperty("removerPhoto", event == null ? null : photoUrl(event.removerCropPath()));
         json.addProperty("removerDescription", event == null ? null : event.removerDescription());
         json.addProperty("removerAiDescription", event == null ? null : event.removerAiDescription());
@@ -56,6 +67,32 @@ final class AlertJson {
         message.addProperty("type", "snapshot");
         message.add("alerts", array);
         return message;
+    }
+
+    /** Igual, y ademas con los nombres de las camaras. */
+    static JsonObject snapshot(List<JsonObject> alerts, Map<Integer, String> cameras) {
+        JsonObject message = snapshot(alerts);
+        message.add("cameras", camerasArray(cameras));
+        return message;
+    }
+
+    /** Mensaje {@code cameras}: los nombres vigentes (se envia cuando el usuario renombra una camara). */
+    static JsonObject camerasMessage(Map<Integer, String> cameras) {
+        JsonObject message = new JsonObject();
+        message.addProperty("type", "cameras");
+        message.add("cameras", camerasArray(cameras));
+        return message;
+    }
+
+    static JsonArray camerasArray(Map<Integer, String> cameras) {
+        JsonArray array = new JsonArray();
+        cameras.forEach((id, name) -> {
+            JsonObject camera = new JsonObject();
+            camera.addProperty("id", id);
+            camera.addProperty("name", name);
+            array.add(camera);
+        });
+        return array;
     }
 
     /**

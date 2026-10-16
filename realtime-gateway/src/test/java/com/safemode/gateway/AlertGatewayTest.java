@@ -183,6 +183,42 @@ class AlertGatewayTest {
     }
 
     @Test
+    void laAlertaIncluyeLaCamaraYElSnapshotLosNombresDeLasCamaras() throws Exception {
+        events.renameCamera(2, "Cancha sur");
+        events.recordRemoved(2, 1, "suitcase", 100, 100, 50, 80, Instant.now(), true, "data/frames/cam2_obj1.png", OWNER,
+                new RemovalInfo("BY_OTHER", 2L, "persona con camisa azul", "data/frames/remover_2.png"));
+        engine.processNewEvents();
+
+        JsonObject snapshot = connect(null).next();
+
+        JsonObject alert = snapshot.getAsJsonArray("alerts").get(0).getAsJsonObject();
+        assertEquals(2, alert.get("cameraId").getAsInt());
+        assertEquals("Cancha sur", alert.get("cameraName").getAsString());
+        assertEquals("Cancha sur", snapshot.getAsJsonArray("cameras").get(1).getAsJsonObject().get("name").getAsString());
+        assertEquals("CAM 1", snapshot.getAsJsonArray("cameras").get(0).getAsJsonObject().get("name").getAsString());
+    }
+
+    @Test
+    void alRenombrarUnaCamaraSeAvisaATodosYLasAlertasRecientesSeActualizan() throws Exception {
+        events.recordRemoved(2, 1, "suitcase", 100, 100, 50, 80, Instant.now(), true, "data/frames/cam2_obj1.png", OWNER,
+                new RemovalInfo("BY_OTHER", 2L, "persona con camisa azul", "data/frames/remover_2.png"));
+        Client client = connect(null);
+        client.next();
+        engine.processNewEvents();
+        assertEquals("CAM 2", client.next().getAsJsonObject("alert").get("cameraName").getAsString());
+
+        engine.renameCamera(2, "Cancha sur");
+        gateway.broadcastCameras();
+
+        JsonObject cameras = client.next();
+        assertEquals("cameras", cameras.get("type").getAsString());
+        assertEquals("Cancha sur", cameras.getAsJsonArray("cameras").get(1).getAsJsonObject().get("name").getAsString());
+        JsonObject update = client.next();
+        assertEquals("update", update.get("type").getAsString());
+        assertEquals("Cancha sur", update.getAsJsonObject("alert").get("cameraName").getAsString());
+    }
+
+    @Test
     void unMensajeInvalidoSeIgnoraYLaConexionSigueViva() throws Exception {
         Client client = connect(null);
         client.next();

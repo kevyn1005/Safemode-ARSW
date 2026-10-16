@@ -43,6 +43,14 @@ public class AlertGateway extends WebSocketServer {
     // Ultimo JSON enviado de cada alerta reciente, para detectar cuando cambia su evidencia.
     private final Map<Long, String> lastSent = new LinkedHashMap<>();
     private ScheduledExecutorService refresher;
+    private volatile AuthService auth;   // null = sin sesion (como antes); con valor, el WebSocket exige la cookie de sesion
+
+    /** Exige sesion de Google para abrir el WebSocket. Se llama antes de {@link #startAndWait()}. */
+    public AlertGateway withAuth(AuthService authService) {
+        this.auth = authService;
+        return this;
+    }
+
 
     /**
      * @param port           puerto del WebSocket (0 = uno libre, util en pruebas; ver {@link #boundPort()})
@@ -95,6 +103,13 @@ public class AlertGateway extends WebSocketServer {
         if (origin != null && !allowedOrigins.contains(origin)) {
             throw new InvalidDataException(403, "Origen no autorizado");
         }
+        AuthService authService = auth;
+        if (authService != null) {
+            String cookie = request.hasFieldValue("Cookie") ? request.getFieldValue("Cookie") : null;
+            if (authService.userFor(cookie).isEmpty()) {
+                throw new InvalidDataException(401, "Sesion requerida");
+            }
+        }
         return builder;
     }
 
@@ -102,9 +117,9 @@ public class AlertGateway extends WebSocketServer {
     public void onOpen(WebSocket conn, ClientHandshake handshake) {
         List<JsonObject> pending = new ArrayList<>();
         for (Alert alert : alerts.listPending()) {
-            pending.add(AlertJson.toJson(alert, engine.evidenceOf(alert)));
+            pending.add(AlertJson.toJson(alert, engine.evidenceOf(alert), engine::cameraName));
         }
-        conn.send(AlertJson.snapshot(pending).toString());
+        conn.send(AlertJson.snapshot(pending, engine.cameraNames()).toString());
     }
 
     @Override
@@ -137,7 +152,7 @@ public class AlertGateway extends WebSocketServer {
     }
 
     private void broadcastAlert(String type, Alert alert) {
-        JsonObject json = AlertJson.toJson(alert, engine.evidenceOf(alert));
+        JsonObject json = AlertJson.toJson(alert, engine.evidenceOf(alert), engine::cameraName);
         synchronized (lastSent) {
             lastSent.put(alert.id(), json.toString());
             if (lastSent.size() > RECENT_ALERTS_TRACKED) {
@@ -156,7 +171,7 @@ public class AlertGateway extends WebSocketServer {
             }
             for (long id : ids) {
                 alerts.findById(id).ifPresent(alert -> {
-                    String current = AlertJson.toJson(alert, engine.evidenceOf(alert)).toString();
+                    String current = AlertJson.toJson(alert, engine.evidenceOf(alert), engine::cameraName).toString();
                     boolean changed;
                     synchronized (lastSent) {
                         changed = !current.equals(lastSent.get(id));
@@ -169,6 +184,13 @@ public class AlertGateway extends WebSocketServer {
         } catch (RuntimeException e) {
             System.err.println("[GATEWAY] No se pudieron refrescar las alertas: " + e.getMessage());
         }
+    }
+
+    /** Avisa a todos los paneles de los nombres vigentes de las camaras (tras renombrar una). */
+    public void broadcastCameras() {
+        broadcast(AlertJson.camerasMessage(engine.cameraNames()).toString());
+        // las alertas ya enviadas llevan el nombre viejo: se reenvian para que el panel las muestre con el nuevo
+        refreshRecent();
     }
 
     /** Detiene el servidor y libera el puerto. */
