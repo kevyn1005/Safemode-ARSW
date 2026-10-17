@@ -54,6 +54,10 @@ public class ObjectTracker {
     // retiro real (alguien lo tapa y lo levanta) 0.28. Tope de frames de espera para no dejar un retiro real sin declarar.
     private static final double STILL_THERE_MAX_CHANGE = 0.15;
     private static final int MAX_VERIFIED_UNSEEN_FRAMES = 12;
+    // Confirmacion rapida: si la parte visible de la zona ya cambio al menos esta fraccion (y se ve suficiente de la zona),
+    // el retiro es claro y no se esperan los MAX_FRAMES_UNSEEN frames: basta con EARLY_REMOVAL_FRAMES sin ver el objeto.
+    private static final double EARLY_REMOVAL_MIN_CHANGE = 0.6;
+    private static final int EARLY_REMOVAL_FRAMES = 2;
     // Los puntos de la zona que cubre una persona no se comparan (su brazo o su ropa no son un cambio del objeto). Si queda
     // menos de esta fraccion de la zona a la vista, no se puede concluir nada y se decide como si no hubiera verificacion.
     // Con fotos reales: un cinturon con un brazo por delante daba 35 % de cambio sin excluir la persona y 0 % excluyendola.
@@ -195,7 +199,7 @@ public class ObjectTracker {
                     + " (estado=" + best.getState() + ", pos anterior=(" + best.getX() + "," + best.getY() + "))"
                     + " nueva pos=(" + det.x() + "," + det.y() + ")"
                     + (best.getClassName().equals(det.className()) ? ""
-                            : " [el detector cambio de clase: " + best.getClassName() + " -> " + det.className() + "]"));
+                    : " [el detector cambio de clase: " + best.getClassName() + " -> " + det.className() + "]"));
             if (best.getState() == TrackedObject.State.NEW) {
                 updateOwnerCandidate(best, det, personDetections, personIds, frame);
             }
@@ -220,9 +224,22 @@ public class ObjectTracker {
                         personDetections, personIds, frame));
             }
             if (t.getFramesUnseen() < MAX_FRAMES_UNSEEN) {
+                // confirmacion rapida: si la zona ya cambio claramente, no hace falta esperar el tercer frame
+                if (t.getState() == TrackedObject.State.AT_REST
+                        && t.getFramesUnseen() >= EARLY_REMOVAL_FRAMES
+                        && zoneClearlyChanged(t, frame, personDetections)) {
+                    markRemoved(t, personDetections, personIds, now, frame);
+                    tracked.remove(t.getId());
+                }
                 continue;
             }
             if (t.getState() == TrackedObject.State.AT_REST && stillLooksInPlace(t, frame, personDetections)) {
+                if (t.getFramesUnseen() >= MAX_FRAMES_UNSEEN + MAX_VERIFIED_UNSEEN_FRAMES) {
+                    // la zona sigue igual tras muchos frames: el que falla es el detector, no hay retiro ni alerta
+                    System.out.println("[DEBUG]   -> Objeto #" + t.getId() + " sin verse " + t.getFramesUnseen()
+                            + " frames con la zona igual: el detector no lo ve, no es un retiro. Se deja de seguir sin alerta");
+                    tracked.remove(t.getId());
+                }
                 continue;
             }
             if (t.getState() == TrackedObject.State.AT_REST) {
@@ -237,13 +254,11 @@ public class ObjectTracker {
 
     /**
      * El detector no ve el objeto, pero la zona donde estaba en reposo se ve casi igual que la ultima vez que se lo vio:
-     * alguien lo tapa un momento o el detector fallo. Solo se espera un numero limitado de frames; sin imagen no se puede
-     * comprobar y se decide como siempre.
+     * alguien lo tapa un momento o el detector fallo. Sin imagen no se puede comprobar y se decide como siempre.
+     * El tope de frames de espera lo aplica handleUnseenObjects: pasado el tope, con la zona igual, se deja de seguir
+     * el objeto sin declarar retiro.
      */
     private boolean stillLooksInPlace(TrackedObject t, BufferedImage frame, List<Detection> personDetections) {
-        if (t.getFramesUnseen() >= MAX_FRAMES_UNSEEN + MAX_VERIFIED_UNSEEN_FRAMES) {
-            return false;
-        }
         if (!verifyRemovalByImage) {
             return false;
         }
@@ -263,8 +278,30 @@ public class ObjectTracker {
         boolean stillThere = comparison.changedFraction() < STILL_THERE_MAX_CHANGE;
         System.out.println("[DEBUG]   -> Objeto #" + t.getId() + " sin verse " + t.getFramesUnseen() + " frames; la parte visible de su zona cambio "
                 + Math.round(comparison.changedFraction() * 100) + "%: " + (stillThere ? "sigue ahi (tapado o mal detectado), no se da por retirado"
-                        : "ya no esta, se da por retirado"));
+                : "ya no esta, se da por retirado"));
         return stillThere;
+    }
+
+    /** La parte visible de la zona del objeto ya no se parece a la de reposo: retiro claro, sin esperar mas frames. */
+    private boolean zoneClearlyChanged(TrackedObject t, BufferedImage frame, List<Detection> personDetections) {
+        if (!verifyRemovalByImage) {
+            return false;
+        }
+        RegionFingerprint atRest = t.getRestFingerprint();
+        RegionFingerprint now = RegionFingerprint.of(frame, t.getX(), t.getY(), t.getWidth(), t.getHeight());
+        if (atRest == null || now == null) {
+            return false;
+        }
+        List<Rectangle> coveredByPeople = personDetections.stream()
+                .map(p -> new Rectangle(p.x(), p.y(), p.width(), p.height())).toList();
+        RegionFingerprint.Comparison comparison = atRest.compare(now, coveredByPeople);
+        boolean clear = comparison.visibleFraction() >= MIN_VISIBLE_FRACTION
+                && comparison.changedFraction() >= EARLY_REMOVAL_MIN_CHANGE;
+        if (clear) {
+            System.out.println("[DEBUG]   -> Objeto #" + t.getId() + " sin verse " + t.getFramesUnseen() + " frames; la zona cambio "
+                    + Math.round(comparison.changedFraction() * 100) + "%: retiro claro, se confirma sin esperar los " + MAX_FRAMES_UNSEEN);
+        }
+        return clear;
     }
 
     /** Objeto sin emparejar de OTRA clase que se solapa con la deteccion (el detector le cambio la clase), o null. */
@@ -466,7 +503,7 @@ public class ObjectTracker {
 
         String cropPath = remover.crop == null ? null
                 : writePng(remover.evidenceCrop != null ? remover.evidenceCrop : remover.crop,
-                        photoPrefix() + "obj" + t.getId() + "_REMOVER_person" + remover.personId + "_" + now.toEpochMilli() + ".png");
+                photoPrefix() + "obj" + t.getId() + "_REMOVER_person" + remover.personId + "_" + now.toEpochMilli() + ".png");
         Keypoint[] pose = (remover.crop == null || poseFinder == null) ? null : poseFinder.apply(remover.crop);
         String description = PersonDescriber.describe(remover.crop, remover.objectInCrop, pose);
         return new RemovalAnalysis(new RemovalInfo(kind.name(), remover.personId, description, cropPath, looksLikeOwner), kind, remover, pose);
@@ -974,7 +1011,7 @@ public class ObjectTracker {
         // la foto guardada muestra a la persona junto al objeto; el color y la pose se leen solo del recorte de la persona
         String cropPath = crop == null ? null
                 : writePng(evidence != null ? evidence : crop,
-                        photoPrefix() + "obj" + t.getId() + "_OWNER_person" + ownerId + "_" + now.toEpochMilli() + ".png");
+                photoPrefix() + "obj" + t.getId() + "_OWNER_person" + ownerId + "_" + now.toEpochMilli() + ".png");
         Keypoint[] pose = (crop == null || poseFinder == null) ? null : poseFinder.apply(crop);
         String description = PersonDescriber.describe(crop, t.objectInCropOf(ownerId), pose);
         t.setOwnerCrop(crop);
