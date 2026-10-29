@@ -17,7 +17,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 // y abrir http://localhost:8080 en el navegador. Argumento opcional: segundos que queda corriendo (por defecto 600;
 // 0 = hasta que lo detengan, que es lo que usa el contenedor de docker-compose).
 // Variables de entorno (todas opcionales):
-//   SAFEMODE_DB_URL     URL JDBC de la base (por defecto el archivo local del tracker; en Docker, el servicio h2-db)
+//   SAFEMODEmvn -pl realtime-gateway -am install -DskipTests
+//$env:SAFEMODE_MODEL = "object-presence-tracker/data/models/yolov8m.onnx"
+//$env:SAFEMODE_GOOGLE_CLIENT_ID = "613354160826-8u7smi9mvpukirucgkbm9jsirvm8ofvi.apps.googleusercontent.com"
+//$env:SAFEMODE_ALLOWED_EMAILS = "majuliroca@gmail.com,alejaperezxd@gmail.com,kevynforero@gmail.com"
+//mvn -pl realtime-gateway exec:java "-Dexec.mainClass=com.safemode.gateway.GatewayRunner"_DB_URL     URL JDBC de la base (por defecto el archivo local del tracker; en Docker, el servicio h2-db)
 //   SAFEMODE_BIND_HOST  direccion donde escuchar (por defecto localhost; en Docker, 0.0.0.0 para que llegue el puerto publicado)
 // Boton "Iniciar vigilancia" del panel: lanza el tracker como proceso hijo (ver TrackerProcess). Solo se ofrece si el
 // gateway escucha unicamente en esta maquina (no en un contenedor ni abierto a la red) y se corre desde la raiz del repo.
@@ -79,7 +83,7 @@ public class GatewayRunner {
                     .withAuth(auth);
             gateway.startAndWait();
             http.start();
-            engine.start(Duration.ofSeconds(1));
+            engine.start(Duration.ofMillis(250));
             System.out.println("Inicio de sesion con Google: " + allowedEmails.size() + " correo(s) autorizado(s)");
             System.out.println(seconds > 0 ? "Escuchando durante " + seconds + " s..." : "Escuchando hasta que lo detengan...");
             // Parada unica: al terminar el tiempo, o con docker stop (SIGTERM), que dispara el hook de cierre
