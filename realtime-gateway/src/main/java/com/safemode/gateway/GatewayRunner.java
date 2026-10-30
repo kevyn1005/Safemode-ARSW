@@ -98,6 +98,7 @@ public class GatewayRunner {
                     engine.recentEvents(1);
                     return true;
                 } catch (Exception e) {
+                    System.err.println("[READY] fallo la consulta a H2: " + e + " | causa: " + e.getCause());
                     return false;
                 }
             });
