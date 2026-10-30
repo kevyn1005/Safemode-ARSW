@@ -4,9 +4,12 @@ import com.safemode.alerts.AlertEngine;
 import com.safemode.alerts.AlertStore;
 import com.safemode.gateway.notify.NotificationService;
 import com.safemode.presence.PresenceEventStore;
+import com.sun.net.httpserver.HttpServer;
+import io.micrometer.core.instrument.Timer;
 
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -79,7 +82,25 @@ public class GatewayRunner {
                     .withAuth(auth);
             gateway.startAndWait();
             http.start();
+            Timer alertLatency = Timer.builder("safemode.alert.latency")
+                    .description("Segundos desde que el tracker registra el retiro hasta que el motor crea la alerta")
+                    .serviceLevelObjectives(Duration.ofMillis(500), Duration.ofSeconds(1), Duration.ofSeconds(2),
+                            Duration.ofSeconds(3), Duration.ofSeconds(5), Duration.ofSeconds(10))
+                    .register(Observability.REGISTRY);
+            engine.addListener(alert -> {
+                Observability.REGISTRY.counter("safemode.alerts", "severity", String.valueOf(alert.severity())).increment();
+                engine.evidenceOf(alert).ifPresent(event ->
+                        alertLatency.record(Duration.between(event.occurredAt(), Instant.now())));
+            });
             engine.start(Duration.ofSeconds(1));
+            HttpServer observability = Observability.start(bindHost, 9464, () -> {
+                try {
+                    engine.recentEvents(1);
+                    return true;
+                } catch (Exception e) {
+                    return false;
+                }
+            });
             System.out.println("Inicio de sesion con Google: " + allowedEmails.size() + " correo(s) autorizado(s)");
             System.out.println(seconds > 0 ? "Escuchando durante " + seconds + " s..." : "Escuchando hasta que lo detengan...");
             // Parada unica: al terminar el tiempo, o con docker stop (SIGTERM), que dispara el hook de cierre
@@ -93,6 +114,7 @@ public class GatewayRunner {
                     engine.stop();
                     http.stop();
                     gateway.shutdown();
+                    observability.stop(0);
                 }
             };
             Runtime.getRuntime().addShutdownHook(new Thread(stopAll));
