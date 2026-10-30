@@ -42,6 +42,7 @@ public class ObjectTracker {
     private static final int MAX_FRAMES_UNSEEN = 3;
     private static final double PERSON_PROXIMITY_PX = 80;
 
+
     // Dueno probable: distancia del centro del objeto al rectangulo de la persona (0 si esta dentro).
     private static final double OWNER_PROXIMITY_PX = 100;
     // Quien esta "junto" al objeto en reposo (para atribuir un retiro): distancia del centro del objeto a la caja de la persona.
@@ -65,6 +66,7 @@ public class ObjectTracker {
     // Un objeto en reposo que aparece desplazado mas de MOVEMENT_TOLERANCE_PX solo se da por retirado si sigue desplazado
     // en este numero de frames seguidos: una persona que pasa por delante lo tapa y la caja del detector salta de sitio.
     private static final int REMOVAL_CONFIRM_FRAMES = 2;
+    private static final double CARRY_DISPLACEMENT_PER_SIZE = 0.25;
     private static final double MAX_PERSON_FALLBACK_DISTANCE_PX = 150;
     // fraccion del tamano de la caja (ancho o alto, el mayor) que una persona puede desplazarse entre frames
     private static final double PERSON_MOVE_PER_SIZE = 0.6;
@@ -969,6 +971,13 @@ public class ObjectTracker {
     /** Radio de "cerca" para un objeto de ese tamano: el minimo dado, o una fraccion de su lado mayor si eso es mas. */
     static double scaledProximity(double minimumPx, int objectWidth, int objectHeight) {
         return Math.max(minimumPx, PROXIMITY_PER_OBJECT_SIZE * Math.max(objectWidth, objectHeight));
+    }
+
+    /** El centro del objeto cae dentro de la caja de alguna persona: la persona lo tiene en las manos o pegado al cuerpo. */
+    private boolean heldByPerson(Detection det, List<Detection> persons) {
+        double cx = det.x() + det.width() / 2.0;
+        double cy = det.y() + det.height() / 2.0;
+        return persons.stream().anyMatch(p -> distanceToBox(cx, cy, p) == 0);
     }
 
     /** Distancia de un punto a un rectangulo (0 si el punto queda dentro). */

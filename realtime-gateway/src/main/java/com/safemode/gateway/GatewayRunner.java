@@ -92,7 +92,7 @@ public class GatewayRunner {
                 engine.evidenceOf(alert).ifPresent(event ->
                         alertLatency.record(Duration.between(event.occurredAt(), Instant.now())));
             });
-            engine.start(Duration.ofSeconds(1));
+            engine.start(Duration.ofMillis(250));
             HttpServer observability = Observability.start(bindHost, 9464, () -> {
                 try {
                     engine.recentEvents(1);
@@ -114,7 +114,6 @@ public class GatewayRunner {
                     engine.stop();
                     http.stop();
                     gateway.shutdown();
-                    observability.stop(0);
                 }
             };
             Runtime.getRuntime().addShutdownHook(new Thread(stopAll));
