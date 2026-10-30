@@ -1,0 +1,10 @@
+﻿{
+  "name": "security-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "echo configurar script de desarrollo",
+    "build": "echo configurar script de build"
+  },
+  "dependencies": {}
+}

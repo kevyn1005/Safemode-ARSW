@@ -1,0 +1,46 @@
+﻿target/
+*.jar
+*.war
+*.class
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+.DS_Store
+Thumbs.db
+node_modules/
+dist/
+build/
+.env
+*.log
+object-presence-tracker/data/
+
+# Claude Code y Skills locales
+.claude/skills/
+.agents/
+skills-lock.json
+
+# graphify
+graphify-out/
+
+# Herramientas de diseno / IA (no van al repo publico)
+.impeccable/
+DESIGN.md
+PRODUCT.md
+.gitattributes
+.graphifyignore
+
+# Material de la sustentacion
+*.pptx
+
+# Contexto interno y pesos sueltos
+CLAUDE.md
+yolov8s.pt
+
+# Notas personales para la sustentacion
+ESTUDIAR.md
+
+# Respaldos que crea Archi al guardar
+*.archimate.bak
