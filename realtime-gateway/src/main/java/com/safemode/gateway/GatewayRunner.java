@@ -93,7 +93,8 @@ public class GatewayRunner {
                         alertLatency.record(Duration.between(event.occurredAt(), Instant.now())));
             });
             engine.start(Duration.ofMillis(250));
-            HttpServer observability = Observability.start(bindHost, 9464, () -> {
+            String metricsHost = System.getenv().getOrDefault("SAFEMODE_METRICS_HOST", "0.0.0.0");
+            HttpServer observability = Observability.start(metricsHost, 9464, () -> {
                 try {
                     engine.recentEvents(1);
                     return true;
