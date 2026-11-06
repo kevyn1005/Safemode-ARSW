@@ -87,6 +87,9 @@ public class GatewayRunner {
                     .serviceLevelObjectives(Duration.ofMillis(500), Duration.ofSeconds(1), Duration.ofSeconds(2),
                             Duration.ofSeconds(3), Duration.ofSeconds(5), Duration.ofSeconds(10))
                     .register(Observability.REGISTRY);
+            for (com.safemode.alerts.Severity sev : com.safemode.alerts.Severity.values()) {
+                Observability.REGISTRY.counter("safemode.alerts", "severity", sev.name());
+            }
             engine.addListener(alert -> {
                 Observability.REGISTRY.counter("safemode.alerts", "severity", String.valueOf(alert.severity())).increment();
                 engine.evidenceOf(alert).ifPresent(event ->
