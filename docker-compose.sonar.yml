@@ -1,0 +1,15 @@
+services:
+  sonarqube:
+    image: sonarqube:community
+    ports:
+      - "127.0.0.1:9000:9000"
+    environment:
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+    volumes:
+      - sonar-data:/opt/sonarqube/data
+      - sonar-logs:/opt/sonarqube/logs
+      - sonar-ext:/opt/sonarqube/extensions
+volumes:
+  sonar-data:
+  sonar-logs:
+  sonar-ext:
