@@ -167,14 +167,19 @@ class RemovalVerificationTest {
     }
 
     @Test
-    void laEsperaTieneTopeYDespuesSeRetira() {
+    void laEsperaTieneTopeYDespuesSeDejaDeSeguirSinAlerta() {
         ObjectTracker tracker = registeredBag(true);
 
         unseenFrames(tracker, 14, scene(true));
         assertEquals(0, store.countEvents("REMOVED"));
 
         unseenFrames(tracker, 1, scene(true));
-        assertEquals(1, store.countEvents("REMOVED"), "pasado el tope de espera se decide como siempre");
+        assertEquals(0, store.countEvents("REMOVED"),
+                "pasado el tope con la zona igual el fallo es del detector: no hay retiro ni alerta");
+
+        // ya no se sigue el objeto: aunque la zona cambie despues, no se declara un retiro
+        unseenFrames(tracker, 3, scene(false));
+        assertEquals(0, store.countEvents("REMOVED"));
     }
 
     @Test
