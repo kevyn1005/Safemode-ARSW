@@ -8,6 +8,7 @@ import com.safemode.common.HttpError;
 import com.safemode.common.Json;
 import com.safemode.common.MiniHttpServer;
 import com.safemode.common.MiniHttpServer.Response;
+import com.safemode.common.NetworkDefaults;
 import com.safemode.common.ServiceMetrics;
 
 import java.util.Map;
@@ -26,6 +27,7 @@ import java.util.Map;
 public class AccessServiceMain {
 
     public static void main(String[] args) throws Exception {
+        NetworkDefaults.shortNegativeDnsCache();   // antes de cualquier conexion: recuperacion rapida de un nombre que volvio a resolverse
         String jdbcUrl = Env.get("PGURL", "jdbc:postgresql://localhost:5432/safemode");
         AccessRepository repository = new AccessRepository(jdbcUrl, Env.get("PGUSER", "safemode"),
                 Env.get("PGPASSWORD", "lab-postgres"), Env.getInt("PG_CONNECT_TIMEOUT_MS", 1500));

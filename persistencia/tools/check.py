@@ -124,13 +124,21 @@ def redis_down():
 
 
 def redis_up():
-    """Redis ya restaurado (dc start redis): la PRIMERA presencia debe quedar registrada. Detecta conexiones muertas del pool."""
-    presence = request('POST', f'/api/presence/{PUESTO}')
-    available = presence.json().get('available') if presence.status_code == 200 else None
+    """Redis ya restaurado (dc start redis): la presencia debe volver a registrarse. Tras una falla el servicio degrada al instante
+    durante una ventana corta (2 s) antes de volver a intentar, asi que se acepta hasta 8 s y se mide cuanto tarda."""
+    started = time.perf_counter()
+    attempts, presence, available = 0, None, None
+    while attempts < 8:
+        attempts += 1
+        presence = request('POST', f'/api/presence/{PUESTO}')
+        available = presence.json().get('available') if presence.status_code == 200 else None
+        if available is True:
+            break
+        time.sleep(1)
     listed = request('GET', f'/api/presence/{PUESTO}')
     record('recuperacion_redis', presence.status_code == 200 and available is True,
-           {'presence_status': presence.status_code, 'presence_ms': presence.ms, 'presence': presence.text,
-            'lista': listed.text})
+           {'intentos': attempts, 'segundos_hasta_recuperar': round(time.perf_counter() - started, 1),
+            'presence_status': presence.status_code, 'presence': presence.text, 'lista': listed.text})
 
 
 def authority_down():

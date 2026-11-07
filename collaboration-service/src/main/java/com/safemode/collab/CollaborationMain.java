@@ -5,6 +5,7 @@ import com.safemode.collab.decisions.Decisions;
 import com.safemode.common.DependencyProbe;
 import com.safemode.common.Env;
 import com.safemode.common.MiniHttpServer;
+import com.safemode.common.NetworkDefaults;
 import com.safemode.common.ServiceMetrics;
 
 /**
@@ -18,6 +19,7 @@ import com.safemode.common.ServiceMetrics;
 public class CollaborationMain {
 
     public static void main(String[] args) throws Exception {
+        NetworkDefaults.shortNegativeDnsCache();   // antes de cualquier conexion: recuperacion rapida de un nombre que volvio a resolverse
         Decisions decisions = Decisions.forMode(Env.get("DECISIONS_MODE", "solucion"));
         if (decisions.mode().equals("base")) {
             System.out.println("[collaboration] *** MODO BASE: se conservan a proposito los defectos del punto de partida "

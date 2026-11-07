@@ -1,5 +1,6 @@
 package com.safemode.collab;
 
+import com.safemode.common.FailFastWindow;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
@@ -8,6 +9,7 @@ import redis.clients.jedis.params.ScanParams;
 import redis.clients.jedis.params.SetParams;
 import redis.clients.jedis.resps.ScanResult;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -20,6 +22,7 @@ import java.util.Optional;
 public class RedisPresenceStore implements PresenceStore, AutoCloseable {
 
     private final JedisPool pool;
+    private final FailFastWindow failFast = new FailFastWindow(Duration.ofSeconds(2));
 
     public RedisPresenceStore(String host, int port, int timeoutMs) {
         JedisPoolConfig config = new JedisPoolConfig();
@@ -81,9 +84,17 @@ public class RedisPresenceStore implements PresenceStore, AutoCloseable {
     }
 
     private <T> T run(java.util.function.Function<Jedis, T> command) {
+        // Con Redis detenido, cada intento espera la resolucion del nombre (hasta ~2 s): tras una falla se degrada al instante
+        // durante una ventana corta y solo una operacion por ventana paga la espera.
+        if (failFast.isOpen()) {
+            throw new StoreUnavailableException("Redis no disponible (fallo reciente)", null);
+        }
         try (Jedis jedis = pool.getResource()) {
-            return command.apply(jedis);
+            T result = command.apply(jedis);
+            failFast.recordSuccess();
+            return result;
         } catch (JedisException e) {
+            failFast.recordFailure();
             throw new StoreUnavailableException("Redis no disponible", e);
         }
     }

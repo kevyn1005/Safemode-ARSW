@@ -3,6 +3,7 @@ package com.safemode.collab;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
+import com.safemode.common.FailFastWindow;
 
 import java.io.IOException;
 import java.net.URI;
@@ -22,8 +23,15 @@ public class AccessClient implements Authority {
     private final HttpClient client;
     private final String baseUrl;
     private final Duration requestTimeout;
+    private final FailFastWindow failFast;
 
     public AccessClient(String baseUrl, int connectTimeoutMs, int requestTimeoutMs) {
+        this(baseUrl, connectTimeoutMs, requestTimeoutMs, Duration.ofSeconds(2));
+    }
+
+    /** @param failFastWindow lo que se rechaza al instante tras una falla antes de volver a intentar */
+    public AccessClient(String baseUrl, int connectTimeoutMs, int requestTimeoutMs, Duration failFastWindow) {
+        this.failFast = new FailFastWindow(failFastWindow);
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         this.requestTimeout = Duration.ofMillis(requestTimeoutMs);
         this.client = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(connectTimeoutMs)).build();
@@ -55,13 +63,23 @@ public class AccessClient implements Authority {
     }
 
     private String send(HttpRequest.Builder request) {
+        // Con Gestion caida, cada intento espera la resolucion del nombre (hasta ~2 s). Tras una falla se rechaza al instante
+        // durante una ventana corta: solo una peticion por ventana paga la espera. Sigue siendo fail-closed (503).
+        if (failFast.isOpen()) {
+            throw new AuthorityUnavailableException("Gestion no disponible (fallo reciente)", null);
+        }
         try {
             HttpResponse<String> response = client.send(request.timeout(requestTimeout).build(), HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() >= 500) {
+                failFast.recordFailure();
+            }
             if (response.statusCode() != 200) {
                 throw new AuthorityUnavailableException("Gestion respondio HTTP " + response.statusCode(), null);
             }
+            failFast.recordSuccess();
             return response.body();
         } catch (IOException e) {
+            failFast.recordFailure();
             throw new AuthorityUnavailableException("Gestion no disponible: " + e.getClass().getSimpleName(), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
