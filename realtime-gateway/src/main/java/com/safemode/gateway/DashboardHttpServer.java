@@ -25,7 +25,8 @@ import java.util.Optional;
  * "DNS rebinding"); ninguna de las rutas recibe datos del navegador que lleguen al comando.
  * <p>
  * Si se le da un {@link PuestoApi} y un {@link OperatorDirectory} ({@link #withPuesto}), el panel tambien usa la configuracion
- * compartida del puesto y la presencia: {@code GET/PUT /puesto}, {@code GET /puesto/permission} y {@code GET/POST /presence}.
+ * compartida del puesto y la presencia: {@code GET/PUT /puesto}, {@code GET /puesto/permission}, {@code GET /puesto/history}
+ * (cambios del puesto, con cursor) y {@code GET/POST /presence}.
  * Exigen sesion de Google; el operador sale SOLO de la sesion (nunca de lo que mande el navegador) y los cambios exigen
  * {@code Origin} y {@code Host} del panel igual que los demas POST.
  */
@@ -34,6 +35,7 @@ public class DashboardHttpServer {
     private final HttpServer server;
     private static final int MAX_BODY_BYTES = 2048;
     private static final int MAX_PUESTO_BODY_BYTES = 8192; // un puesto con 8 camaras y sus zonas pesa menos de 1 KB
+    private static final int HISTORY_DEFAULT_LIMIT = 20;
     private static final String JSON_UTF8 = "application/json; charset=utf-8";
     private static final String ORIGIN_REJECTED = "Origen no autorizado";
     private static final String METHOD_NOT_ALLOWED = "Metodo no permitido";
@@ -173,7 +175,7 @@ public class DashboardHttpServer {
     }
 
     private static boolean isPuestoPath(String path) {
-        return path.equals("/puesto") || path.equals("/puesto/permission") || path.equals("/presence");
+        return path.equals("/puesto") || path.equals("/puesto/permission") || path.equals("/puesto/history") || path.equals("/presence");
     }
 
     private void handleAuth(HttpExchange exchange, String path) throws IOException {
@@ -388,6 +390,7 @@ public class DashboardHttpServer {
             switch (path) {
                 case "/puesto" -> puestoRoute(exchange, method);
                 case "/puesto/permission" -> permissionRoute(exchange, method);
+                case "/puesto/history" -> historyRoute(exchange, method);
                 default -> presenceRoute(exchange, method); // "/presence": isPuestoPath no deja pasar otra ruta
             }
         } catch (IllegalStateException e) {
@@ -420,6 +423,46 @@ public class DashboardHttpServer {
         } else {
             replyFrom(exchange, puesto.permission(operator));
         }
+    }
+
+    /**
+     * {@code GET /puesto/history?before=&limit=}: lectura publica del puesto (como GET /puesto), no necesita operador. La consulta se
+     * valida aqui: solo {@code before} (entero de 1 a 12 digitos) y {@code limit} (1 a 50), cada uno una sola vez, y NADA mas.
+     */
+    private void historyRoute(HttpExchange exchange, String method) throws IOException {
+        if (!"GET".equals(method)) {
+            sendError(exchange, 405, METHOD_NOT_ALLOWED);
+            return;
+        }
+        long[] query = parseHistoryQuery(exchange.getRequestURI().getRawQuery());
+        if (query == null) {
+            sendError(exchange, 400, "Consulta invalida: solo before (entero) y limit (1 a 50)");
+            return;
+        }
+        replyFrom(exchange, puesto.history(query[0] == 0 ? null : query[0], (int) query[1]));
+    }
+
+    /** {@code {before (0 = no viene), limit}} o {@code null} si la consulta trae algo distinto, repetido o fuera de rango. */
+    static long[] parseHistoryQuery(String rawQuery) {
+        long before = 0;
+        long limit = HISTORY_DEFAULT_LIMIT;
+        boolean seenBefore = false;
+        boolean seenLimit = false;
+        if (rawQuery != null && !rawQuery.isEmpty()) {
+            for (String part : rawQuery.split("&", -1)) {
+                if (part.startsWith("before=") && !seenBefore && part.substring(7).matches("[0-9]{1,12}") && Long.parseLong(part.substring(7)) >= 1) {
+                    before = Long.parseLong(part.substring(7));
+                    seenBefore = true;
+                } else if (part.startsWith("limit=") && !seenLimit && part.substring(6).matches("[0-9]{1,2}")
+                        && Long.parseLong(part.substring(6)) >= 1 && Long.parseLong(part.substring(6)) <= 50) {
+                    limit = Long.parseLong(part.substring(6));
+                    seenLimit = true;
+                } else {
+                    return null;
+                }
+            }
+        }
+        return new long[] {before, limit};
     }
 
     private void presenceRoute(HttpExchange exchange, String method) throws IOException {

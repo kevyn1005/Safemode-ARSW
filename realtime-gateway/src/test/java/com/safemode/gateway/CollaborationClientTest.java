@@ -24,6 +24,7 @@ class CollaborationClientTest {
 
     private HttpServer upstream;
     private final List<String> seen = new CopyOnWriteArrayList<>();
+    private final List<String> queries = new CopyOnWriteArrayList<>();
     private volatile int replyStatus = 200;
     private volatile String replyBody = "{\"ok\":true}";
     private volatile long replyDelayMillis = 0;
@@ -34,6 +35,9 @@ class CollaborationClientTest {
         upstream = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         upstream.createContext("/", exchange -> {
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            if (exchange.getRequestURI().getRawQuery() != null) {
+                queries.add(exchange.getRequestURI().getRawQuery());
+            }
             seen.add(exchange.getRequestMethod() + " " + exchange.getRequestURI().getPath()
                     + " op=" + exchange.getRequestHeaders().getFirst("X-Operator")
                     + " ct=" + exchange.getRequestHeaders().getFirst("Content-Type")
@@ -71,13 +75,18 @@ class CollaborationClientTest {
         client.save("ana", "{\"expectedVersion\":2,\"title\":\"T\"}");
         client.touchPresence("luis");
         client.presence();
+        client.history(null, 20);
+        client.history(7L, 5);
 
         assertEquals(List.of(
                 "GET /api/puestos/puesto-1 op=null ct=null body=",
                 "GET /api/permissions/puesto-1 op=ana ct=null body=",
                 "PUT /api/puestos/puesto-1 op=ana ct=application/json body={\"expectedVersion\":2,\"title\":\"T\"}",
                 "POST /api/presence/puesto-1 op=luis ct=null body=",
-                "GET /api/presence/puesto-1 op=null ct=null body="), new ArrayList<>(seen));
+                "GET /api/presence/puesto-1 op=null ct=null body=",
+                "GET /api/puestos/puesto-1/history op=null ct=null body=",
+                "GET /api/puestos/puesto-1/history op=null ct=null body="), new ArrayList<>(seen));
+        assertEquals(List.of("limit=20", "limit=5&before=7"), queries, "la consulta la arma el cliente solo con numeros");
     }
 
     @Test

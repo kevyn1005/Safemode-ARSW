@@ -79,6 +79,13 @@ public final class CollaborationClient implements PuestoApi {
         return call("GET", "/api/presence/" + puestoId, null, null);
     }
 
+    @Override
+    public Reply history(Long before, int limit) {
+        // solo numeros: la ruta y los parametros los arma este codigo, nada del navegador entra como texto
+        String query = "?limit=" + limit + (before == null ? "" : "&before=" + before);
+        return call("GET", "/api/puestos/" + puestoId + "/history" + query, null, null);
+    }
+
     private Reply call(String method, String path, String operator, String body) {
         if (operator != null && !IDENTIFIER.matcher(operator).matches()) {
             return error(403, "Operador no valido");

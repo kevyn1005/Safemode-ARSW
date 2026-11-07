@@ -10,6 +10,7 @@
  *
  * Si el gateway no ofrece la ruta (404, no esta configurada) o no hay sesion (401), no se muestra nada y el panel funciona
  * exactamente como antes (zonas solo en este navegador). Todo el texto del servidor se pinta con textContent.
+ * Tambien lista los ultimos cambios del puesto (quien, que y cuando: GET /puesto/history, coleccion aparte en MongoDB).
  * Se pinta dentro de <div id="puestoSlot"></div>. Las funciones puras se exportan para probarlas con Node
  * (security-dashboard/test/puesto-sync.test.js).
  */
@@ -24,6 +25,8 @@
   var ZONES_KEY = 'safemode-zones';       // el mismo que usa camera-share.js
   var EPSILON = 0.0005;                    // dos zonas que difieren menos que esto son la misma
   var PERIOD_MS = 10000;                   // latido de presencia y revision del puesto (la presencia vence a los 20 s)
+  var HISTORY_SHOWN = 3;                   // cuantos cambios recientes se muestran en el panel (el servicio pagina hasta 50)
+  var CHANGED_LABELS = { cameras: 'zonas', title: 'título', preferences: 'preferencias' };
 
   function isFraction(v) { return typeof v === 'number' && isFinite(v) && v >= 0 && v <= 1; }
   function round4(v) { return Math.round(v * 10000) / 10000; }
@@ -86,6 +89,20 @@
     }).map(function (z) { return { id: z.id, x: z.x, y: z.y, w: z.w, h: z.h }; }).sort(function (a, b) { return a.id - b.id; });
   }
 
+  function pad2(n) { return n < 10 ? '0' + n : String(n); }
+
+  /** Una entrada del historial como una linea: "v6 · ana · zonas, título · 07-11 09:42" (la hora en la zona del navegador). */
+  function historyLine(entry) {
+    var parts = ['v' + entry.version, String(entry.by == null ? '?' : entry.by)];
+    var changed = Array.isArray(entry.changed) ? entry.changed.map(function (field) { return CHANGED_LABELS[field] || String(field); }) : [];
+    parts.push(changed.length ? changed.join(', ') : 'sin detalle');
+    var when = typeof entry.at === 'string' && entry.at ? new Date(entry.at) : null; // new Date(null) seria 1970
+    if (when && !isNaN(when.getTime())) {
+      parts.push(pad2(when.getDate()) + '-' + pad2(when.getMonth() + 1) + ' ' + pad2(when.getHours()) + ':' + pad2(when.getMinutes()));
+    }
+    return parts.join(' · ');
+  }
+
   /** Mensaje para el operador segun lo que respondio el servidor al guardar. */
   function saveMessage(status, version) {
     if (status === 200) return 'Zonas compartidas con el puesto (versión ' + version + ').';
@@ -101,7 +118,7 @@
     var slot = doc.getElementById('puestoSlot');
     if (!slot) return;
 
-    var state = { active: false, version: null, zones: [], canConfigure: false, online: [], title: '', message: '' };
+    var state = { active: false, version: null, zones: [], canConfigure: false, online: [], title: '', message: '', history: [] };
     var timer = null;
     var saving = false;
 
@@ -126,6 +143,14 @@
         (state.canConfigure ? 'puedes configurarlo' : 'solo lectura');
       box.appendChild(line(head));
       if (state.online.length) box.appendChild(line('En línea: ' + state.online.join(', ')));
+      if (state.history.length) {
+        box.appendChild(line('Últimos cambios:'));
+        state.history.forEach(function (entry) {
+          var row = line(historyLine(entry));
+          row.style.cssText = 'padding-left:.75rem;opacity:.85';
+          box.appendChild(row);
+        });
+      }
       if (state.message) box.appendChild(line(state.message));
     }
 
@@ -167,9 +192,16 @@
           state.canConfigure = perm.status === 200 && !!(perm.json && perm.json.canConfigure === true);
           // el puesto aun no tiene zonas y este operador puede configurarlo: publica las que ya tiene en este navegador
           if (!state.zones.length && state.canConfigure) publish(zonesFromStored(readLocal()));
-          return true;
+          return loadHistory().then(function () { return true; });
         });
       }).catch(function () { state.active = false; return false; });
+    }
+
+    /** Los ultimos cambios del puesto; si el servicio no los da (404, caido), simplemente no se muestran. */
+    function loadHistory() {
+      return call('GET', '/puesto/history?limit=' + HISTORY_SHOWN).then(function (res) {
+        state.history = res.status === 200 && res.json && Array.isArray(res.json.items) ? res.json.items.slice(0, HISTORY_SHOWN) : [];
+      }).catch(function () { state.history = []; });
     }
 
     function presence() {
@@ -194,7 +226,9 @@
         } else {
           state.message = saveMessage(res.status);
         }
-      }).catch(function () { state.message = saveMessage(0); }).then(function () { saving = false; render(); });
+      }).catch(function () { state.message = saveMessage(0); })
+        .then(function () { return state.active ? loadHistory() : null; })
+        .then(function () { saving = false; render(); });
     }
 
     function tick() {
@@ -215,7 +249,7 @@
 
     function stop() {
       if (timer) { win.clearInterval(timer); timer = null; }
-      state = { active: false, version: null, zones: [], canConfigure: false, online: [], title: '', message: '' };
+      state = { active: false, version: null, zones: [], canConfigure: false, online: [], title: '', message: '', history: [] };
       render();
     }
 
@@ -231,6 +265,6 @@
 
   return {
     ZONES_KEY: ZONES_KEY, zonesFromServer: zonesFromServer, camerasFromZones: camerasFromZones, sameZones: sameZones,
-    storedFromServer: storedFromServer, zonesFromStored: zonesFromStored, saveMessage: saveMessage, mount: mount
+    storedFromServer: storedFromServer, zonesFromStored: zonesFromStored, saveMessage: saveMessage, historyLine: historyLine, mount: mount
   };
 });

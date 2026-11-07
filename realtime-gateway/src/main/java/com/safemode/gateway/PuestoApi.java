@@ -28,4 +28,10 @@ public interface PuestoApi {
 
     /** Quien esta en linea ahora. */
     Reply presence();
+
+    /**
+     * Los cambios del puesto, del mas nuevo al mas viejo: hasta {@code limit} (1 a 50) de las versiones MENORES que {@code before}
+     * ({@code null} = desde la ultima). La respuesta trae {@code nextBefore} para pedir la pagina siguiente (paginacion por cursor).
+     */
+    Reply history(Long before, int limit);
 }

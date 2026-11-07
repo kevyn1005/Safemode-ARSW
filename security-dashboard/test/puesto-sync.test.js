@@ -262,3 +262,57 @@ test('mount: al cerrar sesion se oculta y se olvida todo', async () => {
   assert.equal(b.slot.style.display, 'none');
   assert.equal(b.text(), '');
 });
+
+// ---------------------------------------------------------------------------------------------- historial de cambios
+test('historyLine resume quien, que y cuando, con nombres en espanol para los campos', () => {
+  assert.match(P.historyLine({ version: 6, by: 'ana', changed: ['cameras'], at: '2026-11-07T14:42:51.719Z' }), /^v6 · ana · zonas · \d{2}-\d{2} \d{2}:\d{2}$/);
+  assert.match(P.historyLine({ version: 7, by: 'luis', changed: ['title', 'preferences', 'cameras'], at: '2026-11-07T14:42:51Z' }),
+    /^v7 · luis · título, preferencias, zonas · /);
+  assert.equal(P.historyLine({ version: 8, by: 'ana', changed: [], at: 'no es una fecha' }), 'v8 · ana · sin detalle');
+  assert.equal(P.historyLine({ version: 9, changed: ['otra'] }), 'v9 · ? · otra');
+  assert.equal(P.historyLine({ version: 10, by: 'ana', changed: 'no es lista', at: null }), 'v10 · ana · sin detalle');
+});
+
+test('mount: muestra los ultimos cambios del puesto y los actualiza despues de guardar', async () => {
+  let items = [{ version: 4, by: 'luis', changed: ['title'], at: '2026-11-07T14:00:00Z' }, { version: 3, by: 'ana', changed: ['cameras'], at: '2026-11-07T13:00:00Z' }];
+  let version = 4;
+  const b = fakeBrowser((method, path, body) => {
+    if (path === '/puesto' && method === 'GET') return { status: 200, body: puestoDoc(version, camerasWithZones) };
+    if (path === '/puesto/permission') return { status: 200, body: { canConfigure: true } };
+    if (path === '/presence') return { status: 200, body: { available: true, operators: [] } };
+    if (path === '/puesto/history?limit=3') return { status: 200, body: { items, nextBefore: null } };
+    if (path === '/puesto' && method === 'PUT') {
+      version += 1;
+      items = [{ version, by: 'ana', changed: ['cameras'], at: '2026-11-07T15:00:00Z' }].concat(items);
+      return { status: 200, body: puestoDoc(version, body.cameras) };
+    }
+    return { status: 404 };
+  });
+  P.mount(b.doc, b.win);
+  await settle();
+  assert.match(b.text(), /Últimos cambios:/);
+  assert.match(b.text(), /v4 · luis · título/);
+  assert.match(b.text(), /v3 · ana · zonas/);
+
+  b.emit('safemode:zones-saved', userZonesDetail);
+  await settle();
+  assert.match(b.text(), /v5 · ana · zonas/, 'el cambio recien guardado aparece sin esperar al siguiente refresco');
+  assert.equal(b.calls.filter((c) => c.path === '/puesto/history?limit=3').length >= 2, true);
+});
+
+test('mount: si el historial no esta disponible (404 o servicio caido) el resto del panel sigue igual', async () => {
+  for (const status of [404, 503]) {
+    const b = fakeBrowser((method, path) => {
+      if (path === '/puesto') return { status: 200, body: puestoDoc(2, camerasWithZones) };
+      if (path === '/puesto/permission') return { status: 200, body: { canConfigure: false } };
+      if (path === '/presence') return { status: 200, body: { available: true, operators: ['ana'] } };
+      if (path.startsWith('/puesto/history')) return { status, body: { error: 'x' } };
+      return { status: 404 };
+    });
+    P.mount(b.doc, b.win);
+    await settle();
+    assert.match(b.text(), /Puesto compartido/, 'HTTP ' + status);
+    assert.match(b.text(), /En línea: ana/, 'HTTP ' + status);
+    assert.doesNotMatch(b.text(), /Últimos cambios/, 'HTTP ' + status);
+  }
+});

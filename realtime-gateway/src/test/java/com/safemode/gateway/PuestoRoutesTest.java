@@ -76,6 +76,12 @@ class PuestoRoutesTest {
             calls.add("presence");
             return new Reply(200, "{\"available\":true,\"operators\":[\"ana\"]}");
         }
+
+        @Override
+        public Reply history(Long before, int limit) {
+            calls.add("history:" + before + ":" + limit);
+            return new Reply(200, "{\"items\":[{\"version\":4,\"by\":\"ana\"}],\"nextBefore\":null}");
+        }
     }
 
     @BeforeEach
@@ -150,6 +156,7 @@ class PuestoRoutesTest {
         assertEquals(401, get("/puesto", null).statusCode());
         assertEquals(401, get("/puesto/permission", null).statusCode());
         assertEquals(401, get("/presence", null).statusCode());
+        assertEquals(401, get("/puesto/history", null).statusCode());
         assertEquals(401, send("PUT", "/puesto", panelOrigin, JSON, "{}", null).statusCode());
         assertEquals(401, send("POST", "/presence", panelOrigin, null, null, null).statusCode());
         assertTrue(api.calls.isEmpty(), "sin sesion no se llama al servicio: " + api.calls);
@@ -249,6 +256,32 @@ class PuestoRoutesTest {
     }
 
     @Test
+    void elHistorialSeLeeConSesionConCursorYSinNecesitarSerOperador() throws Exception {
+        String cookie = login("token-sin-alta"); // ve el puesto aunque no sea operador
+
+        HttpResponse<String> first = get("/puesto/history", cookie);
+        assertEquals(200, first.statusCode());
+        assertTrue(first.body().contains("\"version\":4"));
+        assertEquals("no-store", first.headers().firstValue("Cache-Control").orElse(""));
+        assertEquals(200, get("/puesto/history?limit=5&before=7", cookie).statusCode());
+        assertEquals(200, get("/puesto/history?before=7", cookie).statusCode());
+
+        assertEquals(List.of("history:null:20", "history:7:5", "history:7:20"), api.calls);
+    }
+
+    @Test
+    void laConsultaDelHistorialSoloAceptaBeforeYLimitConNumerosEnRango() throws Exception {
+        String cookie = login("token-ana");
+        for (String bad : new String[] {"limit=0", "limit=51", "limit=-1", "limit=abc", "limit=", "before=0", "before=abc", "before=",
+                "before=1234567890123", "foo=1", "limit=5&limit=6", "before=1&before=2", "limit=5&x=1", "limit=5&", "&", "before=1%27"}) {
+            assertEquals(400, get("/puesto/history?" + bad, cookie).statusCode(), bad);
+        }
+        assertTrue(api.calls.isEmpty(), "ninguna consulta invalida llega al servicio: " + api.calls);
+        assertEquals(405, send("POST", "/puesto/history", panelOrigin, JSON, "{}", cookie).statusCode());
+        assertEquals(405, send("DELETE", "/puesto/history", panelOrigin, null, null, cookie).statusCode());
+    }
+
+    @Test
     void unMetodoQueLaRutaNoAdmiteDa405() throws Exception {
         String cookie = login("token-ana");
         assertEquals(405, send("DELETE", "/puesto", panelOrigin, null, null, cookie).statusCode());
@@ -274,7 +307,7 @@ class PuestoRoutesTest {
             String setCookie = login.headers().firstValue("Set-Cookie").orElseThrow();
             String cookie = setCookie.substring(0, setCookie.indexOf(';'));
 
-            for (String path : List.of("/puesto", "/puesto/permission", "/presence")) {
+            for (String path : List.of("/puesto", "/puesto/permission", "/puesto/history", "/presence")) {
                 HttpResponse<String> response = client.send(HttpRequest.newBuilder(URI.create(origin + path))
                         .header("Cookie", cookie).GET().build(), HttpResponse.BodyHandlers.ofString());
                 assertEquals(404, response.statusCode(), path);
