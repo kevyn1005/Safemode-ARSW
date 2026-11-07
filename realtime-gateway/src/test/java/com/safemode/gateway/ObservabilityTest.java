@@ -104,21 +104,22 @@ class ObservabilityTest {
         ScheduledExecutorService watcher = Observability.watchDependency("db-prueba-lenta", () -> {
             if (slow.get()) {
                 try {
-                    Thread.sleep(2000);
+                    Thread.sleep(8000); // mucho mas que el limite de abajo: si el scrape esperara, tardaria casi todo esto
                 } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
+                    Thread.currentThread().interrupt(); // shutdownNow() la corta al terminar la prueba
                 }
             }
             return true;
         }, Duration.ofMillis(50));
         try {
+            assertEquals(200, get("/metrics").statusCode()); // calienta el cliente HTTP: el arranque en frio no es lo que se mide
             slow.set(true);
-            Thread.sleep(150); // el hilo de fondo ya esta atascado dentro de la comprobacion lenta
+            Thread.sleep(300); // el hilo de fondo ya esta atascado dentro de la comprobacion lenta
             long started = System.nanoTime();
             HttpResponse<String> response = get("/metrics");
             long millis = (System.nanoTime() - started) / 1_000_000;
             assertEquals(200, response.statusCode());
-            assertFalse(millis > 1000, "el scrape tardo " + millis + " ms: esta esperando a la comprobacion");
+            assertFalse(millis > 4000, "el scrape tardo " + millis + " ms: esta esperando a la comprobacion lenta (8 s)");
         } finally {
             watcher.shutdownNow();
         }
