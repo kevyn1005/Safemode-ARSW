@@ -102,6 +102,28 @@ pero `dependency_up` y `probe_success` bajan a 0 (`evidencias/16-…`). **No se 
 (`safemode_alerts_total`, `safemode_alert_latency_*`) y los nombres de sus jobs (`gateway`, `ready-probe`) quedan igual; solo se agregó la métrica
 de la base.
 
+**Integración con el panel del producto (7 de noviembre).** Hasta aquí los servicios de persistencia solo los usaba la consola del escenario. Ahora el
+panel los usa a través del gateway, **apagado por defecto** (sin `SAFEMODE_COLLAB_URL`, `SAFEMODE_ACCESS_URL` y `SAFEMODE_ACCESS_KEY` el panel funciona
+exactamente como antes):
+
+- **El navegador no habla con `collaboration-service`:** pasa por el gateway (`GET/PUT /puesto`, `GET /puesto/permission`, `GET/POST /presence`),
+  que exige la sesión de Google, pone la identidad del operador **desde la sesión (nunca desde lo que mande el navegador)** y reenvía la respuesta con su
+  código: un 409 y un 403 llegan al panel como rechazos correctos, no como fallas. Si el servicio no responde, 503 (falla cerrado); un 401 del servicio
+  se vuelve 502 para que el panel no lo confunda con «sesión vencida».
+- **Identidad y permisos (decisión del equipo):** todos los correos de `SAFEMODE_ALLOWED_EMAILS` pueden **ver** el puesto; solo los de
+  `SAFEMODE_ADMIN_EMAILS` pueden **configurarlo**, y solo **la primera vez**: `access-service` da de alta al operador (`POST /operators/provision`, una
+  transacción, idempotente, el id sale del correo: `hever-barrera`, `hever-barrera-2` si choca) y **nunca cambia lo que ya existe**. Después manda
+  PostgreSQL: revocar a alguien con `PUT /permissions` **no se deshace** cuando el gateway reinicia y vuelve a dar de alta ese correo
+  (`evidencias/17-operadores-por-correo.txt`: `grant` y `revoke` en la auditoría; `canConfigure` sigue en `false`). La lista de administradores es el
+  punto de partida, no la autoridad.
+- **Qué se comparte de las zonas:** solo el rectángulo `{x, y, w, h}` de cada zona. La huella de brillo y el tamaño de la ventana son de cada navegador: las
+  zonas que llegan del servidor se guardan con tamaño de referencia 1×1 y sin huella, así que la prueba previa de `camera-share.js` **bloquea hasta que
+  el operador las confirma con su propia ventana**. Al confirmar, el panel avisa (`safemode:zones-saved`) y `puesto-sync.js` hace el `PUT` con la versión
+  que leyó; un 409 recarga lo que guardó el otro y lo explica; un 403 o un 503 dejan las zonas solo en el navegador y dicen por qué. También muestra
+  quién está en línea (latido cada 10 s; vence a los 20 s) y si ese operador puede configurar (decide el servidor; la pantalla solo pinta).
+- **Costos y límites:** cada `PUT` sigue haciendo la llamada a Gestión de acceso (ver arriba). El gateway recuerda el **id** del operador (no cambia) pero
+  nunca el permiso. Correr `tools reset` o `tools acceptance` (escenario del laboratorio) borra a los operadores reales: no usarlos en un despliegue.
+
 ## Alternativa considerada
 
 **PostgreSQL con JSONB en lugar de MongoDB para el documento del puesto.** Es viable: `UPDATE puestos SET doc = …, version = version + 1
@@ -230,8 +252,9 @@ Todo está en [`docs/persistencia/EVIDENCIAS.md`](../persistencia/EVIDENCIAS.md)
 - **No hay replicación, consenso ni CAP.** Es una instancia de cada motor; apagar Redis es una falla de dependencia, no una partición.
 - **k6 solo lee**, así que no prueba consistencia (eso lo hacen los experimentos de aceptación) y no mide el costo de la llamada extra a
   Gestión en las escrituras. La diferencia de P95 entre las dos cargas es ruido de medición: la ruta de lectura no cambió.
-- **No hay autenticación real:** la identidad es una cabecera. El panel del producto **no usa todavía** estos servicios (se integra tras
-  el inicio de sesión, ADR 0004).
+- **La consola del escenario no tiene autenticación real:** su identidad es una cabecera (`X-Operator`). El panel del producto sí usa la sesión de Google
+  (ver *Integración con el panel*), pero **esa integración no se probó con una cuenta de Google real ni con una cámara real**: se probó con pruebas
+  automáticas (gateway con servicios falsos y el módulo del panel con un navegador simulado) y, por partes, contra PostgreSQL real (`17-…`).
 - La **recuperación del tracker** tras un reinicio de la base no se probó con cámara real (usa el mismo almacén que el gateway, que sí se probó). Si
   la base está caída justo cuando registra un evento, la corrida del tracker termina (ver *Consecuencias*). La reconexión solo se probó con H2
   (pruebas automáticas) y PostgreSQL (Docker).

@@ -1,0 +1,20 @@
+1) alta de un administrador          -> (200, {'id': 'prueba-uno', 'email': 'prueba.uno@safemode.test', 'displayName': 'prueba.uno', 'puesto': 'puesto-1', 'role': 'admin', 'canConfigure': True, 'created': True})
+2) misma llamada (idempotente)       -> (200, {'id': 'prueba-uno', 'email': 'prueba.uno@safemode.test', 'displayName': 'prueba.uno', 'puesto': 'puesto-1', 'role': 'admin', 'canConfigure': True, 'created': False})
+3) mismo correo pidiendo viewer/false (no debe cambiar nada) -> (200, {'id': 'prueba-uno', 'email': 'prueba.uno@safemode.test', 'displayName': 'prueba.uno', 'puesto': 'puesto-1', 'role': 'admin', 'canConfigure': True, 'created': False})
+   permiso real: {'operator': 'prueba-uno', 'puesto': 'puesto-1', 'member': True, 'role': 'admin', 'canConfigure': True}
+4) otro correo con la misma parte local -> (200, {'id': 'prueba-uno-2', 'email': 'prueba.uno@otro.test', 'displayName': 'prueba.uno', 'puesto': 'puesto-1', 'role': 'viewer', 'canConfigure': False, 'created': True})
+5) mayusculas en el correo = el mismo   -> (200, {'id': 'prueba-uno', 'email': 'prueba.uno@safemode.test', 'displayName': 'prueba.uno', 'puesto': 'puesto-1', 'role': 'admin', 'canConfigure': True, 'created': False})
+6) sin la clave de administracion      -> (403, '{"error":"Clave de administracion invalida"}')
+7) clave equivocada                    -> (403, '{"error":"Clave de administracion invalida"}')
+8) correo invalido                     -> (400, '{"error":"email no es un correo valido"}')
+9) rol inventado                       -> (400, '{"error":"role debe ser admin, operator o viewer"}')
+10) puesto que no existe               -> (404, '{"error":"El puesto no existe"}')
+11) canConfigure no booleano           -> (400, '{"error":"Se espera canConfigure true|false"}')
+12) campo faltante (puesto)            -> (400, '{"error":"puesto debe ser texto"}')
+
+## La revocacion hecha en PostgreSQL NO se deshace al volver a dar de alta el correo
+antes de revocar       : {'operator': 'prueba-uno', 'puesto': 'puesto-1', 'member': True, 'role': 'admin', 'canConfigure': True}
+revocar en PostgreSQL  : {'operator': 'prueba-uno', 'puesto': 'puesto-1', 'member': True, 'role': 'admin', 'canConfigure': False}
+el gateway reinicia y vuelve a dar de alta el mismo correo como ADMIN (SAFEMODE_ADMIN_EMAILS):
+  provision            : {'id': 'prueba-uno', 'email': 'prueba.uno@safemode.test', 'displayName': 'prueba.uno', 'puesto': 'puesto-1', 'role': 'admin', 'canConfigure': False, 'created': False}
+permiso despues        : {'operator': 'prueba-uno', 'puesto': 'puesto-1', 'member': True, 'role': 'admin', 'canConfigure': False}

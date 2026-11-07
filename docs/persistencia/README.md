@@ -248,6 +248,12 @@ dc down -v                                       # BORRA los volúmenes de Postg
   de este compose lee los tres (jobs `gateway`, `access` y `collaboration`) más la sonda `/ready`, con los mismos nombres de job que su
   `observability/prometheus.yml` y sin cambiar sus métricas ni su compose (su tablero de Grafana no está en el repo: ver
   `observability/grafana/dashboards/README.md`). El gateway publica además `safemode_dependency_up{dependency="database"}`, con el mismo nombre que los otros.
-- **Login con Google (rama `Juli/unión`):** hoy la lista de correos autorizados es una variable de entorno. `access-service` es el
-  lugar natural para reemplazarla: operadores y membresías en PostgreSQL, con revocación inmediata y auditoría. La cabecera `X-Operator`
-  se sustituye por el correo de la sesión; el modelo de permisos no cambia.
+- **Login con Google (rama `Juli/unión`): ya unido, sin cambiar su lógica.** La lista `SAFEMODE_ALLOWED_EMAILS` sigue decidiendo quién entra. Lo nuevo
+  se enciende con `SAFEMODE_COLLAB_URL`, `SAFEMODE_ACCESS_URL` y `SAFEMODE_ACCESS_KEY` (el compose de persistencia ya las pasa): el gateway convierte el correo
+  de la sesión en un operador de Gestión de acceso (`POST /operators/provision`) y reemplaza la cabecera `X-Operator` por esa identidad. Todos los
+  autorizados **ven** el puesto; **configurar** (zonas compartidas) es solo para los de `SAFEMODE_ADMIN_EMAILS` la primera vez, y después manda PostgreSQL
+  (revocar con `PUT /permissions` no se deshace al reiniciar). El panel carga `puesto-sync.js` y comparte las zonas de las cámaras (solo los rectángulos),
+  con 409 si dos operadores editan la misma versión, más quién está en línea. Sin esas variables todo funciona como antes.
+
+> **Ojo con el escenario del laboratorio:** `tools reset` y `tools acceptance` restablecen los datos ficticios y **borran a los operadores reales** que dio de
+> alta el gateway. No los uso en un despliegue; si se corrieron, los operadores se vuelven a dar de alta en la siguiente petición, pero con los permisos iniciales.
