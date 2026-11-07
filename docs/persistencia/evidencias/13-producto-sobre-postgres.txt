@@ -1,0 +1,22 @@
+# El producto (gateway + motor de alertas) sobre PostgreSQL · 2026-11-06 23:23:52 SAPST (UTC-5)
+
+## 1. Un retiro sospechoso (BY_OTHER) a las 10:00 hora de Colombia (-05) escrito directo en PostgreSQL
+TRUNCATE TABLE
+INSERT 0 1
+
+## 2. El motor de alertas del gateway (contenedor, UTC) creo la alerta (el id no es 1: los INSERT revertidos de evidence.sql consumen la secuencia)
+ id | event_id |   alert_type   | severity |   event_occurred_at    | acknowledged |                               message                               
+----+----------+----------------+----------+------------------------+--------------+---------------------------------------------------------------------
+  4 |        1 | POSSIBLE_THEFT | HIGH     | 2026-11-06 15:00:00+00 | f            | Posible robo: la maleta fue retirada por alguien distinto del dueño
+(1 row)
+
+## 3. Lo que ve el panel: GET /report del gateway (la hora debe ser el MISMO instante: 10:00 -05 = 15:00 UTC)
+{'id': 1, 'occurredAt': '2026-11-06T15:00:00Z', 'cameraName': 'CAM 1', 'eventType': 'REMOVED', 'className': 'suitcase', 'removalKind': 'BY_OTHER'}
+
+## 4. Marcar como revisada (HU-16) y comprobar en la base
+UPDATE 1
+ id | acknowledged 
+----+--------------
+  4 | t
+(1 row)
+

@@ -1,0 +1,41 @@
+{
+  "mode": "smoke",
+  "utc": "2026-11-07T04:51:11.228032+00:00",
+  "results": [
+    {
+      "test": "arranque",
+      "passed": true,
+      "evidence": {
+        "decisions": "base",
+        "puesto": {
+          "id": "puesto-1",
+          "title": "Puesto principal",
+          "cameras": [
+            {
+              "id": 1,
+              "zone": {
+                "x": 0.05,
+                "y": 0.1,
+                "w": 0.6,
+                "h": 0.7
+              }
+            },
+            {
+              "id": 2,
+              "zone": null
+            }
+          ],
+          "preferences": {
+            "minSeverity": "MEDIUM",
+            "notifyBrowser": true,
+            "notifyTelegram": true,
+            "photoRetentionDays": 30
+          },
+          "version": 1,
+          "updatedBy": "seed",
+          "updatedAt": "2026-11-07T04:45:27.282787223Z"
+        }
+      }
+    }
+  ]
+}

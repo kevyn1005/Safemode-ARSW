@@ -1,0 +1,17 @@
+{
+  "mode": "redis-down",
+  "utc": "2026-11-07T04:14:34.913804+00:00",
+  "results": [
+    {
+      "test": "degradacion_redis",
+      "passed": false,
+      "evidence": {
+        "edit_status": 200,
+        "edit_ms": 4021,
+        "presence_status": 503,
+        "presence_ms": 4,
+        "presence": "{\"error\":\"Redis no disponible\"}"
+      }
+    }
+  ]
+}
