@@ -25,6 +25,13 @@
             <artifactId>h2</artifactId>
             <version>2.2.224</version>
         </dependency>
+        <!-- Driver de PostgreSQL: solo se usa si SAFEMODE_DB_URL empieza por jdbc:postgresql: (compose de persistencia, ADR 0005).
+             Con jdbc:h2:... no participa: cada driver solo acepta su propia URL. -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>42.7.4</version>
+        </dependency>
         <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>

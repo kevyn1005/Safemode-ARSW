@@ -1,6 +1,7 @@
 package com.safemode.alerts;
 
 import com.safemode.presence.PresenceEventStore;
+import com.safemode.presence.SqlDialect;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -16,7 +17,9 @@ import java.util.Optional;
 
 /**
  * Guarda las alertas en la tabla {@code alert} de H2. Puede vivir en la misma base que los eventos de presencia (mismo
- * archivo, AUTO_SERVER permite que el tracker y el alert-engine la abran a la vez desde procesos distintos).
+ * archivo, AUTO_SERVER permite que el tracker y el alert-engine la abran a la vez desde procesos distintos). Con
+ * SAFEMODE_DB_URL = jdbc:postgresql://... la tabla vive en PostgreSQL, con la misma restriccion UNIQUE que garantiza una
+ * sola alerta por evento (ADR 0005).
  */
 public class AlertStore implements AutoCloseable {
 
@@ -25,24 +28,28 @@ public class AlertStore implements AutoCloseable {
 
     private final Connection connection;
 
+    /** H2 (por defecto) o PostgreSQL (compose de persistencia, ADR 0005): ver {@link SqlDialect}. */
+    private final SqlDialect dialect;
+
     private AlertStore(Connection connection) {
         this.connection = connection;
+        this.dialect = SqlDialect.of(connection);
         try (Statement st = connection.createStatement()) {
             st.execute("""
                 CREATE TABLE IF NOT EXISTS alert (
-                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    id %s,
                     event_id BIGINT NOT NULL,
-                    event_occurred_at TIMESTAMP NOT NULL,
+                    event_occurred_at %s NOT NULL,
                     alert_type VARCHAR(40) NOT NULL,
                     severity VARCHAR(10) NOT NULL,
                     class_name VARCHAR(50) NOT NULL,
                     message VARCHAR(500) NOT NULL,
                     frame_path VARCHAR(500),
-                    created_at TIMESTAMP NOT NULL,
+                    created_at %s NOT NULL,
                     acknowledged BOOLEAN DEFAULT FALSE NOT NULL,
                     UNIQUE (event_id, event_occurred_at)
                 )
-                """);
+                """.formatted(dialect.idColumn(), dialect.timestampType(), dialect.timestampType()));
         } catch (SQLException e) {
             throw new IllegalStateException("No se pudo crear la tabla alert", e);
         }
@@ -56,6 +63,11 @@ public class AlertStore implements AutoCloseable {
     /** Abre la base indicada por SAFEMODE_DB_URL (p. ej. el servicio H2 de docker-compose), o el archivo local si no esta definida. */
     public static AlertStore fromEnvironment(String defaultFilePath) {
         return open(PresenceEventStore.jdbcUrlFor(System.getenv(PresenceEventStore.DB_URL_ENV), defaultFilePath));
+    }
+
+    /** Abre la base de esa URL JDBC (H2 o PostgreSQL); igual que {@code PresenceEventStore.forUrl}. */
+    public static AlertStore forUrl(String jdbcUrl) {
+        return open(jdbcUrl);
     }
 
     /** Base en memoria con ese nombre; PresenceEventStore.inMemory(mismoNombre) apunta a la misma base. */
@@ -88,7 +100,7 @@ public class AlertStore implements AutoCloseable {
             }
             String sql = "INSERT INTO alert (event_id, event_occurred_at, alert_type, severity, class_name, message, "
                     + "frame_path, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-            try (PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            try (PreparedStatement ps = dialect.prepareInsert(connection, sql)) {
                 ps.setLong(1, eventId);
                 ps.setTimestamp(2, Timestamp.from(eventOccurredAt));
                 ps.setString(3, type.name());

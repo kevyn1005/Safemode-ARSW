@@ -23,6 +23,9 @@ import java.util.Optional;
  * Engine (llega mas adelante en el release plan); este store no lo
  * reemplaza ni depende de el.
  *
+ * Si SAFEMODE_DB_URL apunta a PostgreSQL (jdbc:postgresql://..., compose de persistencia, ADR 0005) usa esa base con
+ * el mismo esquema; {@link SqlDialect} reune las 3 instrucciones que cambian. Sin la variable, H2 como siempre.
+ *
  * Cada evento puede llevar tambien la ruta (frame_path) de una foto PNG
  * guardada en disco en el momento exacto del evento (ver
  * ObjectTracker#saveFrameSnapshot): sirve como evidencia visual para el
@@ -34,10 +37,13 @@ public class PresenceEventStore implements AutoCloseable {
     public static final String DB_URL_ENV = "SAFEMODE_DB_URL";
 
     private final Connection connection;
+    /** H2 (por defecto) o PostgreSQL (compose de persistencia, ADR 0005): solo cambian 3 instrucciones, ver {@link SqlDialect}. */
+    private final SqlDialect dialect;
 
     public PresenceEventStore(String dbFilePath) {
         try {
             connection = DriverManager.getConnection("jdbc:h2:file:" + dbFilePath + ";AUTO_SERVER=TRUE");
+            dialect = SqlDialect.of(connection);
             createSchema();
         } catch (SQLException e) {
             throw new IllegalStateException("No se pudo abrir la base de datos H2 en " + dbFilePath, e);
@@ -81,6 +87,7 @@ public class PresenceEventStore implements AutoCloseable {
 
     private PresenceEventStore(Connection connection) {
         this.connection = connection;
+        this.dialect = SqlDialect.of(connection);
         try {
             createSchema();
         } catch (SQLException e) {
@@ -92,11 +99,11 @@ public class PresenceEventStore implements AutoCloseable {
         try (Statement st = connection.createStatement()) {
             st.execute("""
                 CREATE TABLE IF NOT EXISTS object_presence_event (
-                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    id %s,
                     tracked_object_id BIGINT NOT NULL,
                     class_name VARCHAR(50) NOT NULL,
                     event_type VARCHAR(20) NOT NULL,
-                    occurred_at TIMESTAMP NOT NULL,
+                    occurred_at %s NOT NULL,
                     pos_x INT NOT NULL,
                     pos_y INT NOT NULL,
                     width INT NOT NULL,
@@ -104,7 +111,7 @@ public class PresenceEventStore implements AutoCloseable {
                     person_nearby BOOLEAN,
                     frame_path VARCHAR(500)
                 )
-                """);
+                """.formatted(dialect.idColumn(), dialect.timestampType()));
             // Bases creadas antes de existir frame_path: CREATE TABLE IF NOT EXISTS no las toca.
             st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS frame_path VARCHAR(500)");
             st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS owner_person_id BIGINT");
@@ -215,7 +222,7 @@ public class PresenceEventStore implements AutoCloseable {
                     ps.executeUpdate();
                 }
             } else {
-                try (PreparedStatement ps = connection.prepareStatement("MERGE INTO camera (id, name) KEY (id) VALUES (?, ?)")) {
+                try (PreparedStatement ps = connection.prepareStatement(dialect.upsertCameraSql())) {
                     ps.setInt(1, cameraId);
                     ps.setString(2, clean);
                     ps.executeUpdate();
@@ -442,7 +449,7 @@ public class PresenceEventStore implements AutoCloseable {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
         long eventId;
-        try (PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+        try (PreparedStatement ps = dialect.prepareInsert(connection, sql)) {
             ps.setLong(1, trackedId);
             ps.setString(2, className);
             ps.setString(3, eventType);
