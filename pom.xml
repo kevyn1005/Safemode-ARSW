@@ -44,6 +44,7 @@
             <modules>
                 <module>service-common</module>
                 <module>access-service</module>
+                <module>collaboration-service</module>
             </modules>
         </profile>
     </profiles>
