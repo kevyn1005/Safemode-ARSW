@@ -23,11 +23,21 @@ import java.util.Optional;
  * {@code POST /tracker/start} y {@code POST /tracker/stop}. Como lanzan un programa, los POST exigen que la peticion
  * venga de una pagina del propio panel ({@code Origin}) y de un nombre de servidor esperado ({@code Host}, contra el
  * "DNS rebinding"); ninguna de las rutas recibe datos del navegador que lleguen al comando.
+ * <p>
+ * Si se le da un {@link PuestoApi} y un {@link OperatorDirectory} ({@link #withPuesto}), el panel tambien usa la configuracion
+ * compartida del puesto y la presencia: {@code GET/PUT /puesto}, {@code GET /puesto/permission} y {@code GET/POST /presence}.
+ * Exigen sesion de Google; el operador sale SOLO de la sesion (nunca de lo que mande el navegador) y los cambios exigen
+ * {@code Origin} y {@code Host} del panel igual que los demas POST.
  */
 public class DashboardHttpServer {
 
     private final HttpServer server;
     private static final int MAX_BODY_BYTES = 2048;
+    private static final int MAX_PUESTO_BODY_BYTES = 8192; // un puesto con 8 camaras y sus zonas pesa menos de 1 KB
+    private static final String JSON_UTF8 = "application/json; charset=utf-8";
+    private static final String ORIGIN_REJECTED = "Origen no autorizado";
+    private static final String METHOD_NOT_ALLOWED = "Metodo no permitido";
+    private static final String NOT_AN_OPERATOR = "Su cuenta no esta dada de alta como operador de este puesto";
 
     private final Path dashboardDir;
     private final Path photosDir;
@@ -36,6 +46,8 @@ public class DashboardHttpServer {
     private CameraDirectory cameras;           // null = sin edicion de camaras (las rutas /cameras dan 404)
     private EventReport report;                // null = sin reporte (la ruta /report da 404)
     private AuthService auth;                   // null = sin inicio de sesion (rutas abiertas, como antes)
+    private PuestoApi puesto;                   // null = sin configuracion compartida (las rutas /puesto y /presence dan 404)
+    private OperatorDirectory operators;
 
     public DashboardHttpServer(int port, Path dashboardDir, Path photosDir) throws IOException {
         this("localhost", port, dashboardDir, photosDir);
@@ -78,6 +90,16 @@ public class DashboardHttpServer {
         return this;
     }
 
+    /**
+     * Activa la configuracion compartida del puesto y la presencia (MongoDB y Redis, a traves del servicio de colaboracion).
+     * Necesita {@link #withAuth}: sin sesion no hay operador y las rutas dan 404. Se llama antes de {@link #start()}.
+     */
+    public DashboardHttpServer withPuesto(PuestoApi api, OperatorDirectory directory) {
+        this.puesto = api;
+        this.operators = directory;
+        return this;
+    }
+
     public void start() {
         server.start();
     }
@@ -114,6 +136,10 @@ public class DashboardHttpServer {
                 handleReport(exchange);
                 return;
             }
+            if (puesto != null && auth != null && isPuestoPath(path)) {
+                handlePuesto(exchange, path);
+                return;
+            }
             if (!"GET".equals(exchange.getRequestMethod())) {
                 send(exchange, 405, "text/plain; charset=utf-8", "Metodo no permitido".getBytes());
                 return;
@@ -143,7 +169,11 @@ public class DashboardHttpServer {
     /** Rutas que dan datos o ejecutan acciones: exigen sesion. */
     private static boolean requiresSession(String path) {
         return path.startsWith("/tracker/") || path.equals("/cameras") || path.startsWith("/cameras/")
-                || path.equals("/report") || path.startsWith(AlertJson.PHOTO_PREFIX);
+                || path.equals("/report") || path.startsWith(AlertJson.PHOTO_PREFIX) || isPuestoPath(path);
+    }
+
+    private static boolean isPuestoPath(String path) {
+        return path.equals("/puesto") || path.equals("/puesto/permission") || path.equals("/presence");
     }
 
     private void handleAuth(HttpExchange exchange, String path) throws IOException {
@@ -339,6 +369,118 @@ public class DashboardHttpServer {
             return;
         }
         sendCameras(exchange, 200);
+    }
+
+    /**
+     * La configuracion compartida del puesto y la presencia. El gateway solo reenvia: pone la identidad (de la sesion) y deja que
+     * el servicio de colaboracion valide el cuerpo, la version y el permiso. Si no se puede consultar a Gestion de acceso para
+     * saber quien es el operador, se responde 503 y no se reenvia nada (no se concede por falta de informacion).
+     */
+    private void handlePuesto(HttpExchange exchange, String path) throws IOException {
+        exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        String host = exchange.getRequestHeaders().getFirst("Host");
+        if (host == null || !allowedOrigins.contains("http://" + host)) {
+            sendError(exchange, 403, ORIGIN_REJECTED);
+            return;
+        }
+        String method = exchange.getRequestMethod();
+        try {
+            switch (path) {
+                case "/puesto" -> puestoRoute(exchange, method);
+                case "/puesto/permission" -> permissionRoute(exchange, method);
+                default -> presenceRoute(exchange, method); // "/presence": isPuestoPath no deja pasar otra ruta
+            }
+        } catch (IllegalStateException e) {
+            System.err.println("[PUESTO] No se pudo consultar al operador: " + e.getMessage());
+            sendError(exchange, 503, "No se pudo verificar al operador (Gestion de acceso no disponible)");
+        }
+    }
+
+    private void puestoRoute(HttpExchange exchange, String method) throws IOException {
+        switch (method) {
+            case "GET" -> replyFrom(exchange, puesto.puesto());
+            case "PUT" -> savePuesto(exchange);
+            default -> sendError(exchange, 405, METHOD_NOT_ALLOWED);
+        }
+    }
+
+    private void permissionRoute(HttpExchange exchange, String method) throws IOException {
+        if (!"GET".equals(method)) {
+            sendError(exchange, 405, METHOD_NOT_ALLOWED);
+            return;
+        }
+        String operator = operatorId(exchange);
+        if (operator == null) {
+            // una cuenta autorizada que no es operador puede VER el puesto, pero no configurarlo
+            JsonObject json = new JsonObject();
+            json.add("operator", com.google.gson.JsonNull.INSTANCE);
+            json.addProperty("canConfigure", false);
+            json.addProperty("source", "gateway");
+            sendJson(exchange, 200, json);
+        } else {
+            replyFrom(exchange, puesto.permission(operator));
+        }
+    }
+
+    private void presenceRoute(HttpExchange exchange, String method) throws IOException {
+        switch (method) {
+            case "GET" -> replyFrom(exchange, puesto.presence());
+            case "POST" -> heartbeat(exchange);
+            default -> sendError(exchange, 405, METHOD_NOT_ALLOWED);
+        }
+    }
+
+    private void savePuesto(HttpExchange exchange) throws IOException {
+        if (!fromOurOwnPanel(exchange)) {
+            sendError(exchange, 403, ORIGIN_REJECTED);
+            return;
+        }
+        String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
+        if (contentType == null || !contentType.toLowerCase().startsWith("application/json")) {
+            sendError(exchange, 415, "Se espera application/json");
+            return;
+        }
+        byte[] body = exchange.getRequestBody().readNBytes(MAX_PUESTO_BODY_BYTES + 1);
+        if (body.length > MAX_PUESTO_BODY_BYTES) {
+            sendError(exchange, 413, "Cuerpo demasiado grande");
+            return;
+        }
+        String operator = operatorId(exchange);
+        if (operator == null) {
+            sendError(exchange, 403, NOT_AN_OPERATOR);
+            return;
+        }
+        replyFrom(exchange, puesto.save(operator, new String(body, StandardCharsets.UTF_8)));
+    }
+
+    private void heartbeat(HttpExchange exchange) throws IOException {
+        if (!fromOurOwnPanel(exchange)) {
+            sendError(exchange, 403, ORIGIN_REJECTED);
+            return;
+        }
+        String operator = operatorId(exchange);
+        if (operator == null) {
+            sendError(exchange, 403, NOT_AN_OPERATOR);
+            return;
+        }
+        replyFrom(exchange, puesto.touchPresence(operator));
+    }
+
+    /** El operador de la sesion: {@code null} si la cuenta no esta dada de alta; {@link IllegalStateException} si no se pudo consultar. */
+    private String operatorId(HttpExchange exchange) {
+        return auth.userFor(exchange.getRequestHeaders().getFirst("Cookie"))
+                .flatMap(user -> operators.operatorFor(user.email()))
+                .orElse(null);
+    }
+
+    private static void replyFrom(HttpExchange exchange, PuestoApi.Reply reply) throws IOException {
+        send(exchange, reply.status(), JSON_UTF8, reply.body().getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static void sendError(HttpExchange exchange, int status, String message) throws IOException {
+        JsonObject json = new JsonObject();
+        json.addProperty("error", message);
+        sendJson(exchange, status, json);
     }
 
     /**
