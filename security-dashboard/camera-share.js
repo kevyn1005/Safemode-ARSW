@@ -30,6 +30,13 @@
   // ------------------------------------------------------------------ almacenamiento (puede estar bloqueado)
   function readStorage(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
   function writeStorage(key, value) { try { localStorage.setItem(key, value); } catch (e) { /* bloqueado: se ignora */ } }
+  /** Avisa que el operador confirmo sus zonas: puesto-sync.js las comparte con el puesto (solo los rectangulos; sin la huella). */
+  function announceZones(cfg) {
+    try {
+      var rects = cfg.zones.map(function (z) { return { id: z.id, x: z.x, y: z.y, w: z.w, h: z.h }; });
+      window.dispatchEvent(new CustomEvent('safemode:zones-saved', { detail: { zones: rects } }));
+    } catch (e) { /* sin eventos: las zonas quedan solo en este navegador, como siempre */ }
+  }
 
   function savedMode() { return Z && readStorage(MODE_KEY) === '2' ? 2 : 1; }
 
@@ -427,6 +434,7 @@
       if (!confirmed) { stopSharing('No se configuraron las zonas.'); return; }
       config = confirmed;
       writeStorage(ZONES_KEY, Z.serialize(config));
+      announceZones(config);
       paused = false;
       showSharing(!!(socket && socket.readyState === WebSocket.OPEN));
     });
@@ -484,6 +492,7 @@
           if (!confirmed) { stopSharing('No se configuraron las zonas.'); return; }
           config = confirmed;
           writeStorage(ZONES_KEY, Z.serialize(config));
+          announceZones(config);
         }
         showSharing(false);
         startTicker();

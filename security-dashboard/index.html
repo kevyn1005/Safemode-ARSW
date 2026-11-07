@@ -1624,6 +1624,7 @@
             <div id="cameraNamesSlot" data-button-class="btn"></div>
             <div id="reportSlot" data-button-class="btn"></div>
             <div id="notifySlot" data-button-class="btn"></div>
+            <div id="puestoSlot"></div>
             <button type="button" class="btn btn-unlock blink" id="unlockBtn">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M4 9h4l5-4v14l-5-4H4z"/>
@@ -1806,6 +1807,7 @@
 <script src="camera-names.js"></script>
 <script src="report.js"></script>
 <script src="browser-notifications.js"></script>
+<script src="puesto-sync.js"></script>
 <!-- ============ Lógica JavaScript de Interacción y WebSockets ============ -->
 <script>
   (function () {
@@ -2314,6 +2316,7 @@
       loginDialog.close();
       render();
       startRealtime();
+      window.dispatchEvent(new Event('safemode:login')); // los modulos de la pagina (puesto-sync.js) se enteran sin recargar
       if (state.soundOn) ensureAudio();
       if (!silent) $('consola').scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth' });
     }
@@ -2356,6 +2359,7 @@
       state.alerts = [];
       if (ws) ws.close();
       render();
+      window.dispatchEvent(new Event('safemode:logout'));
     }
     $('authBtn').addEventListener('click', function () { if (state.operator) logout(); else openLogin(); });
     $('lockedLogin').addEventListener('click', openLogin);
