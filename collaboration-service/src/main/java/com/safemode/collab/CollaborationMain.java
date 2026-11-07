@@ -13,7 +13,7 @@ import com.safemode.common.ServiceMetrics;
  * cache de permisos (Redis). Pregunta a Gestion de acceso (PostgreSQL) quien puede escribir.
  *
  * Variables de entorno: MONGO_URI, REDIS_HOST, REDIS_PORT, ACCESS_URL, LAB_ADMIN_KEY, DECISIONS_MODE (solucion | base),
- * PORT, BIND_HOST y los tiempos de espera MONGO_TIMEOUT_MS, REDIS_TIMEOUT_MS, ACCESS_CONNECT_TIMEOUT_MS,
+ * HISTORY_RETENTION_DAYS (dias que se conserva el historial de cambios; 90 por defecto), PORT, BIND_HOST y los tiempos de espera MONGO_TIMEOUT_MS, REDIS_TIMEOUT_MS, ACCESS_CONNECT_TIMEOUT_MS,
  * ACCESS_REQUEST_TIMEOUT_MS (cortos a proposito: con una dependencia caida se responde en milisegundos).
  */
 public class CollaborationMain {
@@ -29,6 +29,8 @@ public class CollaborationMain {
         PuestoStore puestos = new PuestoStore(Env.get("MONGO_URI", "mongodb://localhost:27017"), "safemode",
                 Env.getInt("MONGO_TIMEOUT_MS", 1500));
         seedWithRetries(puestos, 60);
+        HistoryStore history = new HistoryStore(puestos.historyCollection());
+        ensureHistoryIndexes(history, Env.getInt("HISTORY_RETENTION_DAYS", HistoryStore.DEFAULT_RETENTION_DAYS), 60);
 
         RedisPresenceStore redis = new RedisPresenceStore(Env.get("REDIS_HOST", "localhost"), Env.getInt("REDIS_PORT", 6379),
                 Env.getInt("REDIS_TIMEOUT_MS", 300));
@@ -43,7 +45,7 @@ public class CollaborationMain {
                 .add("access", access::isUp)
                 .start(3);
 
-        MiniHttpServer server = new CollaborationApi(puestos, redis, access, decisions, metrics,
+        MiniHttpServer server = new CollaborationApi(puestos, history, redis, access, decisions, metrics,
                 Env.get("LAB_ADMIN_KEY", "lab-admin"))
                 .build(Env.get("BIND_HOST", "0.0.0.0"), Env.getInt("PORT", 8110));
         server.start();
@@ -54,6 +56,20 @@ public class CollaborationMain {
         }));
         System.out.println("[collaboration] Escuchando en el puerto " + server.boundPort() + " · decisiones: " + decisions.mode());
         Thread.currentThread().join();
+    }
+
+    private static void ensureHistoryIndexes(HistoryStore history, int retentionDays, int attempts) throws InterruptedException {
+        for (int i = 1; ; i++) {
+            try {
+                history.ensureIndexes(retentionDays);
+                return;
+            } catch (MongoException e) {
+                if (i >= attempts) {
+                    throw e;
+                }
+                Thread.sleep(1000);
+            }
+        }
     }
 
     private static void seedWithRetries(PuestoStore puestos, int attempts) throws InterruptedException {

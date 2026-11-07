@@ -32,6 +32,7 @@ public class PuestoStore implements AutoCloseable {
 
     private final MongoClient client;
     private final MongoCollection<Document> collection;
+    private final MongoCollection<Document> history;
 
     public PuestoStore(String uri, String database, int timeoutMs) {
         MongoClientSettings settings = MongoClientSettings.builder()
@@ -43,6 +44,12 @@ public class PuestoStore implements AutoCloseable {
                 .build();
         this.client = MongoClients.create(settings);
         this.collection = client.getDatabase(database).getCollection("puestos");
+        this.history = client.getDatabase(database).getCollection("puesto_history");
+    }
+
+    /** La coleccion del historial de cambios (la usa {@link HistoryStore}; comparte el cliente de MongoDB). */
+    public MongoCollection<Document> historyCollection() {
+        return history;
     }
 
     /** La coleccion, para que {@link com.safemode.collab.decisions.Decisions} haga la operacion atomica. */
@@ -75,8 +82,12 @@ public class PuestoStore implements AutoCloseable {
         }
     }
 
-    /** Vuelve al documento ficticio, version 1 (solo para repetir pruebas). */
+    /**
+     * Vuelve al documento ficticio, version 1 (solo para repetir pruebas). Tambien borra el historial: con la version otra vez en 1,
+     * las entradas viejas chocarian con el indice unico {puesto_id, version} y el historial contaria una historia que ya no existe.
+     */
     public void reset() {
+        history.deleteMany(new Document());
         collection.replaceOne(Filters.eq("_id", SEED_ID), seedDocument(), new ReplaceOptions().upsert(true));
     }
 

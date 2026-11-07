@@ -29,6 +29,7 @@ import java.util.function.Supplier;
  * <pre>
  *   GET  /api/puestos/{id}        configuracion del puesto (publica en esta practica)
  *   PUT  /api/puestos/{id}        {expectedVersion, title?, preferences?, cameras?}  200 | 400 | 401 | 403 | 404 | 409 | 503
+ *   GET  /api/puestos/{id}/history  ?before=&limit=  cambios del puesto, del mas nuevo al mas viejo (cursor, 1 a 50 por pagina)
  *   GET  /api/permissions/{id}    permiso para PINTAR la pantalla (con cache de 60 s; no sirve para escribir)
  *   POST /api/presence/{id}       heartbeat: presencia con vencimiento de 20 s; 200 aunque Redis no este
  *   GET  /api/presence/{id}       quien esta en linea
@@ -43,6 +44,7 @@ public final class CollaborationApi {
     static final int PERMISSION_CACHE_TTL_SECONDS = 60;
 
     private final PuestoStore puestos;
+    private final HistoryStore history;
     private final PresenceStore store;
     private final Authority authority;
     private final AccessClient access;
@@ -50,9 +52,10 @@ public final class CollaborationApi {
     private final ServiceMetrics metrics;
     private final String adminKey;
 
-    public CollaborationApi(PuestoStore puestos, PresenceStore store, AccessClient access, Decisions decisions,
+    public CollaborationApi(PuestoStore puestos, HistoryStore history, PresenceStore store, AccessClient access, Decisions decisions,
                             ServiceMetrics metrics, String adminKey) {
         this.puestos = puestos;
+        this.history = history;
         this.store = store;
         this.authority = access;
         this.access = access;
@@ -69,6 +72,7 @@ public final class CollaborationApi {
                 Map.of("service", metrics.service(), "alive", true, "decisions", decisions.mode())));
         server.route("GET", "/api/puestos/{id}", this::getPuesto);
         server.route("PUT", "/api/puestos/{id}", this::putPuesto);
+        server.route("GET", "/api/puestos/{id}/history", this::getHistory);
         server.route("GET", "/api/permissions/{id}", this::getPermission);
         server.route("POST", "/api/presence/{id}", this::touchPresence);
         server.route("GET", "/api/presence/{id}", this::listPresence);
@@ -116,7 +120,38 @@ public final class CollaborationApi {
             conflict.put("currentVersion", current.get("version"));
             return Response.json(409, conflict);
         }
+        recordHistory(id, saved, operator, body);
         return Response.json(200, publicView(saved));
+    }
+
+    /**
+     * Anota el cambio en el historial DESPUES de guardarlo. Si MongoDB falla aqui, el cambio ya quedo: se pierde una entrada de
+     * auditoria (queda un hueco en las versiones y la metrica lo cuenta), nunca el cambio ni la respuesta al operador.
+     */
+    private void recordHistory(String puesto, Document saved, String operator, JsonObject body) {
+        long version = ((Number) saved.get("version")).longValue();
+        try {
+            history.record(puesto, version, (String) saved.get("title"), HistoryStore.changedFields(body), operator, Instant.now());
+            metrics.history("ok");
+        } catch (RuntimeException e) {
+            metrics.history("error");
+            System.err.println("[collaboration] No se pudo anotar la version " + version + " en el historial: " + e.getClass().getSimpleName());
+        }
+    }
+
+    // ---- historial de cambios (MongoDB, coleccion aparte) -----------------------------------------------------
+
+    private Response getHistory(Request request) {
+        String id = Guards.identifier(request.param("id"), "puesto");
+        Long before = HistoryStore.parseBefore(request.query().get("before"));
+        int limit = HistoryStore.parseLimit(request.query().get("limit"));
+        HistoryStore.Page page = mongo(() -> history.page(id, before, limit));
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("puesto", id);
+        view.put("items", page.items());
+        view.put("nextBefore", page.nextBefore());   // null = no hay mas paginas
+        view.put("limit", limit);
+        return Response.json(200, view);
     }
 
     // ---- permiso para la pantalla (cache en Redis) ------------------------------------------------------------

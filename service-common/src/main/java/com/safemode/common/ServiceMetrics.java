@@ -27,6 +27,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  *   <li>{@code safemode_cache_total{service,result}}: consultas de la cache de permisos (hit, miss, error).</li>
  *   <li>{@code safemode_conflicts_total}: ediciones rechazadas por version (409 esperados bajo edicion concurrente).</li>
  *   <li>{@code safemode_degraded_total{feature}}: operaciones que respondieron, pero degradadas (presencia sin Redis).</li>
+ *   <li>{@code safemode_history_writes_total{service,result}}: entradas del historial de cambios del puesto ({@code ok} o
+ *       {@code error}); un {@code error} es una entrada de auditoria perdida (el cambio ya habia quedado).</li>
  * </ul>
  * Los contadores de eventos raros se registran en cero al arrancar: sin eso, el primer evento no tendria muestra anterior
  * y {@code rate()} de Prometheus lo perderia.
@@ -73,6 +75,11 @@ public final class ServiceMetrics {
         registry.counter("safemode.degraded", "service", service, "feature", feature).increment();
     }
 
+    /** Una entrada del historial de cambios del puesto: {@code ok} o {@code error} (se escribe DESPUES del cambio). */
+    public void history(String result) {
+        registry.counter("safemode.history.writes", "service", service, "result", result).increment();
+    }
+
     /** Resultado de una consulta a la cache de permisos: {@code hit}, {@code miss} o {@code error}. */
     public void cache(String result) {
         registry.counter("safemode.cache", "service", service, "result", result).increment();
@@ -81,6 +88,9 @@ public final class ServiceMetrics {
     /** Deja los contadores de eventos raros en cero para que Prometheus los vea desde el primer scrape. */
     public void preregister(String... featuresDegradable) {
         registry.counter("safemode.conflicts", "service", service);
+        for (String result : new String[] {"ok", "error"}) {
+            registry.counter("safemode.history.writes", "service", service, "result", result);
+        }
         for (String result : new String[] {"hit", "miss", "error"}) {
             registry.counter("safemode.cache", "service", service, "result", result);
         }
