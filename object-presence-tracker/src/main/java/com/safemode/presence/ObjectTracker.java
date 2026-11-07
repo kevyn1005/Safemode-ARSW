@@ -29,6 +29,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
+import java.util.Arrays;
+import java.util.Objects;
 
 public class ObjectTracker {
 
@@ -447,9 +449,25 @@ public class ObjectTracker {
         }
     }
 
-    /** Resultado del analisis de un retiro: lo que se guarda, mas lo que hace falta para describir a quien lo retiro. */
-    private record RemovalAnalysis(RemovalInfo info, RemovalKind kind, TrackedObject.NearPerson remover, Keypoint[] pose) {}
+   /** Resultado del analisis de un retiro: lo que se guarda, mas lo que hace falta para describir a quien lo retiro. */
+    private static final class RemovalAnalysis {
+        private final RemovalInfo info;
+        private final RemovalKind kind;
+        private final TrackedObject.NearPerson remover;
+        private final Keypoint[] pose;
 
+        RemovalAnalysis(RemovalInfo info, RemovalKind kind, TrackedObject.NearPerson remover, Keypoint[] pose) {
+            this.info = info;
+            this.kind = kind;
+            this.remover = remover;
+            this.pose = pose;
+        }
+
+        RemovalInfo info() { return info; }
+        RemovalKind kind() { return kind; }
+        TrackedObject.NearPerson remover() { return remover; }
+        Keypoint[] pose() { return pose; }
+    }
     /**
      * Personas junto al objeto (dentro de {@link #REMOVAL_PROXIMITY_PX} o del radio escalado), con su recorte y la foto que las muestra
      * junto al objeto. La clave es el id de persona; el mas cercano se puede elegir por {@code distance}.

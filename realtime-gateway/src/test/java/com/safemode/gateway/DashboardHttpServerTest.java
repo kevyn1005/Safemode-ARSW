@@ -43,6 +43,9 @@ class DashboardHttpServerTest {
     @AfterEach
     void tearDown() {
         server.stop();
+        if (trackerServer != null) {
+            trackerServer.stop();
+        }
     }
 
     private HttpResponse<byte[]> get(String path) throws Exception {
@@ -137,13 +140,6 @@ class DashboardHttpServerTest {
         trackerServer = new DashboardHttpServer("localhost", port, tmp.resolve("dashboard"), tmp.resolve("photos"), fake,
                 java.util.Set.of(panelOrigin));
         trackerServer.start();
-    }
-
-    @AfterEach
-    void stopTrackerServer() {
-        if (trackerServer != null) {
-            trackerServer.stop();
-        }
     }
 
     private HttpResponse<String> send(String method, String path, String origin) throws Exception {
