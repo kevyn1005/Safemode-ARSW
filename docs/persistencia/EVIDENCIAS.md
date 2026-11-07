@@ -25,7 +25,8 @@ Todas las horas en **UTC-5 (Colombia)**, 6 de noviembre de 2026. «Base» = `DEC
 | **Autoridad detenida (DESPUÉS)** | 23:56:22 – 23:56:45 | `09-authority-down-solucion.json`, `09a`, `09b`, `09c-guardar-tras-restaurar.txt` | Edición **503** en 11 ms **aunque la caché tenía el permiso**; la pantalla sigue pintando desde la caché (`source:cache`). Al restaurar Gestión: intento 1 -> HTTP 200 | Se prefiere rechazar a escribir con un permiso que no se pudo verificar |
 | Producto sobre PostgreSQL | 23:23 (corrida previa) | `13-producto-sobre-postgres.txt` | Un retiro `BY_OTHER` insertado a las 10:00 (-05) → el motor del gateway (contenedor, UTC) crea la alerta `POSSIBLE_THEFT`/`HIGH`; `/report` la muestra a las `15:00:00Z`; revisar la alerta funciona | El flujo evento → alerta funciona sobre PostgreSQL y la hora es el mismo instante en el computador y en el contenedor |
 | Pruebas Java contra PostgreSQL | 23:23 (corrida previa) | (salida de Maven) | `PostgresStoresIntegrationTest`: **3/3** desde el computador (hora de Colombia) contra el PostgreSQL del compose | Eventos, alertas (UNIQUE), cámaras (upsert) y la hora funcionan con el cliente en otra zona horaria |
-| Reinicio de PostgreSQL | 00:01 – 00:02 (posterior) | `15-reinicio-postgres.txt` | Con PostgreSQL detenido, Gestión responde **503** y la configuración no guarda nada. Al restaurarlo, **Gestión se recupera sola** (HTTP 200 al primer intento). **El gateway no**: sigue sin leer los eventos hasta que se reinicia; tras reiniciarlo crea la alerta pendiente | Limitación de diseño previa (una sola conexión JDBC en los almacenes): queda documentada, no oculta |
+| Reinicio de PostgreSQL (ANTES) | 00:01 – 00:02 (posterior) | `15-reinicio-postgres.txt` | Con PostgreSQL detenido, Gestión responde **503** y la configuración no guarda nada. Al restaurarlo, **Gestión se recupera sola** (HTTP 200 al primer intento). **El gateway no**: sigue sin leer los eventos hasta que se reinicia; tras reiniciarlo crea la alerta pendiente | Limitación de diseño previa (una sola conexión JDBC en los almacenes): queda documentada, no oculta |
+| **Reinicio de PostgreSQL (DESPUÉS, con reconexión)** | 7-nov 08:55:42 – 08:56:20 (UTC-5) | `16-reinicio-postgres-con-reconexion.txt` | Con PostgreSQL detenido: `safemode_dependency_up{service="gateway"}` **0**, `probe_success` **0**, `up{job="gateway"}` sigue en **1**. Al volver (acepta conexiones en ~1 s): `dependency_up` regresa a 1 en 8 s (scrape de 5 s) y **un retiro `BY_OTHER` nuevo genera la alerta (id 7) sin reiniciar el gateway** (`StartedAt` idéntico antes y después). Logs: `[BD] Se perdio la conexion…` y `[BD] Reconectado…` (una vez por almacén) | `ReconnectingConnection` valida la conexión antes de cada operación y reabre la suya si murió: la limitación de la fila anterior queda resuelta. La sonda `/ready` y `dependency_up` lo muestran mientras dura la caída |
 | Carga k6, base | 23:52:55 – 23:54:40 | `05-k6-carga-base.json`; `capturas/grafana-2…` | P95 del cliente **14,71 ms**, 5376 peticiones, 0 % de fallos. Backend (Prometheus, cubetas): ≈ 9,3 ms. Umbrales cumplidos | Referencia de la lectura |
 | Carga k6, solución | 23:56:53 – 23:58:38 | `10-k6-carga-solucion.json`; `capturas/grafana-3…` | P95 del cliente **13,26 ms**, 5448 peticiones, 0 % de fallos. Backend ≈ 9,2 ms. Umbrales cumplidos | La diferencia con la base es **ruido**: k6 solo lee y la ruta de lectura no cambió |
 | Acceptance final | 23:58:38 – 23:59:09 | `11-acceptance-final.json` | **4/4 `passed:true`, código 0** (tras haber detenido y restaurado Redis y Gestión) | El sistema vuelve a un estado correcto tras las fallas |
@@ -54,6 +55,23 @@ k6 mide desde el cliente (incluye Nginx, la red y el tiempo de espera de cada so
 cubetas del histograma, así que es aproximado (el resultado cae en el límite superior de una cubeta). Aquí: k6 ≈ 14,7 / 13,3 ms
 y backend ≈ 9,3 / 9,2 ms.
 
+## Observabilidad unida (7 de noviembre)
+
+Dos Prometheus/Grafana (el de la rama de Kevyn y el de persistencia) publicaban los mismos puertos. `docker-compose.persistencia.yml` ya tiene **uno**.
+Comprobado levantando el stack completo (`up -d --build --wait`, 11 contenedores sanos) y consultando la API de Prometheus y la de Grafana:
+
+| Comprobación | Resultado |
+|---|---|
+| Objetivos de Prometheus | `access`, `collaboration`, `gateway` y `ready-probe`: los 4 en **`up`**, sin errores |
+| `safemode_dependency_up` | `gateway → database` **1**, `access → postgres` 1, `collaboration → mongodb / redis / access` 1 (todas con el mismo nombre) |
+| `probe_success{job="ready-probe"}` | **1** (el gateway puede consultar su base) |
+| Dashboards en Grafana (carpeta ARSW) | *Punto de partida* (2 paneles), *ARSW-EQP-01 · Persistencia* (8) y **SAFEMODE · Producto (gateway y alertas)** (8, nuevo) |
+| Las 8 consultas del dashboard nuevo contra Prometheus | Todas responden `success`. Con 2 retiros sospechosos: alertas `HIGH` = 2 en 5 min, P95 evento → alerta ≈ **0,48 s**, heap ≈ 24 MB, CPU del proceso ≈ 0,06 % |
+| Pruebas contra PostgreSQL real (`SAFEMODE_TEST_PG_URL`) | `PostgresStoresIntegrationTest` **3/3** con los almacenes ya reconectables |
+
+El panel de latencia del dashboard nuevo dibuja la meta de la historia de usuario (menos de 5 s) como línea roja; el P95 sale `NaN` mientras no haya
+alertas (no hay observaciones del histograma). No se tomaron capturas de Grafana de este dashboard: se verificó por la API.
+
 ## Hallazgos que salieron de medir (no de suponer)
 
 1. **La «degradación lenta» es DNS.** Con un contenedor detenido, resolver su nombre tarda ≈ 4 s (`12-dns-contenedor-detenido.txt`) y ningún
@@ -75,7 +93,8 @@ No hay pruebas de aceptación fallidas. Lo que **no está resuelto**, con su evi
 2. **No medimos el costo de la llamada extra a Gestión en las escrituras bajo carga**: k6 solo hace lecturas.
 3. **El panel del producto no usa todavía estos servicios** (se integra después del inicio de sesión, ADR 0004): la consola del escenario es la
    que los ejercita.
-4. **PostgreSQL como punto único de falla del producto:** ver el ADR (*Consecuencias*).
+4. **PostgreSQL como punto único de falla del producto:** el gateway ya **se recupera solo** de un reinicio (`16-…`); sigue sin haber réplica. Si la base
+   está caída justo cuando el tracker registra un evento, la corrida del tracker termina (ver el ADR, *Consecuencias*).
 
 ## Hechos del proceso
 

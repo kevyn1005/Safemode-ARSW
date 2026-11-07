@@ -87,8 +87,17 @@ errores de programación).
 
 **Observabilidad.** Prometheus recoge `/metrics` de cada servicio cada 5 s; los nombres llevan el prefijo `safemode_` y usan Micrometer
 1.13.6, **la misma librería y versión que la rama de observabilidad del gateway**, para poder unirlas. La ruta de cada métrica es la
-**plantilla** (`/api/puestos/{id}`), nunca el id real. Grafana provisiona dos dashboards (*Punto de partida*, 2 paneles, y
-*ARSW-EQP-01 · Persistencia*, los 8 paneles); k6 genera carga de lectura.
+**plantilla** (`/api/puestos/{id}`), nunca el id real. Grafana provisiona tres dashboards (*Punto de partida*, 2 paneles;
+*ARSW-EQP-01 · Persistencia*, los 8 paneles; y *SAFEMODE · Producto*, 8 paneles del gateway); k6 genera carga de lectura.
+
+**Una sola observabilidad (7 de noviembre).** Hasta ahora había dos Prometheus/Grafana que chocaban en los puertos 9090 y 3000: el de la
+rama de Kevyn (gateway corriendo en el computador, `docker-compose.observability.yml`) y el de persistencia (access y collaboration). El
+compose de persistencia ya tiene **uno solo** con cuatro objetivos: `access`, `collaboration`, `gateway` (`realtime-gateway:9464`) y la sonda
+`ready-probe` (blackbox → `/ready` del gateway, que da 200 solo si el gateway puede consultar su base). El gateway publica además
+`safemode_dependency_up{service="gateway",dependency="database"}` con el **mismo nombre** que los otros servicios, medida en un hilo aparte (un
+scrape nunca espera a la base). Lo que distingue esta práctica se ve en un solo gráfico: con PostgreSQL detenido, `up{job="gateway"}` sigue en 1
+pero `dependency_up` y `probe_success` bajan a 0 (`evidencias/16-…`). El compose de Kevyn sigue valiendo para el gateway sin Docker; no se
+levanta junto con este.
 
 ## Alternativa considerada
 
@@ -140,11 +149,24 @@ de la alerta por evento la da PostgreSQL de forma declarativa.
 - **El pool de Redis debe validar la conexión.** Tras reiniciar Redis, las conexiones que el pool guardaba están muertas: la primera
   operación fallaba (cuenta como `error` en la métrica de caché y dejaba un heartbeat «degradado» sin motivo, y una caché sin llenar). Se
   corrigió con `testOnBorrow` y se comprueba con `tools redis-up`.
-- **PostgreSQL es ahora un punto único de falla para el flujo del producto** (igual que H2 lo era). `PresenceEventStore` y `AlertStore`
-  conservan **una sola conexión JDBC** y no se reconectan solos. Probado (`evidencias/15-reinicio-postgres.txt`): tras reiniciar PostgreSQL,
-  Gestión de acceso (pool con reconexión) **se recupera sola** —mientras tanto responde 503 y no guarda nada—, pero **el gateway sigue fallando hasta
-  que se reinicia** (`docker compose restart realtime-gateway`). Es la misma limitación que ya existía con el servidor H2 (ADR 0002); la mejora
-  natural es un pool con reconexión en los dos almacenes, que **no se hizo** para no tocar código del producto que ya funciona.
+- **PostgreSQL sigue siendo un punto único de falla para el flujo del producto, pero ya no obliga a reiniciar nada** (igual que H2 lo era).
+  *Antes (6-7 de noviembre):* `PresenceEventStore` y `AlertStore` guardaban **una sola conexión JDBC** sin reconexión: tras reiniciar PostgreSQL,
+  Gestión de acceso (pool) se recuperaba sola pero el gateway fallaba hasta `docker compose restart realtime-gateway`
+  (`evidencias/15-reinicio-postgres.txt`; la misma limitación existía con el servidor H2 del ADR 0002).
+  *Ahora:* los dos almacenes piden la conexión a `ReconnectingConnection`, que la **valida antes de cada operación** (`Connection.isValid`) y,
+  si murió, abre otra con la misma URL. Tres decisiones: (1) se valida antes de usar en vez de reintentar tras el error, para no ejecutar
+  nada a medias sobre una conexión muerta; el costo es una ida y vuelta corta por operación; (2) tras un intento fallido se espera 1 s antes del
+  siguiente (el motor consulta cada 250 ms y cada consulta pagaría el intento de conexión); (3) con PostgreSQL se limita la conexión a 3 s
+  (`connectTimeout`), porque sin límite el ciclo de fotogramas del tracker podía colgarse. Se registra una línea al perder la base y otra al
+  recuperarla. Medido (`evidencias/16-reinicio-postgres-con-reconexion.txt`): con PostgreSQL detenido, `dependency_up` y `probe_success`
+  bajan a 0; al volver, el gateway **sin reiniciarse** vuelve a leer y crea la alerta del retiro nuevo. Se cubre con
+  `ReconnectingConnectionTest` y `DatabaseRestartTest` (servidor H2 real que se apaga y se enciende) y con las pruebas contra PostgreSQL real.
+  **Costo:** mientras la base está caída, cada operación del gateway falla igual (503/«no se pudo leer»); solo cambia que **se recupera sola**.
+  **Efecto en el tracker (leído en el código, no probado con cámara):** el tracker solo toca la base al registrar un evento. Antes, la primera vez
+  que lo hacía después de un reinicio de la base fallaba con la conexión muerta; ahora reconecta y sigue. **Límite que se mantiene:** si la
+  base está caída *justo* cuando el tracker registra un evento, la excepción sale del bucle de fotogramas y **termina la corrida del tracker**
+  (`runCamera` no la atrapa; es el comportamiento de antes y no se cambió para no tocar el seguimiento). Mejora natural: atrapar el fallo al
+  guardar el evento y reintentarlo con el siguiente fotograma.
 
 **La ventana entre validar el permiso y guardar:**
 Gestión (PostgreSQL) y Colaboración (MongoDB) **no comparten una transacción**. El servidor primero pregunta el permiso y después guarda.
@@ -195,6 +217,8 @@ Todo está en [`docs/persistencia/EVIDENCIAS.md`](../persistencia/EVIDENCIAS.md)
 | Restricciones de PostgreSQL | — | 6 errores previstos, 0 filas de prueba que queden | `02-sql-restricciones.txt` |
 | El producto sobre PostgreSQL | — | evento → alerta (`POSSIBLE_THEFT`), hora correcta | `13-producto-sobre-postgres.txt` |
 | Acceptance final | — | **4/4 `passed:true`, código 0** | `11-acceptance-final.json` |
+| Gateway tras reiniciar PostgreSQL | Falla hasta reiniciar el gateway (0 filas; `docker compose restart`) | **Se recupera solo**: `dependency_up` 0 → 1, `probe_success` 0 → 1, crea la alerta nueva, `StartedAt` del gateway sin cambio | `15` → `16-reinicio-postgres-con-reconexion.txt` |
+| Observabilidad unida | Dos Prometheus/Grafana en los mismos puertos | Un Prometheus con 4 objetivos `up`, 3 dashboards, `gateway → database = 1` | `EVIDENCIAS.md`, sección *Observabilidad unida* |
 | Carga k6 (P95 del cliente) | 14,71 ms | 13,26 ms | `05` y `10`; `capturas/grafana-2`, `grafana-3` |
 
 **Límites que las pruebas NO demuestran:**
@@ -205,7 +229,9 @@ Todo está en [`docs/persistencia/EVIDENCIAS.md`](../persistencia/EVIDENCIAS.md)
   Gestión en las escrituras. La diferencia de P95 entre las dos cargas es ruido de medición: la ruta de lectura no cambió.
 - **No hay autenticación real:** la identidad es una cabecera. El panel del producto **no usa todavía** estos servicios (se integra tras
   el inicio de sesión, ADR 0004).
-- El **gateway no se recupera solo** de un reinicio de PostgreSQL (se probó; ver *Consecuencias*); la recuperación del tracker no se probó (usa el mismo almacén).
+- La **recuperación del tracker** tras un reinicio de la base no se probó con cámara real (usa el mismo almacén que el gateway, que sí se probó). Si
+  la base está caída justo cuando registra un evento, la corrida del tracker termina (ver *Consecuencias*). La reconexión solo se probó con H2
+  (pruebas automáticas) y PostgreSQL (Docker).
 
 ## Participación y herramientas
 
@@ -227,7 +253,8 @@ MongoDB y PostgreSQL.
 **Apoyo de asistentes (declarado):** se usó **Claude Code** (asistente de IA de Anthropic) para: analizar el proyecto y el enunciado,
 escribir los módulos nuevos y el soporte de PostgreSQL, las pruebas, el compose, el dashboard y los scripts de prueba, ejecutar y medir
 los experimentos, y redactar la matriz, este ADR y las evidencias. Los hallazgos de DNS y del pool de Redis salieron de **medir**, no de
-suponer. Todos los integrantes deben poder explicar el código entregado y las decisiones; las explicaciones de la matriz y de este ADR son
+suponer. La ampliación del 7 de noviembre (reconexión de los almacenes y observabilidad unida) también se hizo con Claude Code, y se
+verificó con pruebas y con el reinicio real de PostgreSQL. Todos los integrantes deben poder explicar el código entregado y las decisiones; las explicaciones de la matriz y de este ADR son
 las que deben defender.
 
 ## Cómo reproducir

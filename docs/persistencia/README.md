@@ -43,6 +43,10 @@ flowchart TD
 Docker Desktop (o Docker Engine) **en ejecución** y Docker Compose v2 con `--wait`. No hace falta Java, Python ni las bases instaladas.
 Se asignan ≈ 6 GB de RAM a Docker como punto de partida. La primera vez descarga imágenes y compila (varios minutos).
 
+Antes del primer arranque: `Copy-Item .env.example .env` y complete `SAFEMODE_GOOGLE_CLIENT_ID` y `SAFEMODE_ALLOWED_EMAILS` (el gateway no
+arranca sin ellos). El proyecto de Docker se llama **`safemode-arsw`** (fijo en `docker-compose.yml`): sus contenedores, red y volúmenes no se
+mezclan con los del laboratorio (`arsw-persistencia`). Los dos usan los mismos puertos (8080, 9090, 3000): no los levante a la vez.
+
 ```powershell
 # PowerShell, desde la raíz del repo
 docker compose -f docker-compose.yml -f docker-compose.persistencia.yml up -d --build --wait --wait-timeout 300 `
@@ -66,13 +70,17 @@ docker compose -f docker-compose.yml -f docker-compose.persistencia.yml run --rm
 
 Los puertos web van solo en `127.0.0.1`. MongoDB y Redis no publican puertos; PostgreSQL sí (`127.0.0.1:5433`) porque el tracker corre
 en el computador. Las identidades `ana`, `luis` y `marta` se simulan con la cabecera `X-Operator`: **no hay autenticación de producción**.
-No exponga este entorno a Internet. Para cambiar puertos o claves: `Copy-Item persistencia\.env.example .env`.
+No exponga este entorno a Internet. Para cambiar puertos o claves (y poner el inicio de sesión con Google): `Copy-Item .env.example .env` y editar `.env`.
 
-Grafana trae la fuente **Prometheus** y dos dashboards en la carpeta **ARSW**: *SAFEMODE · Punto de partida* (2 paneles) y
-*ARSW-EQP-01 · Persistencia (Safemode)* (los 8). Espere 15–30 s al primer *scraping*.
+Grafana trae la fuente **Prometheus** y tres dashboards en la carpeta **ARSW**: *SAFEMODE · Punto de partida* (2 paneles),
+*ARSW-EQP-01 · Persistencia (Safemode)* (los 8 del laboratorio) y *SAFEMODE · Producto (gateway y alertas)* (8 paneles del gateway: alertas
+por severidad, latencia evento → alerta, sonda `/ready`, dependencias y JVM). Espere 15–30 s al primer *scraping*.
 
-> **No lo use junto con la rama de observabilidad de Kevyn** (`docker-compose.observability.yml`): ambos publican Prometheus en el 9090 y
-> Grafana en el 3000. Cuando se unan las ramas, el *job* del gateway ya está previsto, comentado, en `persistencia/monitoring/prometheus.yml`.
+**Una sola observabilidad.** Este Prometheus lee cuatro objetivos (`persistencia/monitoring/prometheus.yml`): `access`, `collaboration`, el
+`gateway` del producto (métricas de la rama de Kevyn, puerto 9464 del contenedor) y la sonda `ready-probe` (blackbox → `/ready` del gateway).
+Todo con el prefijo `safemode_` y la misma librería (Micrometer 1.13.6), y `safemode_dependency_up` incluye ahora `gateway → database`.
+`docker-compose.observability.yml` (el de Kevyn) sigue sirviendo para correr el gateway **en el computador, sin Docker**; **no se usa junto con
+este compose**: los dos publican Prometheus en el 9090 y Grafana en el 3000.
 
 ## 3. Las tres decisiones (dónde están en el código)
 
@@ -186,7 +194,24 @@ $env:SAFEMODE_DB_URL = "jdbc:postgresql://localhost:5433/safemode?user=safemode&
 mvn -pl object-presence-tracker exec:java "-Dexec.mainClass=com.safemode.presence.ObjectPresenceTrackerTest"
 ```
 
-### 4.6 Pruebas Java
+### 4.6 Reinicio de la base de datos (el gateway se recupera solo)
+
+Los almacenes de eventos y alertas ya no guardan una conexión fija: `ReconnectingConnection` la valida antes de cada operación y, si la base
+se reinició, abre otra con la misma URL (con una espera de 1 s entre intentos fallidos para no cargar la consulta de 250 ms del motor).
+
+```powershell
+dc restart postgres                      # el gateway pierde la conexión; en /metrics: safemode_dependency_up{dependency="database"} baja a 0
+Start-Sleep 10
+# el gateway vuelve a leer sin reiniciarlo: este retiro sospechoso debe generar alerta
+dc exec -T postgres psql -U safemode -d safemode -c "INSERT INTO object_presence_event (tracked_object_id, class_name, event_type, occurred_at, pos_x, pos_y, width, height, person_nearby, removal_kind, camera_id, remover_looks_like_owner) VALUES (1, 'suitcase', 'REMOVED', now(), 10, 10, 50, 80, true, 'BY_OTHER', 1, false);"
+Start-Sleep 3
+dc exec -T postgres psql -U safemode -d safemode -c "SELECT id, event_id, alert_type, severity FROM alert ORDER BY id DESC LIMIT 2;"
+dc logs --tail=10 realtime-gateway       # busque: [BD] Se perdio la conexion ... / [BD] Reconectado a la base de datos
+```
+
+Las pruebas automáticas (`ReconnectingConnectionTest`, `DatabaseRestartTest`) apagan y encienden un servidor H2 real; no necesitan Docker.
+
+### 4.7 Pruebas Java
 
 ```powershell
 mvn test                                         # todo el proyecto (incluye los módulos nuevos); no necesita Docker
@@ -211,16 +236,17 @@ dc down -v                                       # BORRA los volúmenes de Postg
   eventos raros (409, degradación) están en cero desde el arranque.
 - **Cambios de código no aplicados:** `dc up -d --build collaboration-service access-service`.
 - **503 tras las pruebas:** `dc start redis access-service` y revise `dc logs`.
-- **Tras reiniciar PostgreSQL** Gestión de acceso se recupera sola, pero el gateway no (una sola conexión JDBC): `dc restart realtime-gateway`
-  (ver `evidencias/15-reinicio-postgres.txt`).
+- **Tras reiniciar PostgreSQL** todo se recupera solo (ver 4.6): Gestión de acceso (pool) y, desde que los almacenes usan
+  `ReconnectingConnection`, también el gateway. Antes había que hacer `dc restart realtime-gateway` (`evidencias/15-reinicio-postgres.txt`).
 - **Tras detener y restaurar Redis o Gestión** pueden pasar ≈ 2 s antes de que se vuelvan a usar (ventana de fallo rápido); `tools redis-up` lo mide.
 - **Las imágenes de `maven` fallan por red:** la primera compilación descarga dependencias de Maven Central.
 
 ## 6. Cómo se une con el resto del proyecto
 
-- **Observabilidad (rama `kevynobservabilidad`):** usa Micrometer 1.13.6 en el gateway (`safemode_alerts_total`, `safemode_alert_latency_*`).
-  Estos servicios usan **la misma librería y versión** y el prefijo `safemode_`, así que sus métricas se pueden unir en un solo Prometheus
-  agregando un *job* al `prometheus.yml`.
+- **Observabilidad (rama `kevynobservabilidad`): ya unida.** El gateway usa Micrometer 1.13.6 (`safemode_alerts_total`,
+  `safemode_alert_latency_*`) y estos servicios **la misma librería y versión** con el prefijo `safemode_`, así que el `prometheus.yml`
+  de este compose lee los tres (jobs `gateway`, `access` y `collaboration`) más la sonda `/ready`, y el dashboard *SAFEMODE · Producto*
+  muestra el lado del gateway. El gateway publica además `safemode_dependency_up{dependency="database"}`, con el mismo nombre que los otros.
 - **Login con Google (rama `Juli/unión`):** hoy la lista de correos autorizados es una variable de entorno. `access-service` es el
   lugar natural para reemplazarla: operadores y membresías en PostgreSQL, con revocación inmediata y auditoría. La cabecera `X-Operator`
   se sustituye por el correo de la sesión; el modelo de permisos no cambia.
