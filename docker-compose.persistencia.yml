@@ -114,6 +114,12 @@ services:
       access-service: {condition: service_healthy}
 
   # ---- Observabilidad ---------------------------------------------------------------------------------------------
+  # UN solo Prometheus y UN solo Grafana para todo: los servicios de persistencia (access, collaboration) y el gateway del
+  # producto (metricas de la rama de observabilidad de Kevyn). No se usa junto con docker-compose.observability.yml: los dos
+  # publican el 9090 y el 3000 (ese archivo es para correr el gateway en el computador, sin Docker).
+  blackbox:
+    image: prom/blackbox-exporter:v0.25.0
+
   prometheus:
     image: prom/prometheus:v3.1.0
     ports:
@@ -121,6 +127,8 @@ services:
     volumes:
       - ./persistencia/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - promdata:/prometheus
+    depends_on:
+      - blackbox
 
   grafana:
     image: grafana/grafana:11.5.1

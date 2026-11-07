@@ -1,0 +1,274 @@
+{
+  "uid": "safemode-producto",
+  "title": "SAFEMODE · Producto (gateway y alertas)",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "tags": [
+    "safemode",
+    "producto",
+    "observabilidad"
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Servicios observables · 1 = scrape exitoso",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up",
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        },
+        "overrides": []
+      },
+      "description": "Un solo Prometheus lee el gateway del producto y los dos servicios de persistencia. Solo prueba que /metrics se pudo leer; NO prueba que el servicio pueda hacer su trabajo (ver los dos paneles siguientes)."
+    },
+    {
+      "id": 2,
+      "title": "Sonda funcional /ready · 1 = el gateway puede consultar su base",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "probe_success{job=\"ready-probe\"}",
+          "legendFormat": "gateway /ready"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        },
+        "overrides": []
+      },
+      "description": "blackbox pide /ready al gateway. Un gateway vivo con la base caida tiene up = 1 pero probe_success = 0: up no es disponibilidad funcional."
+    },
+    {
+      "id": 3,
+      "title": "Dependencias · 1 responde, 0 caída",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "safemode_dependency_up",
+          "legendFormat": "{{service}} → {{dependency}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        },
+        "overrides": []
+      },
+      "description": "gateway → database (la base de eventos y alertas: H2 o PostgreSQL), collaboration → redis/mongo/access, access → postgres. Si la base se reinicia, gateway → database baja a 0 y vuelve a 1 sola en cuanto los almacenes se reconectan (sin reiniciar el gateway)."
+    },
+    {
+      "id": 4,
+      "title": "Alertas nuevas por severidad (últimos 5 min)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (severity) (increase(safemode_alerts_total[5m]))",
+          "legendFormat": "{{severity}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        },
+        "overrides": []
+      },
+      "description": "Cuántas alertas creó el motor, por severidad (HIGH = posible robo). Los contadores arrancan en cero con el gateway."
+    },
+    {
+      "id": 5,
+      "title": "Latencia evento → alerta (s)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(safemode_alert_latency_seconds_bucket[5m])))",
+          "legendFormat": "P95"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(safemode_alert_latency_seconds_sum[5m])) / clamp_min(sum(rate(safemode_alert_latency_seconds_count[5m])), 0.000001)",
+          "legendFormat": "media"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "description": "Segundos desde que el tracker registra el retiro hasta que el motor crea la alerta. La línea roja es la meta de la historia de usuario (menos de 5 s). El P95 se estima con las cubetas del histograma (0,5 / 1 / 2 / 3 / 5 / 10 s)."
+    },
+    {
+      "id": 6,
+      "title": "Alertas totales desde que arrancó el gateway",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (severity) (safemode_alerts_total)",
+          "legendFormat": "{{severity}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        },
+        "overrides": []
+      },
+      "description": "Contador acumulado por severidad (se reinicia a cero cuando se reinicia el gateway)."
+    },
+    {
+      "id": 7,
+      "title": "Memoria heap del gateway (MB)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(jvm_memory_used_bytes{job=\"gateway\",area=\"heap\"}) / 1024 / 1024",
+          "legendFormat": "heap usado"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "decmbytes"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "title": "CPU del proceso del gateway (0 a 1)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "process_cpu_usage{job=\"gateway\"}",
+          "legendFormat": "CPU del proceso"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        },
+        "overrides": []
+      },
+      "description": "Fracción de CPU que usa el proceso del gateway (JVM)."
+    }
+  ]
+}
