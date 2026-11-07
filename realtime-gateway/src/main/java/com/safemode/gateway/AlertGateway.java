@@ -11,6 +11,9 @@ import org.java_websocket.exceptions.InvalidDataException;
 import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.handshake.ServerHandshakeBuilder;
 import org.java_websocket.server.WebSocketServer;
+import io.micrometer.core.instrument.*;
+import java.time.Duration;
+import java.time.Instant;
 
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
@@ -22,6 +25,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+
 
 /**
  * Servidor WebSocket: mantiene una conexion abierta con cada dashboard y le empuja las alertas en cuanto el motor las
@@ -42,6 +46,13 @@ public class AlertGateway extends WebSocketServer {
     private final CountDownLatch started = new CountDownLatch(1);
     // Ultimo JSON enviado de cada alerta reciente, para detectar cuando cambia su evidencia.
     private final Map<Long, String> lastSent = new LinkedHashMap<>();
+    private final Counter wsConnections = Observability.REGISTRY.counter("safemode.ws.connections");
+    private final Counter wsSent = Observability.REGISTRY.counter("safemode.ws.messages.sent");
+    private final Timer deliveryLatency = Timer.builder("safemode.alert.delivery")
+            .description("Segundos desde el retiro hasta que la alerta se empuja por WebSocket")
+            .serviceLevelObjectives(Duration.ofMillis(500), Duration.ofSeconds(1), Duration.ofSeconds(2),
+                    Duration.ofSeconds(3), Duration.ofSeconds(5), Duration.ofSeconds(10))
+            .register(Observability.REGISTRY);
     private ScheduledExecutorService refresher;
     private volatile AuthService auth;   // null = sin sesion (como antes); con valor, el WebSocket exige la cookie de sesion
 
@@ -68,6 +79,8 @@ public class AlertGateway extends WebSocketServer {
         this.alerts = alerts;
         this.allowedOrigins = allowedOrigins;
         setReuseAddr(true);
+        Gauge.builder("safemode.ws.sessions", this, s -> s.getConnections().size()).register(Observability.REGISTRY);
+        for (String r : new String[]{"origin", "auth"}) Observability.REGISTRY.counter("safemode.ws.rejected", "reason", r);
         engine.addListener(this::publishNew);
     }
 
@@ -101,11 +114,13 @@ public class AlertGateway extends WebSocketServer {
         ServerHandshakeBuilder builder = super.onWebsocketHandshakeReceivedAsServer(conn, draft, request);
         String origin = request.hasFieldValue("Origin") ? request.getFieldValue("Origin") : null;
         if (origin != null && !allowedOrigins.contains(origin)) {
+            Observability.REGISTRY.counter("safemode.ws.rejected", "reason", "origin").increment();
             throw new InvalidDataException(403, "Origen no autorizado");
         }
         AuthService authService = auth;
         if (authService != null) {
             String cookie = request.hasFieldValue("Cookie") ? request.getFieldValue("Cookie") : null;
+            Observability.REGISTRY.counter("safemode.ws.rejected", "reason", "auth").increment();
             if (authService.userFor(cookie).isEmpty()) {
                 throw new InvalidDataException(401, "Sesion requerida");
             }
@@ -149,6 +164,8 @@ public class AlertGateway extends WebSocketServer {
 
     private void publishNew(Alert alert) {
         broadcastAlert("alert", alert);
+        engine.evidenceOf(alert).ifPresent(e ->
+                deliveryLatency.record(Duration.between(e.occurredAt(), Instant.now())));
     }
 
     private void broadcastAlert(String type, Alert alert) {
@@ -160,6 +177,7 @@ public class AlertGateway extends WebSocketServer {
             }
         }
         broadcast(AlertJson.envelope(type, json).toString());
+        wsSent.increment(getConnections().size());
     }
 
     /** Reenvia las alertas recientes cuya evidencia cambio (por ejemplo cuando llega la descripcion por IA). */

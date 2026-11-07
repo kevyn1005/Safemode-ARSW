@@ -90,8 +90,12 @@ public class GatewayRunner {
             for (com.safemode.alerts.Severity sev : com.safemode.alerts.Severity.values()) {
                 Observability.REGISTRY.counter("safemode.alerts", "severity", sev.name());
             }
+            for (com.safemode.alerts.AlertType t : com.safemode.alerts.AlertType.values()) {
+                Observability.REGISTRY.counter("safemode.alerts.by_type", "type", t.name());
+            }
             engine.addListener(alert -> {
                 Observability.REGISTRY.counter("safemode.alerts", "severity", String.valueOf(alert.severity())).increment();
+                Observability.REGISTRY.counter("safemode.alerts.by_type", "type", String.valueOf(alert.type())).increment();   // NUEVO
                 engine.evidenceOf(alert).ifPresent(event ->
                         alertLatency.record(Duration.between(event.occurredAt(), Instant.now())));
             });
