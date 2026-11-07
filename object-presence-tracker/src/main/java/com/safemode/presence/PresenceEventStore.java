@@ -1,7 +1,5 @@
 package com.safemode.presence;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -36,14 +34,15 @@ public class PresenceEventStore implements AutoCloseable {
     /** Variable de entorno con la URL JDBC de la base (por ejemplo la del servicio H2 de docker-compose). */
     public static final String DB_URL_ENV = "SAFEMODE_DB_URL";
 
-    private final Connection connection;
+    /** Conexion que se reabre sola si la base se reinicia (ver {@link ReconnectingConnection}). */
+    private final ReconnectingConnection connection;
     /** H2 (por defecto) o PostgreSQL (compose de persistencia, ADR 0005): solo cambian 3 instrucciones, ver {@link SqlDialect}. */
     private final SqlDialect dialect;
 
     public PresenceEventStore(String dbFilePath) {
         try {
-            connection = DriverManager.getConnection("jdbc:h2:file:" + dbFilePath + ";AUTO_SERVER=TRUE");
-            dialect = SqlDialect.of(connection);
+            connection = new ReconnectingConnection("jdbc:h2:file:" + dbFilePath + ";AUTO_SERVER=TRUE");
+            dialect = SqlDialect.of(connection.get());
             createSchema();
         } catch (SQLException e) {
             throw new IllegalStateException("No se pudo abrir la base de datos H2 en " + dbFilePath, e);
@@ -66,7 +65,7 @@ public class PresenceEventStore implements AutoCloseable {
     /** Abre la base H2 de esa URL JDBC (archivo, memoria o servidor TCP). */
     public static PresenceEventStore forUrl(String jdbcUrl) {
         try {
-            return new PresenceEventStore(DriverManager.getConnection(jdbcUrl));
+            return new PresenceEventStore(new ReconnectingConnection(jdbcUrl));
         } catch (SQLException e) {
             throw new IllegalStateException("No se pudo abrir la base de datos H2 en " + jdbcUrl, e);
         }
@@ -78,17 +77,16 @@ public class PresenceEventStore implements AutoCloseable {
      */
     public static PresenceEventStore inMemory(String name) {
         try {
-            Connection conn = DriverManager.getConnection("jdbc:h2:mem:" + name + ";DB_CLOSE_DELAY=-1");
-            return new PresenceEventStore(conn);
+            return new PresenceEventStore(new ReconnectingConnection("jdbc:h2:mem:" + name + ";DB_CLOSE_DELAY=-1"));
         } catch (SQLException e) {
             throw new IllegalStateException("No se pudo abrir la base de datos H2 en memoria", e);
         }
     }
 
-    private PresenceEventStore(Connection connection) {
+    private PresenceEventStore(ReconnectingConnection connection) {
         this.connection = connection;
-        this.dialect = SqlDialect.of(connection);
         try {
+            this.dialect = SqlDialect.of(connection.get());
             createSchema();
         } catch (SQLException e) {
             throw new IllegalStateException("No se pudo crear el esquema", e);
@@ -96,7 +94,7 @@ public class PresenceEventStore implements AutoCloseable {
     }
 
     private void createSchema() throws SQLException {
-        try (Statement st = connection.createStatement()) {
+        try (Statement st = connection.get().createStatement()) {
             st.execute("""
                 CREATE TABLE IF NOT EXISTS object_presence_event (
                     id %s,
@@ -191,7 +189,7 @@ public class PresenceEventStore implements AutoCloseable {
         for (int id = 1; id <= MAX_CAMERAS; id++) {
             names.put(id, defaultCameraName(id));
         }
-        try (var st = connection.createStatement(); var rs = st.executeQuery("SELECT id, name FROM camera")) {
+        try (var st = connection.get().createStatement(); var rs = st.executeQuery("SELECT id, name FROM camera")) {
             while (rs.next()) {
                 if (names.containsKey(rs.getInt(1))) {
                     names.put(rs.getInt(1), rs.getString(2));
@@ -217,12 +215,12 @@ public class PresenceEventStore implements AutoCloseable {
         }
         try {
             if (clean.isEmpty()) {
-                try (PreparedStatement ps = connection.prepareStatement("DELETE FROM camera WHERE id = ?")) {
+                try (PreparedStatement ps = connection.get().prepareStatement("DELETE FROM camera WHERE id = ?")) {
                     ps.setInt(1, cameraId);
                     ps.executeUpdate();
                 }
             } else {
-                try (PreparedStatement ps = connection.prepareStatement(dialect.upsertCameraSql())) {
+                try (PreparedStatement ps = connection.get().prepareStatement(dialect.upsertCameraSql())) {
                     ps.setInt(1, cameraId);
                     ps.setString(2, clean);
                     ps.executeUpdate();
@@ -241,7 +239,7 @@ public class PresenceEventStore implements AutoCloseable {
     RemovalInfo lastRemoval() {
         String sql = "SELECT removal_kind, remover_person_id, remover_description, remover_crop_path, remover_looks_like_owner FROM object_presence_event "
                 + "WHERE event_type = 'REMOVED' ORDER BY id DESC LIMIT 1";
-        try (var st = connection.createStatement(); var rs = st.executeQuery(sql)) {
+        try (var st = connection.get().createStatement(); var rs = st.executeQuery(sql)) {
             if (!rs.next()) {
                 return null;
             }
@@ -294,7 +292,7 @@ public class PresenceEventStore implements AutoCloseable {
 
     /** El id mas alto guardado (0 si no hay eventos): sirve para detectar que la tabla se vacio y los ids se reiniciaron. */
     public long maxEventId() {
-        try (var st = connection.createStatement(); var rs = st.executeQuery("SELECT COALESCE(MAX(id), 0) FROM object_presence_event")) {
+        try (var st = connection.get().createStatement(); var rs = st.executeQuery("SELECT COALESCE(MAX(id), 0) FROM object_presence_event")) {
             rs.next();
             return rs.getLong(1);
         } catch (SQLException e) {
@@ -310,7 +308,7 @@ public class PresenceEventStore implements AutoCloseable {
     /** Los ultimos eventos (registros y retiros), del mas nuevo al mas viejo: lo que muestra el reporte del panel. */
     public List<StoredEvent> findRecent(int limit) {
         String sql = "SELECT " + EVENT_COLUMNS + " FROM object_presence_event ORDER BY id DESC LIMIT ?";
-        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+        try (PreparedStatement ps = connection.get().prepareStatement(sql)) {
             ps.setInt(1, Math.max(1, limit));
             try (var rs = ps.executeQuery()) {
                 return readEvents(rs);
@@ -322,7 +320,7 @@ public class PresenceEventStore implements AutoCloseable {
 
     private List<StoredEvent> query(String where, long param) {
         String sql = "SELECT " + EVENT_COLUMNS + " FROM object_presence_event WHERE " + where + " ORDER BY id";
-        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+        try (PreparedStatement ps = connection.get().prepareStatement(sql)) {
             ps.setLong(1, param);
             try (var rs = ps.executeQuery()) {
                 return readEvents(rs);
@@ -357,7 +355,7 @@ public class PresenceEventStore implements AutoCloseable {
     /** Da el valor de person_nearby del ultimo evento de ese tipo (usado en las pruebas). */
     Boolean lastPersonNearby(String eventType) {
         String sql = "SELECT person_nearby FROM object_presence_event WHERE event_type = ? ORDER BY id DESC LIMIT 1";
-        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+        try (PreparedStatement ps = connection.get().prepareStatement(sql)) {
             ps.setString(1, eventType);
             try (var rs = ps.executeQuery()) {
                 if (!rs.next()) {
@@ -374,7 +372,7 @@ public class PresenceEventStore implements AutoCloseable {
     /** Da la ruta de la imagen (frame_path) del ultimo evento de ese tipo (usado en las pruebas). */
     String lastFramePath(String eventType) {
         String sql = "SELECT frame_path FROM object_presence_event WHERE event_type = ? ORDER BY id DESC LIMIT 1";
-        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+        try (PreparedStatement ps = connection.get().prepareStatement(sql)) {
             ps.setString(1, eventType);
             try (var rs = ps.executeQuery()) {
                 if (!rs.next()) {
@@ -390,7 +388,7 @@ public class PresenceEventStore implements AutoCloseable {
     /** Da el id del objeto (tracked_object_id) del ultimo evento de ese tipo, o -1 si no hay (usado en las pruebas). */
     long lastTrackedObjectId(String eventType) {
         String sql = "SELECT tracked_object_id FROM object_presence_event WHERE event_type = ? ORDER BY id DESC LIMIT 1";
-        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+        try (PreparedStatement ps = connection.get().prepareStatement(sql)) {
             ps.setString(1, eventType);
             try (var rs = ps.executeQuery()) {
                 return rs.next() ? rs.getLong(1) : -1;
@@ -404,7 +402,7 @@ public class PresenceEventStore implements AutoCloseable {
     OwnerInfo lastOwner(String eventType) {
         String sql = "SELECT owner_person_id, owner_description, owner_crop_path FROM object_presence_event "
                 + "WHERE event_type = ? ORDER BY id DESC LIMIT 1";
-        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+        try (PreparedStatement ps = connection.get().prepareStatement(sql)) {
             ps.setString(1, eventType);
             try (var rs = ps.executeQuery()) {
                 if (!rs.next()) {
@@ -427,7 +425,7 @@ public class PresenceEventStore implements AutoCloseable {
     /** Cuenta los eventos guardados de un tipo dado (usado en las pruebas). */
     int countEvents(String eventType) {
         String sql = "SELECT COUNT(*) FROM object_presence_event WHERE event_type = ?";
-        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+        try (PreparedStatement ps = connection.get().prepareStatement(sql)) {
             ps.setString(1, eventType);
             try (var rs = ps.executeQuery()) {
                 rs.next();
@@ -449,7 +447,7 @@ public class PresenceEventStore implements AutoCloseable {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
         long eventId;
-        try (PreparedStatement ps = dialect.prepareInsert(connection, sql)) {
+        try (PreparedStatement ps = dialect.prepareInsert(connection.get(), sql)) {
             ps.setLong(1, trackedId);
             ps.setString(2, className);
             ps.setString(3, eventType);
@@ -516,7 +514,7 @@ public class PresenceEventStore implements AutoCloseable {
      * id porque tracked_object_id se reinicia en cada ejecucion del programa.
      */
     public void updateOwnerAiDescription(long eventId, String aiDescription) {
-        try (PreparedStatement ps = connection.prepareStatement(
+        try (PreparedStatement ps = connection.get().prepareStatement(
                 "UPDATE object_presence_event SET owner_ai_description = ? WHERE id = ?")) {
             ps.setString(1, aiDescription);
             ps.setLong(2, eventId);
@@ -528,7 +526,7 @@ public class PresenceEventStore implements AutoCloseable {
 
     /** Guarda la descripcion por IA de quien retiro el objeto (llega unos segundos despues del evento REMOVED). */
     public void updateRemoverAiDescription(long eventId, String aiDescription) {
-        try (PreparedStatement ps = connection.prepareStatement(
+        try (PreparedStatement ps = connection.get().prepareStatement(
                 "UPDATE object_presence_event SET remover_ai_description = ? WHERE id = ?")) {
             ps.setString(1, aiDescription);
             ps.setLong(2, eventId);
@@ -541,7 +539,7 @@ public class PresenceEventStore implements AutoCloseable {
     /** Da la descripcion por IA de quien retiro el objeto en el ultimo evento REMOVED, o null (usado en las pruebas). */
     String lastRemoverAiDescription() {
         String sql = "SELECT remover_ai_description FROM object_presence_event WHERE event_type = 'REMOVED' ORDER BY id DESC LIMIT 1";
-        try (var st = connection.createStatement(); var rs = st.executeQuery(sql)) {
+        try (var st = connection.get().createStatement(); var rs = st.executeQuery(sql)) {
             return rs.next() ? rs.getString(1) : null;
         } catch (SQLException e) {
             throw new IllegalStateException("No se pudo consultar object_presence_event", e);
@@ -554,7 +552,7 @@ public class PresenceEventStore implements AutoCloseable {
      * Devuelve cuantas filas habia.
      */
     public int clearAllEvents() {
-        try (Statement st = connection.createStatement()) {
+        try (Statement st = connection.get().createStatement()) {
             int rows;
             try (var rs = st.executeQuery("SELECT COUNT(*) FROM object_presence_event")) {
                 rs.next();
@@ -570,7 +568,7 @@ public class PresenceEventStore implements AutoCloseable {
     /** Da la descripcion por IA del ultimo evento de ese tipo, o null (usado en las pruebas). */
     String lastOwnerAiDescription(String eventType) {
         String sql = "SELECT owner_ai_description FROM object_presence_event WHERE event_type = ? ORDER BY id DESC LIMIT 1";
-        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+        try (PreparedStatement ps = connection.get().prepareStatement(sql)) {
             ps.setString(1, eventType);
             try (var rs = ps.executeQuery()) {
                 return rs.next() ? rs.getString(1) : null;

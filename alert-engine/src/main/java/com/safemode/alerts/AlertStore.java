@@ -1,10 +1,9 @@
 package com.safemode.alerts;
 
 import com.safemode.presence.PresenceEventStore;
+import com.safemode.presence.ReconnectingConnection;
 import com.safemode.presence.SqlDialect;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -26,15 +25,16 @@ public class AlertStore implements AutoCloseable {
     private static final String COLUMNS = "id, event_id, event_occurred_at, alert_type, severity, class_name, message, "
             + "frame_path, created_at, acknowledged";
 
-    private final Connection connection;
+    /** Conexion que se reabre sola si la base se reinicia (ver {@link ReconnectingConnection}). */
+    private final ReconnectingConnection connection;
 
     /** H2 (por defecto) o PostgreSQL (compose de persistencia, ADR 0005): ver {@link SqlDialect}. */
     private final SqlDialect dialect;
 
-    private AlertStore(Connection connection) {
+    private AlertStore(ReconnectingConnection connection) {
         this.connection = connection;
-        this.dialect = SqlDialect.of(connection);
-        try (Statement st = connection.createStatement()) {
+        try (Statement st = connection.get().createStatement()) {
+            this.dialect = SqlDialect.of(connection.get());
             st.execute("""
                 CREATE TABLE IF NOT EXISTS alert (
                     id %s,
@@ -77,7 +77,7 @@ public class AlertStore implements AutoCloseable {
 
     private static AlertStore open(String url) {
         try {
-            return new AlertStore(DriverManager.getConnection(url));
+            return new AlertStore(new ReconnectingConnection(url));
         } catch (SQLException e) {
             throw new IllegalStateException("No se pudo abrir la base de datos de alertas", e);
         }
@@ -87,7 +87,7 @@ public class AlertStore implements AutoCloseable {
     public Optional<Alert> insertIfAbsent(long eventId, Instant eventOccurredAt, AlertType type, Severity severity,
                                           String className, String message, String framePath, Instant createdAt) {
         try {
-            try (PreparedStatement ps = connection.prepareStatement(
+            try (PreparedStatement ps = connection.get().prepareStatement(
                     "SELECT COUNT(*) FROM alert WHERE event_id = ? AND event_occurred_at = ?")) {
                 ps.setLong(1, eventId);
                 ps.setTimestamp(2, Timestamp.from(eventOccurredAt));
@@ -100,7 +100,7 @@ public class AlertStore implements AutoCloseable {
             }
             String sql = "INSERT INTO alert (event_id, event_occurred_at, alert_type, severity, class_name, message, "
                     + "frame_path, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-            try (PreparedStatement ps = dialect.prepareInsert(connection, sql)) {
+            try (PreparedStatement ps = dialect.prepareInsert(connection.get(), sql)) {
                 ps.setLong(1, eventId);
                 ps.setTimestamp(2, Timestamp.from(eventOccurredAt));
                 ps.setString(3, type.name());
@@ -136,7 +136,7 @@ public class AlertStore implements AutoCloseable {
 
     /** Marca la alerta como revisada; devuelve false si no existe. */
     public boolean acknowledge(long id) {
-        try (PreparedStatement ps = connection.prepareStatement("UPDATE alert SET acknowledged = TRUE WHERE id = ?")) {
+        try (PreparedStatement ps = connection.get().prepareStatement("UPDATE alert SET acknowledged = TRUE WHERE id = ?")) {
             ps.setLong(1, id);
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
@@ -146,7 +146,7 @@ public class AlertStore implements AutoCloseable {
 
     private List<Alert> query(String where, Long param) {
         String sql = "SELECT " + COLUMNS + " FROM alert " + where + " ORDER BY id DESC";
-        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+        try (PreparedStatement ps = connection.get().prepareStatement(sql)) {
             if (param != null) {
                 ps.setLong(1, param);
             }
