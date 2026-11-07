@@ -428,18 +428,13 @@ class DashboardHttpServerTest {
     void entregaLosScriptsYLaPaginaDePruebaDelPanel() throws Exception {
         startServerWithTracker();
         for (String name : new String[]{"camera-zones.js", "camera-names.js", "camera-share.js", "tracker-control.js", "report.js",
-                "browser-notifications.js", "panel.js"}) {
+                "browser-notifications.js"}) {
             Files.writeString(tmp.resolve("dashboard").resolve(name), "// " + name);
             HttpResponse<String> response = send("GET", "/" + name, null);
             assertEquals(200, response.statusCode(), name);
             assertEquals("// " + name, response.body());
             assertTrue(response.headers().firstValue("Content-Type").orElse("").startsWith("text/javascript"), name);
         }
-        Files.writeString(tmp.resolve("dashboard").resolve("panel.css"), "/* estilos */");
-        HttpResponse<String> css = send("GET", "/panel.css", null);
-        assertEquals(200, css.statusCode());
-        assertEquals("/* estilos */", css.body());
-        assertTrue(css.headers().firstValue("Content-Type").orElse("").startsWith("text/css"));
         Files.writeString(tmp.resolve("dashboard").resolve("mosaico-prueba.html"), "<html>mosaico</html>");
         HttpResponse<String> page = send("GET", "/mosaico-prueba.html", null);
         assertEquals(200, page.statusCode());
@@ -454,5 +449,52 @@ class DashboardHttpServerTest {
         HttpResponse<String> response = send("GET", "/tracker-control.js", null);
         assertEquals(200, response.statusCode());
         assertEquals("// boton", response.body());
+    }
+    @Test
+    void tambienEntregaLaPaginaEnIndexHtml() throws Exception {
+        assertEquals(200, get("/index.html").statusCode());
+    }
+
+    @Test
+    void entregaLosFotogramasDeLensSoloDirectamenteDentroDeLaCarpeta() throws Exception {
+        Path lens = Files.createDirectories(tmp.resolve("dashboard").resolve("lens-frames"));
+        Files.write(lens.resolve("f1.png"), new byte[]{7});
+        Files.createDirectories(lens.resolve("sub"));
+        Files.write(lens.resolve("sub").resolve("f2.png"), new byte[]{8});
+
+        HttpResponse<byte[]> ok = get("/lens-frames/f1.png");
+        assertEquals(200, ok.statusCode());
+        assertArrayEquals(new byte[]{7}, ok.body());
+        assertEquals(404, get("/lens-frames/sub/f2.png").statusCode());
+        assertEquals(404, get("/lens-frames/no-existe.png").statusCode());
+    }
+
+    @Test
+    void entregaElVideoDelPanel() throws Exception {
+        String video = "Camera_pushing_into_AI_core_20260926081000.mp4";
+        Files.write(tmp.resolve("dashboard").resolve(video), new byte[]{1, 2});
+        HttpResponse<byte[]> response = get("/" + video);
+        assertEquals(200, response.statusCode());
+        assertEquals("video/mp4", response.headers().firstValue("Content-Type").orElse(""));
+    }
+
+    @Test
+    void elTipoDeContenidoDependeDeLaExtension() {
+        assertEquals("text/html; charset=utf-8", DashboardHttpServer.contentType("a.html"));
+        assertEquals("text/javascript; charset=utf-8", DashboardHttpServer.contentType("A.JS"));
+        assertEquals("image/png", DashboardHttpServer.contentType("a.png"));
+        assertEquals("image/jpeg", DashboardHttpServer.contentType("a.jpg"));
+        assertEquals("image/jpeg", DashboardHttpServer.contentType("a.jpeg"));
+        assertEquals("image/webp", DashboardHttpServer.contentType("a.webp"));
+        assertEquals("video/mp4", DashboardHttpServer.contentType("a.mp4"));
+        assertEquals("application/octet-stream", DashboardHttpServer.contentType("a.bin"));
+    }
+
+    @Test
+    void unaRutaDeTrackerDesconocidaDaNoEncontrado() throws Exception {
+        startServerWithTracker();
+        assertEquals(404, send("GET", "/tracker/otra", null).statusCode());
+        assertEquals(404, send("POST", "/tracker/otra", panelOrigin).statusCode());
+        assertEquals(0, fake.starts);
     }
 }

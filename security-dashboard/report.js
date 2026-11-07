@@ -117,24 +117,24 @@
     }
 
     function cell(content, css) {
-      var td = el('td', typeof content === 'string' ? content : '', 'padding:8px 10px;border-top:1px solid var(--line-2);vertical-align:top;' + (css || ''));
+      var td = el('td', typeof content === 'string' ? content : '', 'padding:8px 10px;border-top:1px solid #2f3644;vertical-align:top;' + (css || ''));
       if (content && typeof content !== 'string') td.appendChild(content);
       return td;
     }
 
     function personCell(info) {
       var box = doc.createElement('div');
-      if (!info.label && !info.text) { box.textContent = '—'; box.style.color = 'var(--muted)'; return box; }
+      if (!info.label && !info.text) { box.textContent = '—'; box.style.color = '#9aa7b2'; return box; }
       if (info.label) box.appendChild(el('div', info.label, 'font-weight:600'));
-      if (info.text) box.appendChild(el('div', info.text, 'color:var(--text-2)'));
-      if (info.estimated) box.appendChild(el('div', 'color estimado por imagen', 'color:var(--muted);font-size:11px'));
-      if (info.looksLikeOwner) box.appendChild(el('div', 'se viste parecido al dueño', 'color:var(--cyan);font-size:12px;font-weight:600'));
+      if (info.text) box.appendChild(el('div', info.text, 'color:#c3ccd3'));
+      if (info.estimated) box.appendChild(el('div', 'color estimado por imagen', 'color:#9aa7b2;font-size:11px'));
+      if (info.looksLikeOwner) box.appendChild(el('div', 'se viste parecido al dueño', 'color:#4FD1C5;font-size:12px;font-weight:600'));
       return box;
     }
 
     function photosCell(photos) {
       var box = el('div', '', 'display:flex;gap:6px;flex-wrap:wrap');
-      if (!photos.length) { box.textContent = '—'; box.style.color = 'var(--muted)'; return box; }
+      if (!photos.length) { box.textContent = '—'; box.style.color = '#9aa7b2'; return box; }
       photos.forEach(function (photo) {
         var link = doc.createElement('a');
         link.href = photo.url;
@@ -145,14 +145,14 @@
         img.src = photo.url;
         img.alt = photo.label;
         img.loading = 'lazy';
-        img.style.cssText = 'width:72px;height:54px;object-fit:cover;border-radius:4px;border:1px solid var(--line-2);display:block';
+        img.style.cssText = 'width:72px;height:54px;object-fit:cover;border-radius:4px;border:1px solid #2f3644;display:block';
         link.appendChild(img);
         img.addEventListener('error', function () { // la foto ya no esta en el disco
-          if (link.parentNode) link.parentNode.replaceChild(el('span', 'no disponible', 'display:block;width:72px;font-size:11px;color:var(--muted)'), link);
+          if (link.parentNode) link.parentNode.replaceChild(el('span', 'no disponible', 'display:block;width:72px;font-size:11px;color:#9aa7b2'), link);
         });
         var figure = el('div', '', 'text-align:center');
         figure.appendChild(link);
-        figure.appendChild(el('div', photo.label, 'font-size:10px;color:var(--muted);margin-top:2px'));
+        figure.appendChild(el('div', photo.label, 'font-size:10px;color:#9aa7b2;margin-top:2px'));
         box.appendChild(figure);
       });
       return box;
@@ -162,7 +162,7 @@
       var table = el('table', '', 'width:100%;border-collapse:collapse;font-size:13px;min-width:860px');
       var head = doc.createElement('tr');
       ['Fecha', 'Hora', 'Cámara', 'Qué pasó', 'Objeto', 'Dueño probable', 'Quién lo retiró', '¿Alerta?', 'Fotos'].forEach(function (name) {
-        head.appendChild(el('th', name, 'text-align:left;padding:8px 10px;position:sticky;top:0;background:var(--surface-dim);color:var(--muted);font-weight:600;white-space:nowrap'));
+        head.appendChild(el('th', name, 'text-align:left;padding:8px 10px;position:sticky;top:0;background:#1a212a;color:#9aa7b2;font-weight:600;white-space:nowrap'));
       });
       var thead = doc.createElement('thead');
       thead.appendChild(head);
@@ -173,10 +173,10 @@
         var tr = doc.createElement('tr');
         tr.appendChild(cell(info.date, 'white-space:nowrap'));
         tr.appendChild(cell(info.time, 'white-space:nowrap;font-variant-numeric:tabular-nums'));
-        tr.appendChild(cell(info.camera, 'white-space:nowrap;font-weight:600;color:var(--cyan)'));
+        tr.appendChild(cell(info.camera, 'white-space:nowrap;font-weight:600;color:#4FD1C5'));
         var what = el('div');
         what.appendChild(el('div', info.what, 'font-weight:600'));
-        if (info.detail) what.appendChild(el('div', info.detail, 'color:var(--muted);font-size:12px'));
+        if (info.detail) what.appendChild(el('div', info.detail, 'color:#9aa7b2;font-size:12px'));
         tr.appendChild(cell(what));
         tr.appendChild(cell(info.object, 'white-space:nowrap'));
         tr.appendChild(cell(personCell(info.owner), 'max-width:220px'));
@@ -192,35 +192,35 @@
     function openReport() {
       var dialog = doc.createElement('dialog');
       dialog.setAttribute('aria-labelledby', 'safemodeReportTitle');
-      dialog.style.cssText = 'background:var(--surface);color:var(--text);border:1px solid var(--line-2);border-radius:10px;padding:16px;' +
+      dialog.style.cssText = 'background:#12161c;color:#e8ebf0;border:1px solid #2f3644;border-radius:10px;padding:16px;' +
         'width:calc(100% - 32px);max-width:1180px;font:14px/1.45 system-ui,sans-serif';
       var title = el('h2', 'Reporte de detecciones', 'margin:0 0 4px;font-size:18px');
       title.id = 'safemodeReportTitle';
       dialog.appendChild(title);
       dialog.appendChild(el('p', 'Todo lo que registró el sistema, también lo que no generó alerta. La hora es la del computador donde corre ' +
-        'el sistema: busca en la grabación de la cámara unos 30 segundos antes y después.', 'margin:0 0 10px;color:var(--muted);font-size:13px'));
+        'el sistema: busca en la grabación de la cámara unos 30 segundos antes y después.', 'margin:0 0 10px;color:#9aa7b2;font-size:13px'));
 
       var bar = el('div', '', 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 10px');
-      var summary = el('span', 'Cargando…', 'flex:1 1 220px;font-size:13px;color:var(--text-2)');
+      var summary = el('span', 'Cargando…', 'flex:1 1 220px;font-size:13px;color:#c3ccd3');
       summary.setAttribute('role', 'status');
       var refresh = el('button', 'Actualizar');
       var close = el('button', 'Cerrar');
       [refresh, close].forEach(function (b) {
         b.type = 'button';
-        b.style.cssText = 'font:inherit;padding:6px 14px;border-radius:6px;border:1px solid var(--cyan);background:transparent;color:var(--cyan);cursor:pointer';
+        b.style.cssText = 'font:inherit;padding:6px 14px;border-radius:6px;border:1px solid #4FD1C5;background:transparent;color:#4FD1C5;cursor:pointer';
       });
-      close.style.borderColor = 'var(--line-2)'; close.style.color = 'var(--muted)';
+      close.style.borderColor = '#2f3644'; close.style.color = '#9aa7b2';
       bar.appendChild(summary);
       bar.appendChild(refresh);
       bar.appendChild(close);
       dialog.appendChild(bar);
 
-      var content = el('div', '', 'max-height:60vh;overflow:auto;border:1px solid var(--line-2);border-radius:6px');
+      var content = el('div', '', 'max-height:60vh;overflow:auto;border:1px solid #2f3644;border-radius:6px');
       dialog.appendChild(content);
 
       function show(text, isError) {
         content.textContent = '';
-        content.appendChild(el('p', text, 'margin:0;padding:16px;color:' + (isError ? 'var(--high)' : 'var(--text-2)')));
+        content.appendChild(el('p', text, 'margin:0;padding:16px;color:' + (isError ? '#FF9A8B' : '#c3ccd3')));
         if (isError) content.firstChild.setAttribute('role', 'alert');
       }
 

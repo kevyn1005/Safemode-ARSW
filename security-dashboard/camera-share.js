@@ -225,7 +225,7 @@
       var dialog = document.createElement('dialog');
       dialog.setAttribute('aria-labelledby', 'safemodeZonesTitle');
       var style = dialog.style;
-      style.background = 'var(--surface)'; style.color = 'var(--text)'; style.border = '1px solid var(--line-2)';
+      style.background = '#12161c'; style.color = '#e8ebf0'; style.border = '1px solid #2f3644';
       style.borderRadius = '10px'; style.padding = '16px'; style.maxWidth = '780px'; style.width = 'calc(100% - 32px)';
       style.font = '14px/1.45 system-ui, sans-serif';
 
@@ -238,7 +238,7 @@
 
       var title = el('h2', 'Configurar cámaras', 'margin:0 0 4px;font-size:18px');
       title.id = 'safemodeZonesTitle';
-      var help = el('p', '', 'margin:0 0 10px;color:var(--muted);font-size:13px');
+      var help = el('p', '', 'margin:0 0 10px;color:#9aa7b2;font-size:13px');
       var preview = document.createElement('canvas');
       preview.style.cssText = 'width:100%;display:block;background:#000;border-radius:6px;cursor:crosshair;touch-action:none';
       preview.setAttribute('aria-label', 'Vista previa de la ventana compartida: arrastra para marcar la zona de cada cámara');
@@ -290,10 +290,10 @@
       var cancelButton = el('button', 'Cancelar');
       [startButton, redrawButton, confirmButton, cancelButton].forEach(function (b) {
         b.type = 'button';
-        b.style.cssText = 'font:inherit;padding:6px 14px;border-radius:6px;border:1px solid var(--cyan);background:transparent;color:var(--cyan);cursor:pointer';
+        b.style.cssText = 'font:inherit;padding:6px 14px;border-radius:6px;border:1px solid #4FD1C5;background:transparent;color:#4FD1C5;cursor:pointer';
       });
-      startButton.style.background = 'var(--cyan)'; startButton.style.color = 'var(--bg)'; startButton.style.fontWeight = '700';
-      cancelButton.style.borderColor = 'var(--line-2)'; cancelButton.style.color = 'var(--muted)';
+      startButton.style.background = '#4FD1C5'; startButton.style.color = '#0b0f13'; startButton.style.fontWeight = '700';
+      cancelButton.style.borderColor = '#2f3644'; cancelButton.style.color = '#9aa7b2';
       actions.appendChild(cancelButton); actions.appendChild(redrawButton); actions.appendChild(confirmButton); actions.appendChild(startButton);
 
       function renderPicker() {
@@ -303,7 +303,7 @@
           b.type = 'button';
           var on = id === active;
           b.style.cssText = 'font:inherit;padding:4px 12px;border-radius:6px;cursor:pointer;border:2px solid ' + ZONE_COLORS[id] +
-            ';background:' + (on ? ZONE_COLORS[id] : 'transparent') + ';color:' + (on ? 'var(--bg)' : ZONE_COLORS[id]);
+            ';background:' + (on ? ZONE_COLORS[id] : 'transparent') + ';color:' + (on ? '#0b0f13' : ZONE_COLORS[id]);
           b.setAttribute('aria-pressed', String(on));
           b.addEventListener('click', function () { active = id; refresh(); });
           picker.appendChild(b);
@@ -321,11 +321,11 @@
           li.textContent = mark + ' ' + text;
           checks.appendChild(li);
         }
-        r.problems.forEach(function (p) { item('✗', 'var(--high)', p); });
-        r.blocking.forEach(function (p) { item('✗', 'var(--high)', p); });
-        r.warnings.forEach(function (p) { item('⚠', 'var(--med)', p); });
+        r.problems.forEach(function (p) { item('✗', '#FF9A8B', p); });
+        r.blocking.forEach(function (p) { item('✗', '#FF9A8B', p); });
+        r.warnings.forEach(function (p) { item('⚠', '#F5C065', p); });
         if (!r.problems.length && !r.blocking.length) {
-          item('✓', 'var(--cyan)', 'Tamaño de la ventana ' + video.videoWidth + '×' + video.videoHeight + ' y zonas listas.');
+          item('✓', '#4FD1C5', 'Tamaño de la ventana ' + video.videoWidth + '×' + video.videoHeight + ' y zonas listas.');
         }
         startButton.disabled = r.problems.length > 0 || r.blocking.length > 0;
         startButton.style.opacity = startButton.disabled ? '0.4' : '1';

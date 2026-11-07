@@ -4,9 +4,12 @@ import com.safemode.alerts.AlertEngine;
 import com.safemode.alerts.AlertStore;
 import com.safemode.gateway.notify.NotificationService;
 import com.safemode.presence.PresenceEventStore;
+import com.sun.net.httpserver.HttpServer;
+import io.micrometer.core.instrument.Timer;
 
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -29,11 +32,18 @@ public class GatewayRunner {
     public static void main(String[] args) throws Exception {
         int seconds = args.length > 0 ? Integer.parseInt(args[0]) : 600;
         String bindHost = bindHost(System.getenv("SAFEMODE_BIND_HOST"));
+        String googleClientId = System.getenv("SAFEMODE_GOOGLE_CLIENT_ID");
+        Set<String> allowedEmails = AuthService.parseEmails(System.getenv("SAFEMODE_ALLOWED_EMAILS"));
+        if (googleClientId == null || googleClientId.isBlank() || allowedEmails.isEmpty()) {
+            throw new IllegalStateException("Faltan SAFEMODE_GOOGLE_CLIENT_ID y/o SAFEMODE_ALLOWED_EMAILS: "
+                    + "el panel solo permite iniciar sesion con Google (ver ADR 0004)");
+        }
+        AuthService auth = AuthService.google(googleClientId.trim(), allowedEmails);
         try (PresenceEventStore events = PresenceEventStore.fromEnvironment(DB_PATH);
              AlertStore alerts = AlertStore.fromEnvironment(DB_PATH);
              AlertEngine engine = new AlertEngine(events, alerts)) {
             Set<String> panelOrigins = Set.of("http://localhost:" + HTTP_PORT, "http://127.0.0.1:" + HTTP_PORT);
-            AlertGateway gateway = new AlertGateway(engine, alerts, bindHost, WS_PORT, panelOrigins);
+            AlertGateway gateway = new AlertGateway(engine, alerts, bindHost, WS_PORT, panelOrigins).withAuth(auth);
             // Avisos de las alertas nuevas altas y medias por Telegram (clave y chats solo por variables de entorno; ver ADR 0004)
             NotificationService notifications = NotificationService.fromEnvironment(System.getenv(),
                     alert -> engine.evidenceOf(alert).map(event -> engine.cameraName(event.cameraId())).orElse(null));
@@ -68,11 +78,35 @@ public class GatewayRunner {
                         public String cameraName(int cameraId) {
                             return engine.cameraName(cameraId);
                         }
-                    });
+                    })
+                    .withAuth(auth);
             gateway.startAndWait();
             http.start();
-            engine.start(Duration.ofSeconds(1));
-            System.out.println("Dashboard: http://localhost:" + HTTP_PORT + "  (WebSocket en ws://localhost:" + WS_PORT + ")");
+            Timer alertLatency = Timer.builder("safemode.alert.latency")
+                    .description("Segundos desde que el tracker registra el retiro hasta que el motor crea la alerta")
+                    .serviceLevelObjectives(Duration.ofMillis(500), Duration.ofSeconds(1), Duration.ofSeconds(2),
+                            Duration.ofSeconds(3), Duration.ofSeconds(5), Duration.ofSeconds(10))
+                    .register(Observability.REGISTRY);
+            for (com.safemode.alerts.Severity sev : com.safemode.alerts.Severity.values()) {
+                Observability.REGISTRY.counter("safemode.alerts", "severity", sev.name());
+            }
+            engine.addListener(alert -> {
+                Observability.REGISTRY.counter("safemode.alerts", "severity", String.valueOf(alert.severity())).increment();
+                engine.evidenceOf(alert).ifPresent(event ->
+                        alertLatency.record(Duration.between(event.occurredAt(), Instant.now())));
+            });
+            engine.start(Duration.ofMillis(250));
+            String metricsHost = System.getenv().getOrDefault("SAFEMODE_METRICS_HOST", "0.0.0.0");
+            HttpServer observability = Observability.start(metricsHost, 9464, () -> {
+                try {
+                    engine.recentEvents(1);
+                    return true;
+                } catch (Exception e) {
+                    System.err.println("[READY] fallo la consulta a H2: " + e + " | causa: " + e.getCause());
+                    return false;
+                }
+            });
+            System.out.println("Inicio de sesion con Google: " + allowedEmails.size() + " correo(s) autorizado(s)");
             System.out.println(seconds > 0 ? "Escuchando durante " + seconds + " s..." : "Escuchando hasta que lo detengan...");
             // Parada unica: al terminar el tiempo, o con docker stop (SIGTERM), que dispara el hook de cierre
             AtomicBoolean stopped = new AtomicBoolean();

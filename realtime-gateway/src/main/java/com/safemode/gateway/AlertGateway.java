@@ -43,6 +43,14 @@ public class AlertGateway extends WebSocketServer {
     // Ultimo JSON enviado de cada alerta reciente, para detectar cuando cambia su evidencia.
     private final Map<Long, String> lastSent = new LinkedHashMap<>();
     private ScheduledExecutorService refresher;
+    private volatile AuthService auth;   // null = sin sesion (como antes); con valor, el WebSocket exige la cookie de sesion
+
+    /** Exige sesion de Google para abrir el WebSocket. Se llama antes de {@link #startAndWait()}. */
+    public AlertGateway withAuth(AuthService authService) {
+        this.auth = authService;
+        return this;
+    }
+
 
     /**
      * @param port           puerto del WebSocket (0 = uno libre, util en pruebas; ver {@link #boundPort()})
@@ -94,6 +102,13 @@ public class AlertGateway extends WebSocketServer {
         String origin = request.hasFieldValue("Origin") ? request.getFieldValue("Origin") : null;
         if (origin != null && !allowedOrigins.contains(origin)) {
             throw new InvalidDataException(403, "Origen no autorizado");
+        }
+        AuthService authService = auth;
+        if (authService != null) {
+            String cookie = request.hasFieldValue("Cookie") ? request.getFieldValue("Cookie") : null;
+            if (authService.userFor(cookie).isEmpty()) {
+                throw new InvalidDataException(401, "Sesion requerida");
+            }
         }
         return builder;
     }
