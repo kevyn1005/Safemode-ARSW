@@ -6,3 +6,10 @@ providers:
     allowUiUpdates: true
     options:
       path: /var/lib/grafana/dashboards
+  # El tablero SafeMode de Kevyn: se carga TAL CUAL desde observability/grafana/dashboards/ (ver el README de esa carpeta).
+  - name: SafeMode
+    folder: SafeMode
+    type: file
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards-safemode

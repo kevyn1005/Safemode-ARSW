@@ -87,17 +87,20 @@ errores de programación).
 
 **Observabilidad.** Prometheus recoge `/metrics` de cada servicio cada 5 s; los nombres llevan el prefijo `safemode_` y usan Micrometer
 1.13.6, **la misma librería y versión que la rama de observabilidad del gateway**, para poder unirlas. La ruta de cada métrica es la
-**plantilla** (`/api/puestos/{id}`), nunca el id real. Grafana provisiona tres dashboards (*Punto de partida*, 2 paneles;
-*ARSW-EQP-01 · Persistencia*, los 8 paneles; y *SAFEMODE · Producto*, 8 paneles del gateway); k6 genera carga de lectura.
+**plantilla** (`/api/puestos/{id}`), nunca el id real. Grafana provisiona dos dashboards (*Punto de partida*, 2 paneles, y
+*ARSW-EQP-01 · Persistencia*, los 8 paneles) y deja lista la carpeta **SafeMode** para cargar, sin modificarlo, el tablero que Kevyn armó en su Grafana
+(no está en el repositorio: ver `observability/grafana/dashboards/README.md`); k6 genera carga de lectura.
 
 **Una sola observabilidad (7 de noviembre).** Hasta ahora había dos Prometheus/Grafana que chocaban en los puertos 9090 y 3000: el de la
 rama de Kevyn (gateway corriendo en el computador, `docker-compose.observability.yml`) y el de persistencia (access y collaboration). El
 compose de persistencia ya tiene **uno solo** con cuatro objetivos: `access`, `collaboration`, `gateway` (`realtime-gateway:9464`) y la sonda
 `ready-probe` (blackbox → `/ready` del gateway, que da 200 solo si el gateway puede consultar su base). El gateway publica además
 `safemode_dependency_up{service="gateway",dependency="database"}` con el **mismo nombre** que los otros servicios, medida en un hilo aparte (un
-scrape nunca espera a la base). Lo que distingue esta práctica se ve en un solo gráfico: con PostgreSQL detenido, `up{job="gateway"}` sigue en 1
-pero `dependency_up` y `probe_success` bajan a 0 (`evidencias/16-…`). El compose de Kevyn sigue valiendo para el gateway sin Docker; no se
-levanta junto con este.
+scrape nunca espera a la base). Lo que distingue esta práctica se ve en una sola consulta: con PostgreSQL detenido, `up{job="gateway"}` sigue en 1
+pero `dependency_up` y `probe_success` bajan a 0 (`evidencias/16-…`). **No se cambió nada de lo de Kevyn:** su compose
+(`docker-compose.observability.yml`, que sigue valiendo para el gateway sin Docker y no se levanta junto con este), sus métricas
+(`safemode_alerts_total`, `safemode_alert_latency_*`) y los nombres de sus jobs (`gateway`, `ready-probe`) quedan igual; solo se agregó la métrica
+de la base.
 
 ## Alternativa considerada
 
@@ -218,7 +221,7 @@ Todo está en [`docs/persistencia/EVIDENCIAS.md`](../persistencia/EVIDENCIAS.md)
 | El producto sobre PostgreSQL | — | evento → alerta (`POSSIBLE_THEFT`), hora correcta | `13-producto-sobre-postgres.txt` |
 | Acceptance final | — | **4/4 `passed:true`, código 0** | `11-acceptance-final.json` |
 | Gateway tras reiniciar PostgreSQL | Falla hasta reiniciar el gateway (0 filas; `docker compose restart`) | **Se recupera solo**: `dependency_up` 0 → 1, `probe_success` 0 → 1, crea la alerta nueva, `StartedAt` del gateway sin cambio | `15` → `16-reinicio-postgres-con-reconexion.txt` |
-| Observabilidad unida | Dos Prometheus/Grafana en los mismos puertos | Un Prometheus con 4 objetivos `up`, 3 dashboards, `gateway → database = 1` | `EVIDENCIAS.md`, sección *Observabilidad unida* |
+| Observabilidad unida | Dos Prometheus/Grafana en los mismos puertos | Un Prometheus con 4 objetivos `up`, 2 dashboards del laboratorio y la carpeta SafeMode lista para el de Kevyn, `gateway → database = 1` | `EVIDENCIAS.md`, sección *Observabilidad unida* |
 | Carga k6 (P95 del cliente) | 14,71 ms | 13,26 ms | `05` y `10`; `capturas/grafana-2`, `grafana-3` |
 
 **Límites que las pruebas NO demuestran:**

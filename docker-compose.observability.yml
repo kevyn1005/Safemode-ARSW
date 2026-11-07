@@ -1,7 +1,4 @@
-﻿# Observabilidad del gateway cuando corre EN EL COMPUTADOR (sin Docker): Prometheus lee host.docker.internal:9464.
-# Si el gateway corre en Docker, use docker-compose.persistencia.yml: trae el mismo Prometheus y Grafana, con el job del gateway,
-# la sonda /ready y los servicios de persistencia. NO levante los dos archivos a la vez: ambos publican el 9090 y el 3000.
-services:
+﻿services:
   blackbox:
     image: prom/blackbox-exporter:latest
 

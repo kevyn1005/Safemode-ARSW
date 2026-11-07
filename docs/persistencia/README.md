@@ -72,9 +72,9 @@ Los puertos web van solo en `127.0.0.1`. MongoDB y Redis no publican puertos; Po
 en el computador. Las identidades `ana`, `luis` y `marta` se simulan con la cabecera `X-Operator`: **no hay autenticación de producción**.
 No exponga este entorno a Internet. Para cambiar puertos o claves (y poner el inicio de sesión con Google): `Copy-Item .env.example .env` y editar `.env`.
 
-Grafana trae la fuente **Prometheus** y tres dashboards en la carpeta **ARSW**: *SAFEMODE · Punto de partida* (2 paneles),
-*ARSW-EQP-01 · Persistencia (Safemode)* (los 8 del laboratorio) y *SAFEMODE · Producto (gateway y alertas)* (8 paneles del gateway: alertas
-por severidad, latencia evento → alerta, sonda `/ready`, dependencias y JVM). Espere 15–30 s al primer *scraping*.
+Grafana trae la fuente **Prometheus** y dos dashboards en la carpeta **ARSW**: *SAFEMODE · Punto de partida* (2 paneles) y
+*ARSW-EQP-01 · Persistencia (Safemode)* (los 8 del laboratorio). Además carga, en la carpeta **SafeMode**, el tablero de Kevyn tal cual cuando él
+lo exporte a `observability/grafana/dashboards/` (hoy solo vive en su Grafana; ver el README de esa carpeta). Espere 15–30 s al primer *scraping*.
 
 **Una sola observabilidad.** Este Prometheus lee cuatro objetivos (`persistencia/monitoring/prometheus.yml`): `access`, `collaboration`, el
 `gateway` del producto (métricas de la rama de Kevyn, puerto 9464 del contenedor) y la sonda `ready-probe` (blackbox → `/ready` del gateway).
@@ -245,8 +245,9 @@ dc down -v                                       # BORRA los volúmenes de Postg
 
 - **Observabilidad (rama `kevynobservabilidad`): ya unida.** El gateway usa Micrometer 1.13.6 (`safemode_alerts_total`,
   `safemode_alert_latency_*`) y estos servicios **la misma librería y versión** con el prefijo `safemode_`, así que el `prometheus.yml`
-  de este compose lee los tres (jobs `gateway`, `access` y `collaboration`) más la sonda `/ready`, y el dashboard *SAFEMODE · Producto*
-  muestra el lado del gateway. El gateway publica además `safemode_dependency_up{dependency="database"}`, con el mismo nombre que los otros.
+  de este compose lee los tres (jobs `gateway`, `access` y `collaboration`) más la sonda `/ready`, con los mismos nombres de job que su
+  `observability/prometheus.yml` y sin cambiar sus métricas ni su compose (su tablero de Grafana no está en el repo: ver
+  `observability/grafana/dashboards/README.md`). El gateway publica además `safemode_dependency_up{dependency="database"}`, con el mismo nombre que los otros.
 - **Login con Google (rama `Juli/unión`):** hoy la lista de correos autorizados es una variable de entorno. `access-service` es el
   lugar natural para reemplazarla: operadores y membresías en PostgreSQL, con revocación inmediata y auditoría. La cabecera `X-Operator`
   se sustituye por el correo de la sesión; el modelo de permisos no cambia.

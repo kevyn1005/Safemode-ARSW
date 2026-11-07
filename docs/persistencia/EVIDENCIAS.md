@@ -65,12 +65,13 @@ Comprobado levantando el stack completo (`up -d --build --wait`, 11 contenedores
 | Objetivos de Prometheus | `access`, `collaboration`, `gateway` y `ready-probe`: los 4 en **`up`**, sin errores |
 | `safemode_dependency_up` | `gateway → database` **1**, `access → postgres` 1, `collaboration → mongodb / redis / access` 1 (todas con el mismo nombre) |
 | `probe_success{job="ready-probe"}` | **1** (el gateway puede consultar su base) |
-| Dashboards en Grafana (carpeta ARSW) | *Punto de partida* (2 paneles), *ARSW-EQP-01 · Persistencia* (8) y **SAFEMODE · Producto (gateway y alertas)** (8, nuevo) |
-| Las 8 consultas del dashboard nuevo contra Prometheus | Todas responden `success`. Con 2 retiros sospechosos: alertas `HIGH` = 2 en 5 min, P95 evento → alerta ≈ **0,48 s**, heap ≈ 24 MB, CPU del proceso ≈ 0,06 % |
+| Dashboards en Grafana (carpeta ARSW) | *Punto de partida* (2 paneles) y *ARSW-EQP-01 · Persistencia* (8). La carpeta **SafeMode** queda lista para el tablero de Kevyn (no está en el repo) |
+| Métricas del gateway consultadas en Prometheus (las que usan los paneles de Kevyn) | Todas responden `success`. Con 2 retiros sospechosos: `safemode_alerts_total` `HIGH` = 2 en 5 min, P95 de `safemode_alert_latency_seconds` ≈ **0,48 s**, heap ≈ 24 MB, CPU del proceso ≈ 0,06 % |
 | Pruebas contra PostgreSQL real (`SAFEMODE_TEST_PG_URL`) | `PostgresStoresIntegrationTest` **3/3** con los almacenes ya reconectables |
 
-El panel de latencia del dashboard nuevo dibuja la meta de la historia de usuario (menos de 5 s) como línea roja; el P95 sale `NaN` mientras no haya
-alertas (no hay observaciones del histograma). No se tomaron capturas de Grafana de este dashboard: se verificó por la API.
+El P95 sale `NaN` mientras no haya alertas (no hay observaciones del histograma). Se verificó por la API de Prometheus, no con capturas. **Los paneles de
+Kevyn no se tocaron:** su tablero vive en su Grafana y no está en el repositorio, así que no se pudo ni se quiso reemplazar (ver
+`observability/grafana/dashboards/README.md`).
 
 ## Hallazgos que salieron de medir (no de suponer)
 
