@@ -43,6 +43,7 @@
             </activation>
             <modules>
                 <module>service-common</module>
+                <module>access-service</module>
             </modules>
         </profile>
     </profiles>
