@@ -1,0 +1,169 @@
+# Persistencia, consistencia y observabilidad de Safemode (ADR 0005).
+#
+# Se SUMA al compose de siempre (no lo reemplaza): sin este archivo todo funciona como antes, con H2.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.persistencia.yml up -d --build --wait --wait-timeout 300 \
+#       postgres mongo redis access-service collaboration-service console prometheus grafana realtime-gateway
+#
+# Se nombran los servicios a proposito: camera-feed-service y vision-detection-service (del compose base) no hacen falta aqui.
+# realtime-gateway arrastra a h2-db por su depends_on del compose base; queda sin uso (el gateway lee PostgreSQL).
+#
+# Que guarda cada motor y por que: docs/persistencia/MATRIZ.md y docs/adr/0005-persistencia-consistencia-observabilidad.md
+# Como reproducir las pruebas y las evidencias: docs/persistencia/README.md
+#
+# Todos los puertos web van solo en 127.0.0.1. Las bases (MongoDB, Redis) no publican puertos; PostgreSQL si, porque el
+# tracker corre en el computador (necesita la pantalla real) y escribe en la base del contenedor, igual que con h2-db.
+
+services:
+  # ---- Bases de datos ---------------------------------------------------------------------------------------------
+  postgres:
+    image: postgres:16.6-alpine
+    environment:
+      POSTGRES_DB: safemode
+      POSTGRES_USER: safemode
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lab-postgres}
+    ports:
+      # 5433 en el computador (no 5432) para no chocar con un PostgreSQL local
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./persistencia/db/evidence.sql:/lab/evidence.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U safemode -d safemode"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mongo:
+    image: mongo:7.0.16
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7.4.2-alpine
+    # sin persistencia a proposito: la presencia y la cache son datos efimeros (si Redis se reinicia, se vuelven a formar solos)
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # ---- Servicios de persistencia ----------------------------------------------------------------------------------
+  access-service:
+    build:
+      context: .
+      dockerfile: access-service/Dockerfile
+    environment:
+      PGURL: jdbc:postgresql://postgres:5432/safemode
+      PGUSER: safemode
+      PGPASSWORD: ${POSTGRES_PASSWORD:-lab-postgres}
+      LAB_ADMIN_KEY: ${LAB_ADMIN_KEY:-lab-admin}
+    # Un nombre de contenedor DETENIDO tarda ~4 s en resolverse (el DNS de Docker lo reenvia al resolvedor externo) y ningun
+    # timeout de Redis o HTTP lo acota, porque ocurre antes de conectar. Con esto la resolucion falla en <= 1 s.
+    # Medido y explicado en docs/persistencia/EVIDENCIAS.md.
+    dns_opt: ["timeout:1", "attempts:1"]
+    depends_on:
+      postgres: {condition: service_healthy}
+    restart: unless-stopped
+
+  collaboration-service:
+    build:
+      context: .
+      dockerfile: collaboration-service/Dockerfile
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+      REDIS_HOST: redis
+      ACCESS_URL: http://access-service:8100
+      LAB_ADMIN_KEY: ${LAB_ADMIN_KEY:-lab-admin}
+      # solucion (por defecto) o base: los defectos del punto de partida, para repetir la medicion del "antes"
+      DECISIONS_MODE: ${DECISIONS_MODE:-solucion}
+    # Un nombre de contenedor DETENIDO tarda ~4 s en resolverse (el DNS de Docker lo reenvia al resolvedor externo) y ningun
+    # timeout de Redis o HTTP lo acota, porque ocurre antes de conectar. Con esto la resolucion falla en <= 1 s.
+    # Medido y explicado en docs/persistencia/EVIDENCIAS.md.
+    dns_opt: ["timeout:1", "attempts:1"]
+    depends_on:
+      mongo: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      access-service: {condition: service_healthy}
+    restart: unless-stopped
+
+  # El gateway del producto, ahora sobre PostgreSQL: eventos y alertas viven en la base real con sus restricciones.
+  # Solo cambia la URL de la base; el panel, el WebSocket y las fotos siguen exactamente igual.
+  realtime-gateway:
+    environment:
+      SAFEMODE_DB_URL: jdbc:postgresql://postgres:5432/safemode?user=safemode&password=${POSTGRES_PASSWORD:-lab-postgres}
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  # Consola del escenario: dos identidades ficticias (Ana, Luis) para reproducir los defectos desde dos pestanas.
+  console:
+    image: nginx:1.27.3-alpine
+    ports:
+      - "127.0.0.1:${CONSOLE_PORT:-8088}:80"
+    volumes:
+      - ./persistencia/console:/usr/share/nginx/html:ro
+      - ./persistencia/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      collaboration-service: {condition: service_healthy}
+      access-service: {condition: service_healthy}
+
+  # ---- Observabilidad ---------------------------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./persistencia/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus
+
+  grafana:
+    image: grafana/grafana:11.5.1
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-lab-grafana}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ./persistencia/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./persistencia/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+
+  # ---- Herramientas (no arrancan con "up"; se invocan con "run --rm") ---------------------------------------------
+  # docker compose -f docker-compose.yml -f docker-compose.persistencia.yml run --rm tools smoke|baseline|acceptance|reset|redis-down|authority-down
+  tools:
+    image: python:3.12-alpine
+    profiles: [tools]
+    working_dir: /work
+    volumes:
+      - ./persistencia/tools:/work/tools:ro
+      - ./persistencia/results:/work/results
+    environment:
+      BASE_URL: http://console
+      LAB_ADMIN_KEY: ${LAB_ADMIN_KEY:-lab-admin}
+    entrypoint: ["python", "tools/check.py"]
+
+  # docker compose -f docker-compose.yml -f docker-compose.persistencia.yml run --rm k6
+  k6:
+    image: grafana/k6:0.57.0
+    profiles: [tools]
+    user: "0:0"
+    volumes:
+      - ./persistencia/k6:/scripts:ro
+      - ./persistencia/results:/results
+    environment:
+      BASE_URL: http://console
+      TYPE: ${TYPE:-carga}
+    command: ["run", "/scripts/workload.js"]
+
+volumes:
+  pgdata:
+  mongodata:
+  promdata:
+  grafanadata:

@@ -1,0 +1,18 @@
+# Prometheus recoge /metrics de cada servicio cada 5 s (ADR 0005). El nombre del job es el que usan los paneles de Grafana.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: access
+    static_configs:
+      - targets: ['access-service:8100']
+
+  - job_name: collaboration
+    static_configs:
+      - targets: ['collaboration-service:8110']
+
+  # Cuando se una la rama de observabilidad del gateway (metricas Micrometer en el puerto 9464), se agrega aqui:
+  # - job_name: gateway
+  #   static_configs:
+  #     - targets: ['realtime-gateway:9464']

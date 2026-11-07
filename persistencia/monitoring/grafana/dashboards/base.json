@@ -1,0 +1,75 @@
+{
+  "uid": "safemode-base",
+  "title": "SAFEMODE · Punto de partida",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "tags": [
+    "ARSW",
+    "laboratorio",
+    "safemode"
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Servicios observables · 1 = scrape exitoso",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=~\"access|collaboration\"}",
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        },
+        "overrides": []
+      },
+      "description": "Solo prueba que Prometheus pudo leer /metrics. NO prueba que el servicio pueda hacer su trabajo (ver 'Dependencias')."
+    },
+    {
+      "id": 2,
+      "title": "Solicitudes por segundo",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (service) (rate(safemode_http_requests_total[1m]))",
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        },
+        "overrides": []
+      }
+    }
+  ]
+}
