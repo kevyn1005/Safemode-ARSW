@@ -98,6 +98,15 @@ services:
   realtime-gateway:
     environment:
       SAFEMODE_DB_URL: jdbc:postgresql://postgres:5432/safemode?user=safemode&password=${POSTGRES_PASSWORD:-lab-postgres}
+      # Configuracion compartida del puesto y presencia (MongoDB y Redis, a traves de collaboration-service) y permisos por
+      # correo (Gestion de acceso). El gateway los consulta cuando hace falta: si caen, las alertas siguen funcionando.
+      SAFEMODE_COLLAB_URL: http://collaboration-service:8110
+      SAFEMODE_ACCESS_URL: http://access-service:8100
+      SAFEMODE_ACCESS_KEY: ${LAB_ADMIN_KEY:-lab-admin}
+      # correos que pueden CONFIGURAR el puesto la primera vez (los demas autorizados solo lo ven; despues manda la base)
+      SAFEMODE_ADMIN_EMAILS: ${SAFEMODE_ADMIN_EMAILS:-}
+    # un nombre de contenedor detenido tarda ~4 s en resolverse: con esto falla en <= 1 s (ver docs/persistencia/EVIDENCIAS.md)
+    dns_opt: ["timeout:1", "attempts:1"]
     depends_on:
       postgres: {condition: service_healthy}
 

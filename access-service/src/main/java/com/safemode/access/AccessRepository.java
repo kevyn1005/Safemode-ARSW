@@ -174,6 +174,135 @@ public class AccessRepository implements AutoCloseable {
         return Optional.of(permission(puesto, operator));
     }
 
+    /**
+     * Da de alta (si no existe) al operador de ese correo y su membresia en el puesto, en UNA transaccion, y devuelve ambos.
+     * Es idempotente y NUNCA cambia lo que ya existe: si la membresia ya estaba, se respeta su rol y su permiso, de modo que
+     * una revocacion hecha en PostgreSQL (PUT /permissions) no se deshace cuando el gateway vuelve a arrancar. Los valores
+     * {@code role} y {@code canConfigure} solo cuentan la primera vez (la lista SAFEMODE_ADMIN_EMAILS es el punto de partida;
+     * despues manda la base). Devuelve vacio si el puesto no existe.
+     */
+    public Optional<Provisioned> provision(String email, String displayName, String puesto, String role, boolean canConfigure) {
+        try (Connection connection = dataSource.getConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                if (!exists(connection, "SELECT 1 FROM puesto WHERE id = ?", puesto)) {
+                    connection.rollback();
+                    return Optional.empty();
+                }
+                boolean created = false;
+                String id = operatorIdByEmail(connection, email);
+                for (int attempt = 1; id == null && attempt <= MAX_ID_ATTEMPTS; attempt++) {
+                    String candidate = operatorIdFor(email, attempt);
+                    if (insertOperator(connection, candidate, email, displayName)) {
+                        id = candidate;
+                        created = true;
+                    } else {
+                        // el correo ya existia (otra llamada a la vez) o el id lo tiene otro correo: se mira cual de los dos
+                        id = operatorIdByEmail(connection, email);
+                    }
+                }
+                if (id == null) {
+                    throw new IllegalStateException("No se pudo asignar un identificador de operador");
+                }
+                boolean newMembership = insertMembership(connection, id, puesto, role, canConfigure);
+                if (newMembership && canConfigure) {
+                    insertAudit(connection, id, puesto, "grant");
+                }
+                Provisioned result = readProvisioned(connection, id, puesto, created);
+                connection.commit();
+                return Optional.of(result);
+            } catch (SQLException | RuntimeException e) {
+                connection.rollback();
+                throw e;
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("PostgreSQL no disponible", e);
+        }
+    }
+
+    /** Intentos de encontrar un id libre (ana, ana-2, ...) antes de rendirse. */
+    private static final int MAX_ID_ATTEMPTS = 50;
+
+    /**
+     * Identificador de operador derivado del correo: la parte local en minusculas, con todo lo que no sea letra, digito, guion
+     * o guion bajo vuelto guion (sin guiones al principio ni al final, maximo 30), y -2, -3... si ya lo usa otro correo.
+     */
+    static String operatorIdFor(String email, int attempt) {
+        String local = email.substring(0, Math.max(0, email.indexOf('@'))).toLowerCase(java.util.Locale.ROOT);
+        String slug = local.replaceAll("[^a-z0-9_-]+", "-").replaceAll("^[-_]+|-+$", "");
+        if (slug.length() > 30) {
+            slug = slug.substring(0, 30).replaceAll("-+$", "");
+        }
+        if (slug.isEmpty()) {
+            slug = "operador";
+        }
+        return attempt <= 1 ? slug : slug + "-" + attempt;
+    }
+
+    private static boolean exists(Connection connection, String sql, String value) throws SQLException {
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, value);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    private static String operatorIdByEmail(Connection connection, String email) throws SQLException {
+        try (PreparedStatement ps = connection.prepareStatement("SELECT id FROM operator WHERE email = ?")) {
+            ps.setString(1, email);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getString(1) : null;
+            }
+        }
+    }
+
+    /** true si la fila se inserto; false si el id o el correo ya existian (ON CONFLICT DO NOTHING cubre las dos claves). */
+    private static boolean insertOperator(Connection connection, String id, String email, String displayName) throws SQLException {
+        try (PreparedStatement ps = connection.prepareStatement(
+                "INSERT INTO operator (id, email, display_name) VALUES (?, ?, ?) ON CONFLICT DO NOTHING")) {
+            ps.setString(1, id);
+            ps.setString(2, email);
+            ps.setString(3, displayName);
+            return ps.executeUpdate() == 1;
+        }
+    }
+
+    private static boolean insertMembership(Connection connection, String operator, String puesto, String role,
+                                            boolean canConfigure) throws SQLException {
+        try (PreparedStatement ps = connection.prepareStatement(
+                "INSERT INTO membership (operator_id, puesto_id, role, can_configure) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING")) {
+            ps.setString(1, operator);
+            ps.setString(2, puesto);
+            ps.setString(3, role);
+            ps.setBoolean(4, canConfigure);
+            return ps.executeUpdate() == 1;
+        }
+    }
+
+    private static void insertAudit(Connection connection, String operator, String puesto, String action) throws SQLException {
+        try (PreparedStatement ps = connection.prepareStatement(
+                "INSERT INTO permission_audit (operator_id, puesto_id, action) VALUES (?, ?, ?)")) {
+            ps.setString(1, operator);
+            ps.setString(2, puesto);
+            ps.setString(3, action);
+            ps.executeUpdate();
+        }
+    }
+
+    private static Provisioned readProvisioned(Connection connection, String id, String puesto, boolean created) throws SQLException {
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT o.email, o.display_name, m.role, m.can_configure FROM operator o "
+                        + "JOIN membership m ON m.operator_id = o.id WHERE o.id = ? AND m.puesto_id = ?")) {
+            ps.setString(1, id);
+            ps.setString(2, puesto);
+            try (ResultSet rs = ps.executeQuery()) {
+                rs.next();
+                return new Provisioned(id, rs.getString(1), rs.getString(2), puesto, rs.getString(3), rs.getBoolean(4), created);
+            }
+        }
+    }
+
     /** Vuelve a los datos ficticios del laboratorio (solo para repetir pruebas). */
     public void reset() {
         try (Connection connection = dataSource.getConnection()) {

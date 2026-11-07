@@ -80,6 +80,7 @@ public class GatewayRunner {
                         }
                     })
                     .withAuth(auth);
+            enablePuesto(http, allowedEmails);
             gateway.startAndWait();
             http.start();
             Timer alertLatency = Timer.builder("safemode.alert.latency")
@@ -136,6 +137,32 @@ public class GatewayRunner {
                 stopAll.run();
             }
         }
+    }
+
+    /**
+     * Configuracion compartida del puesto y presencia (MongoDB y Redis, ADR 0005): solo si estan las tres variables
+     * SAFEMODE_COLLAB_URL, SAFEMODE_ACCESS_URL y SAFEMODE_ACCESS_KEY; sin ellas el panel funciona exactamente como antes.
+     * SAFEMODE_ADMIN_EMAILS (opcional) son los correos que pueden configurar el puesto la primera vez; SAFEMODE_PUESTO_ID
+     * (opcional, por defecto puesto-1) el puesto que se comparte. Las claves solo por variable de entorno, nunca en el codigo.
+     */
+    private static void enablePuesto(DashboardHttpServer http, Set<String> allowedEmails) {
+        String collaborationUrl = System.getenv("SAFEMODE_COLLAB_URL");
+        String accessUrl = System.getenv("SAFEMODE_ACCESS_URL");
+        String accessKey = System.getenv("SAFEMODE_ACCESS_KEY");
+        if (isBlank(collaborationUrl) || isBlank(accessUrl) || isBlank(accessKey)) {
+            System.out.println("Configuracion compartida del puesto: desactivada (define SAFEMODE_COLLAB_URL, SAFEMODE_ACCESS_URL y SAFEMODE_ACCESS_KEY)");
+            return;
+        }
+        String puestoId = isBlank(System.getenv("SAFEMODE_PUESTO_ID")) ? "puesto-1" : System.getenv("SAFEMODE_PUESTO_ID").trim();
+        Set<String> admins = AuthService.parseEmails(System.getenv("SAFEMODE_ADMIN_EMAILS"));
+        http.withPuesto(new CollaborationClient(collaborationUrl, puestoId),
+                new AccessDirectory(accessUrl, accessKey.trim(), puestoId, allowedEmails, admins));
+        System.out.println("Configuracion compartida del puesto '" + puestoId + "': activa (" + admins.size()
+                + " correo(s) pueden configurarla al inicio; los demas autorizados solo la ven)");
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     /** El boton solo se ofrece con el gateway escuchando unicamente en esta maquina. */

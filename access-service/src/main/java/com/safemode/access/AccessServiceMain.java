@@ -20,6 +20,7 @@ import java.util.Map;
  * <pre>
  *   GET  /permissions/{puesto}/{operador}   lectura por clave primaria (publica en esta practica)
  *   PUT  /permissions/{puesto}/{operador}   {"canConfigure": false}  concede o revoca (X-Lab-Key)
+ *   POST /operators/provision               da de alta al operador de un correo y su membresia, sin cambiar lo que ya hay (X-Lab-Key)
  *   POST /lab/reset                         restablece los datos ficticios (X-Lab-Key)
  * </pre>
  * Variables de entorno: PGURL, PGUSER, PGPASSWORD, LAB_ADMIN_KEY, PORT, BIND_HOST.
@@ -69,6 +70,28 @@ public class AccessServiceMain {
                     .map(permission -> Response.json(200, permission))
                     .orElseThrow(() -> new HttpError(404, "El operador no es miembro de ese puesto"));
         });
+        server.route("POST", "/operators/provision", request -> {
+            Guards.requireAdminKey(request, adminKey);
+            JsonObject body = Json.parseObject(request.body());
+            String email = text(body, "email", 5, 120).toLowerCase(java.util.Locale.ROOT);
+            if (!EMAIL.matcher(email).matches()) {
+                throw new HttpError(400, "email no es un correo valido");
+            }
+            String displayName = body.has("displayName") ? text(body, "displayName", 1, 80) : email.substring(0, email.indexOf('@'));
+            String puesto = Guards.identifier(text(body, "puesto", 1, 40), "puesto");
+            String role = text(body, "role", 1, 20);
+            if (!ROLES.contains(role)) {
+                throw new HttpError(400, "role debe ser admin, operator o viewer");
+            }
+            if (!body.has("canConfigure") || !body.get("canConfigure").isJsonPrimitive()
+                    || !body.get("canConfigure").getAsJsonPrimitive().isBoolean()) {
+                throw new HttpError(400, "Se espera canConfigure true|false");
+            }
+            boolean canConfigure = body.get("canConfigure").getAsBoolean();
+            return guard(() -> repository.provision(email, displayName, puesto, role, canConfigure))
+                    .map(provisioned -> Response.json(200, provisioned))
+                    .orElseThrow(() -> new HttpError(404, "El puesto no existe"));
+        });
         server.route("POST", "/lab/reset", request -> {
             Guards.requireAdminKey(request, adminKey);
             guard(() -> {
@@ -78,6 +101,21 @@ public class AccessServiceMain {
             return Response.json(200, Map.of("reset", true));
         });
         return server;
+    }
+
+    private static final java.util.regex.Pattern EMAIL = java.util.regex.Pattern.compile("[^\\s@]{1,64}@[^\\s@]{1,100}");
+    private static final java.util.Set<String> ROLES = java.util.Set.of("admin", "operator", "viewer");
+
+    /** Un campo de texto obligatorio del cuerpo, sin caracteres de control y con largo acotado. */
+    private static String text(JsonObject body, String field, int min, int max) {
+        if (!body.has(field) || !body.get(field).isJsonPrimitive() || !body.get(field).getAsJsonPrimitive().isString()) {
+            throw new HttpError(400, field + " debe ser texto");
+        }
+        String clean = body.get(field).getAsString().replaceAll("\\p{Cntrl}", " ").strip();
+        if (clean.length() < min || clean.length() > max) {
+            throw new HttpError(400, field + " debe tener de " + min + " a " + max + " caracteres");
+        }
+        return clean;
     }
 
     /** Una falla de PostgreSQL es 503 (dependencia no disponible), no un error de programacion (500). */
