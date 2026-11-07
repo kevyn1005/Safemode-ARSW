@@ -97,15 +97,19 @@ public class GatewayRunner {
             });
             engine.start(Duration.ofMillis(250));
             String metricsHost = System.getenv().getOrDefault("SAFEMODE_METRICS_HOST", "0.0.0.0");
-            HttpServer observability = Observability.start(metricsHost, 9464, () -> {
+            // La misma comprobacion sirve a /ready (sonda funcional) y al gauge safemode_dependency_up{dependency="database"}.
+            // Con almacenes que se reconectan solos, vuelve a dar true en cuanto la base (H2 o PostgreSQL) se recupera.
+            java.util.function.BooleanSupplier databaseUp = () -> {
                 try {
                     engine.recentEvents(1);
                     return true;
                 } catch (Exception e) {
-                    System.err.println("[READY] fallo la consulta a H2: " + e + " | causa: " + e.getCause());
+                    System.err.println("[READY] fallo la consulta a la base de datos: " + e + " | causa: " + e.getCause());
                     return false;
                 }
-            });
+            };
+            HttpServer observability = Observability.start(metricsHost, 9464, databaseUp);
+            Observability.watchDependency("database", databaseUp, Duration.ofSeconds(5));
             System.out.println("Inicio de sesion con Google: " + allowedEmails.size() + " correo(s) autorizado(s)");
             System.out.println(seconds > 0 ? "Escuchando durante " + seconds + " s..." : "Escuchando hasta que lo detengan...");
             // Parada unica: al terminar el tiempo, o con docker stop (SIGTERM), que dispara el hook de cierre
