@@ -149,6 +149,7 @@ de la alerta por evento la da PostgreSQL de forma declarativa.
 | Si falla… | Qué pasa | Prueba |
 |---|---|---|
 | Redis | Se pierde la presencia (`available:false`) y la caché; se sigue configurando el puesto. Al volver, el primer heartbeat ya funciona | `08-redis-down-solucion.json`, `08c-redis-up-solucion.json` |
+| La colección del historial (falla al anotar) | **El cambio se guarda igual** (200); se pierde una entrada de auditoría (queda un hueco) y sube `safemode_history_writes_total{result="error"}` | `19-historial-del-puesto.txt` |
 
 **Fallas que bloquean a propósito:**
 
@@ -205,22 +206,31 @@ compensación. Ninguna se implementó ni se probó.
 
 ## Historial creciente
 
-**Diseño:** una **colección separada** `puesto_history` en MongoDB, con **un documento por cada cambio** (no se implementó, como pedía
-el laboratorio):
+**Implementado (7 de noviembre; el laboratorio solo pedía diseñarlo):** una **colección separada** `puesto_history` en MongoDB, con **un documento
+por cada cambio** del puesto:
 
 ```json
-{ "puesto_id": "puesto-1", "version": 7, "title": "…", "changed": ["cameras"], "by": "ana", "at": "2026-11-06T22:14:07Z" }
+{ "puesto_id": "puesto-1", "version": 11, "title": "Puesto principal C", "changed": ["title"], "by": "ana", "at": "2026-11-07T14:54:11.139Z" }
 ```
 
-- **Índice:** `{ puesto_id: 1, version: -1 }`, único por puesto y versión.
-- **Consulta:** los últimos cambios de un puesto: `find({puesto_id}).sort({version: -1}).limit(20)`.
-- **Paginación por cursor** (no por `skip`): la primera página trae las 20 más recientes; la siguiente pide `version < última_vista`
-  con el mismo `limit(20)`. Cada página tarda lo mismo aunque haya miles de versiones, y no se repiten ni se saltan filas si llegan
-  cambios nuevos.
-- **Retención:** política explícita (p. ej. 90 días o las últimas N versiones) con un índice TTL sobre `at`.
-- **Escritura:** junto al cambio del puesto. Como dos colecciones no comparten transacción simple, la entrada del historial se escribiría
-  **después** del cambio (si falla, se pierde una entrada de auditoría, no el cambio) o se usaría una transacción multidocumento de
-  MongoDB, que exige un conjunto de réplicas (fuera del alcance: una sola instancia).
+- **Índices** (`HistoryStore.ensureIndexes`, idempotente): `{ puesto_id: 1, version: -1 }` **único** (una entrada por versión; la consulta sale del propio
+  índice, ya ordenada) y un **TTL** sobre `at` (retención por defecto **90 días**, `HISTORY_RETENTION_DAYS`; si cambia el plazo, el índice se recrea).
+  MongoDB revisa el TTL cada ~60 s, así que un borrado puede tardar un poco más que el plazo.
+- **Consulta y paginación por cursor** (no por `skip`): `GET /api/puestos/{id}/history?limit=&before=` devuelve las N entradas más recientes (1 a 50, por
+  defecto 20) y `nextBefore`; la página siguiente pide `version < nextBefore`. Cada página cuesta lo mismo aunque haya miles de versiones y **no repite ni
+  salta filas si llega un cambio nuevo entre páginas** (comprobado: `evidencias/19-…`). El cursor y el tamaño solo aceptan dígitos en rango (400 si no).
+  El gateway la expone al panel como `GET /puesto/history` (con sesión, y con la misma validación estricta de la consulta); el panel muestra los 3 últimos
+  cambios («v6 · ana · zonas · 07-11 09:42»).
+- **Escritura DESPUÉS del cambio**, no en la misma operación: un documento y otra colección no comparten una transacción simple (las de varios
+  documentos exigen un conjunto de réplicas, fuera del alcance de una sola instancia). Por eso, **si MongoDB falla al anotar, el cambio ya quedó**: se pierde
+  una entrada de auditoría, queda un **hueco** en las versiones y `safemode_history_writes_total{result="error"}` lo cuenta; el operador igual recibe su 200.
+  Se comprobó rompiendo la colección a propósito (`evidencias/19-…`: PUT 200, versión 12 guardada, falta la entrada 12, `error` = 1).
+- **Solo cuentan los cambios que se guardan:** un 409 (versión vieja), un 403 (sin permiso) o un 400 (cuerpo inválido) **no dejan entrada**. Escribir dos veces la
+  misma versión es inofensivo (el índice único la rechaza y se ignora). La versión 1 (el documento sembrado) no tiene entrada: el historial empieza en el primer cambio.
+- **Reinicio del escenario** (`/api/lab/reset`): borra también el historial. Con la versión otra vez en 1, las entradas viejas chocarían con el índice único y el
+  historial contaría una historia que ya no existe.
+- **Qué NO es:** no guarda el *contenido* anterior (solo qué campos tocó, quién y cuándo), así que sirve para auditar, no para deshacer; y no es a prueba de
+  huecos (ver arriba). Si hiciera falta deshacer, habría que guardar el documento previo en cada entrada (más espacio) o usar transacciones con un conjunto de réplicas.
 
 **Por qué embeberlo sin límite sería problemático:** (1) el documento crecería sin parar y MongoDB limita un documento a 16 MB; (2) cada
 lectura del puesto traería todo el historial aunque solo se quiera el título; (3) cada edición reescribiría un documento cada vez más
@@ -279,8 +289,8 @@ MongoDB y PostgreSQL.
 **Apoyo de asistentes (declarado):** se usó **Claude Code** (asistente de IA de Anthropic) para: analizar el proyecto y el enunciado,
 escribir los módulos nuevos y el soporte de PostgreSQL, las pruebas, el compose, el dashboard y los scripts de prueba, ejecutar y medir
 los experimentos, y redactar la matriz, este ADR y las evidencias. Los hallazgos de DNS y del pool de Redis salieron de **medir**, no de
-suponer. La ampliación del 7 de noviembre (reconexión de los almacenes y observabilidad unida) también se hizo con Claude Code, y se
-verificó con pruebas y con el reinicio real de PostgreSQL. Todos los integrantes deben poder explicar el código entregado y las decisiones; las explicaciones de la matriz y de este ADR son
+suponer. La ampliación del 7 de noviembre (reconexión de los almacenes, observabilidad unida, permisos por correo, integración del panel e historial del
+puesto) también se hizo con Claude Code, y se verificó con pruebas automáticas y contra PostgreSQL, MongoDB y Redis reales. Todos los integrantes deben poder explicar el código entregado y las decisiones; las explicaciones de la matriz y de este ADR son
 las que deben defender.
 
 ## Cómo reproducir

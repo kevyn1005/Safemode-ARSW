@@ -211,7 +211,21 @@ dc logs --tail=10 realtime-gateway       # busque: [BD] Se perdio la conexion ..
 
 Las pruebas automáticas (`ReconnectingConnectionTest`, `DatabaseRestartTest`) apagan y encienden un servidor H2 real; no necesitan Docker.
 
-### 4.7 Pruebas Java
+### 4.7 Historial de cambios del puesto
+
+Cada cambio guardado deja una entrada en la colección `puesto_history` de MongoDB (quién, qué campos y cuándo). Se consulta con cursor (no con `skip`), del más
+nuevo al más viejo, desde la consola del escenario (`http://localhost:8088`) o por el gateway (`GET /puesto/history`, con sesión):
+
+```powershell
+curl "http://localhost:8088/api/puestos/puesto-1/history?limit=5"            # las 5 últimas; trae nextBefore
+curl "http://localhost:8088/api/puestos/puesto-1/history?limit=5&before=9"   # las 5 anteriores a la versión 9
+dc exec -T mongo mongosh safemode --quiet --eval "db.puesto_history.getIndexes()"   # el índice único y el TTL de 90 días
+```
+
+Un 409, un 403 o un 400 **no** dejan entrada. Si MongoDB falla al anotar, el cambio igual se guarda y sube `safemode_history_writes_total{result="error"}`.
+`tools reset` borra también el historial. Evidencia: `evidencias/19-historial-del-puesto.txt`.
+
+### 4.8 Pruebas Java
 
 ```powershell
 mvn test                                         # todo el proyecto (incluye los módulos nuevos); no necesita Docker
