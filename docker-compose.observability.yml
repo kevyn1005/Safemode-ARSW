@@ -20,6 +20,8 @@
     image: grafana/grafana:latest
     volumes:
       - ./observability/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
+      - ./observability/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./observability/dashboards:/var/lib/grafana/dashboards:ro
     ports:
       - "127.0.0.1:3000:3000"
-    depends_on: [prometheus]
+    depends_on: [ prometheus ]
