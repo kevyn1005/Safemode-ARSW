@@ -23,6 +23,12 @@ public class AlertStore implements AutoCloseable {
     private static final String COLUMNS = "id, event_id, event_occurred_at, alert_type, severity, class_name, message, "
             + "frame_path, created_at, acknowledged";
 
+    private static final String SELECT_BASE = "SELECT " + COLUMNS + " FROM alert ";
+    private static final String ORDER_DESC = " ORDER BY id DESC";
+    private static final String SELECT_BY_ID = SELECT_BASE + "WHERE id = ?" + ORDER_DESC;
+    private static final String SELECT_ALL = SELECT_BASE + ORDER_DESC;
+    private static final String SELECT_PENDING = SELECT_BASE + "WHERE acknowledged = FALSE" + ORDER_DESC;
+
     private final Connection connection;
 
     private AlertStore(Connection connection) {
@@ -109,17 +115,17 @@ public class AlertStore implements AutoCloseable {
     }
 
     public Optional<Alert> findById(long id) {
-        return query("WHERE id = ?", id).stream().findFirst();
+        return query(SELECT_BY_ID, id).stream().findFirst();
     }
 
     /** Todas las alertas, de la mas nueva a la mas vieja. */
     public List<Alert> listAll() {
-        return query("", null);
+        return query(SELECT_ALL, null);
     }
 
     /** Las alertas que nadie ha revisado todavia, de la mas nueva a la mas vieja. */
     public List<Alert> listPending() {
-        return query("WHERE acknowledged = FALSE", null);
+        return query(SELECT_PENDING, null);
     }
 
     /** Marca la alerta como revisada; devuelve false si no existe. */
@@ -132,8 +138,7 @@ public class AlertStore implements AutoCloseable {
         }
     }
 
-    private List<Alert> query(String where, Long param) {
-        String sql = "SELECT " + COLUMNS + " FROM alert " + where + " ORDER BY id DESC";
+    private List<Alert> query(String sql, Long param) {
         try (PreparedStatement ps = connection.prepareStatement(sql)) {
             if (param != null) {
                 ps.setLong(1, param);
