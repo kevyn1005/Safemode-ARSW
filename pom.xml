@@ -26,9 +26,9 @@
             **/ScreenCaptureTest.java,
             **/VisionDetectionTest.java,
             **/TelegramChatIds.java,
-            **/TelegramTestMessage.java
+            **/TelegramTestMessage.java,
             **/NvidiaCropCheck.java,
-            **/MousePositionFinder.java,
+            **/MousePositionFinder.java
         </sonar.coverage.exclusions>
     </properties>
 

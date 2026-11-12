@@ -285,9 +285,16 @@ public class PresenceEventStore implements AutoCloseable {
             + "owner_ai_description, removal_kind, remover_person_id, remover_description, remover_crop_path, "
             + "remover_ai_description, camera_id, remover_looks_like_owner";
 
+
+
+    private static final String SELECT_REMOVED_AFTER = "SELECT " + EVENT_COLUMNS
+            + " FROM object_presence_event WHERE event_type = 'REMOVED' AND id > ? ORDER BY id";
+    private static final String SELECT_BY_ID = "SELECT " + EVENT_COLUMNS
+            + " FROM object_presence_event WHERE id = ? ORDER BY id";
+
     /** Eventos REMOVED con id mayor que el dado, del mas viejo al mas nuevo: asi se lee lo que falta por procesar. */
     public List<StoredEvent> findRemovedAfter(long lastEventId) {
-        return query("event_type = 'REMOVED' AND id > ?", lastEventId);
+        return query(SELECT_REMOVED_AFTER, lastEventId);
     }
 
     /** El id mas alto guardado (0 si no hay eventos): sirve para detectar que la tabla se vacio y los ids se reiniciaron. */
@@ -302,7 +309,7 @@ public class PresenceEventStore implements AutoCloseable {
 
     /** El evento con ese id, con los datos actuales (la descripcion por IA se completa unos segundos despues). */
     public Optional<StoredEvent> findById(long id) {
-        return query("id = ?", id).stream().findFirst();
+        return query(SELECT_BY_ID, id).stream().findFirst();
     }
 
     /** Los ultimos eventos (registros y retiros), del mas nuevo al mas viejo: lo que muestra el reporte del panel. */
@@ -318,8 +325,7 @@ public class PresenceEventStore implements AutoCloseable {
         }
     }
 
-    private List<StoredEvent> query(String where, long param) {
-        String sql = "SELECT " + EVENT_COLUMNS + " FROM object_presence_event WHERE " + where + " ORDER BY id";
+    private List<StoredEvent> query(String sql, long param) {
         try (PreparedStatement ps = connection.get().prepareStatement(sql)) {
             ps.setLong(1, param);
             try (var rs = ps.executeQuery()) {

@@ -572,8 +572,8 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
      * queda "En el brazo, un tatuaje".
      */
     static String withoutSides(String text) {
-        String cleaned = text.replaceAll("(?i)\\s*\\b(izquierd[oa]s?|derech[oa]s?)\\b", "");
-        return cleaned.replaceAll("\\s+,", ",").replaceAll("\\s{2,}", " ").trim();
+        String cleaned = text.replaceAll("(?i)\\b(izquierd[oa]s?|derech[oa]s?)\\b", "");
+        return cleaned.replaceAll("\\s++,", ",").replaceAll("\\s{2,}+", " ").trim();
     }
 
     /** true si el texto del modelo contiene un objeto JSON (aunque no traiga datos utiles). */
