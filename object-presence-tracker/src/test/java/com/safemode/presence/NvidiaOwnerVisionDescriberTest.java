@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -471,5 +472,37 @@ class NvidiaOwnerVisionDescriberTest {
 
         assertTrue(small.length() > 0);
         assertTrue(huge.length() < 200_000, "una imagen de 2560x1080 debe reducirse a 640 px antes de enviarse");
+    }
+
+    @Test
+    void elModeloPorDefectoNoEsElQueNVIDIARetiroYSeEnviaConElRazonamientoApagado() {
+        // meta/llama-3.2-11b-vision-instruct dejo de existir el 5-nov-2026 (HTTP 410): el panel se quedaba sin dictamen
+        assertNotEquals("meta/llama-3.2-11b-vision-instruct", NvidiaOwnerVisionDescriber.DEFAULT_MODEL);
+        // un Nemotron con el razonamiento encendido gasta los 200 tokens pensando y contesta vacio
+        assertTrue(NvidiaOwnerVisionDescriber.needsThinkingOff(NvidiaOwnerVisionDescriber.DEFAULT_MODEL));
+    }
+
+    @Test
+    void losModelosNemotronRecibenElRazonamientoApagadoYElLimiteDeSiempre() {
+        responseBody = serviceResponse("{\"ropa_superior\": \"camiseta naranja\"}");
+        NvidiaOwnerVisionDescriber nemotron = new NvidiaOwnerVisionDescriber("clave-de-prueba",
+                "http://127.0.0.1:" + server.getAddress().getPort(), "nvidia/nemotron-de-prueba", Duration.ofSeconds(5));
+
+        assertEquals("ropa superior: camiseta naranja", nemotron.describe(new BufferedImage(217, 640, BufferedImage.TYPE_INT_RGB)));
+
+        JsonObject sent = JsonParser.parseString(lastBody.get()).getAsJsonObject();
+        assertFalse(sent.getAsJsonObject("chat_template_kwargs").get("enable_thinking").getAsBoolean());
+        assertEquals(200, sent.get("max_tokens").getAsInt(), "el limite no cambia: el modelo ya no gasta tokens pensando");
+    }
+
+    @Test
+    void losDemasModelosNoRecibenElCampoDelRazonamiento() {
+        responseBody = serviceResponse("{\"ropa_superior\": \"camiseta negra\"}");
+
+        client().describe(new BufferedImage(217, 640, BufferedImage.TYPE_INT_RGB));
+
+        assertFalse(lastBody.get().contains("chat_template_kwargs"), "solo los Nemotron lo reciben");
+        assertFalse(NvidiaOwnerVisionDescriber.needsThinkingOff("meta/llama-3.2-90b-vision-instruct"));
+        assertFalse(NvidiaOwnerVisionDescriber.needsThinkingOff(null));
     }
 }
