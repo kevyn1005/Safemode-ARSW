@@ -6,7 +6,7 @@ providers:
     allowUiUpdates: true
     options:
       path: /var/lib/grafana/dashboards
-  # El tablero SafeMode de Kevyn: se carga TAL CUAL desde observability/grafana/dashboards/ (ver el README de esa carpeta).
+  # El tablero SafeMode (JSON de Juli): se carga TAL CUAL desde observability/dashboards/ (docker-compose.persistencia.yml).
   - name: SafeMode
     folder: SafeMode
     type: file

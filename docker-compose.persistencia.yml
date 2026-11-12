@@ -131,6 +131,12 @@ services:
 
   prometheus:
     image: prom/prometheus:v3.1.0
+    # Los mismos argumentos que trae la imagen por defecto, mas --web.enable-remote-write-receiver: k6 manda sus metricas
+    # (k6_vus, k6_http_req_duration_p95...) por remote write y el tablero de Juli las consulta (igual que en docker-compose.observability.yml).
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-remote-write-receiver
     ports:
       - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
     volumes:
@@ -140,7 +146,9 @@ services:
       - blackbox
 
   grafana:
-    image: grafana/grafana:11.5.1
+    # 13.3.1: el tablero SafeMode (JSON de Juli) usa el esquema dashboard.grafana.app/v2beta1, que Grafana 11.5.1 NO carga
+    # (probado el 12-nov-2026: con 11.5.1 solo aparecian los 2 tableros del lab; con 13.3.1 aparecen los 3).
+    image: grafana/grafana:13.3.1
     ports:
       - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
     environment:
@@ -151,8 +159,8 @@ services:
       - grafanadata:/var/lib/grafana
       - ./persistencia/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./persistencia/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
-      # el tablero SafeMode de Kevyn (si lo exporta ahi, se carga sin modificarlo)
-      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards-safemode:ro
+      # el tablero SafeMode (JSON de Juli, observability/dashboards/): se carga tal cual, sin modificarlo
+      - ./observability/dashboards:/var/lib/grafana/dashboards-safemode:ro
 
   # ---- Herramientas (no arrancan con "up"; se invocan con "run --rm") ---------------------------------------------
   # docker compose -f docker-compose.yml -f docker-compose.persistencia.yml run --rm tools smoke|baseline|acceptance|reset|redis-down|authority-down
@@ -179,7 +187,10 @@ services:
     environment:
       BASE_URL: http://console
       TYPE: ${TYPE:-carga}
-    command: ["run", "/scripts/workload.js"]
+      # ademas del resumen de siempre, las metricas van a Prometheus para los paneles de k6 del tablero SafeMode
+      K6_PROMETHEUS_RW_SERVER_URL: http://prometheus:9090/api/v1/write
+      K6_PROMETHEUS_RW_TREND_STATS: "p(95)"
+    command: ["run", "-o", "experimental-prometheus-rw", "/scripts/workload.js"]
 
 volumes:
   pgdata:
