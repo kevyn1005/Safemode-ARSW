@@ -73,8 +73,12 @@ en el computador. Las identidades `ana`, `luis` y `marta` se simulan con la cabe
 No exponga este entorno a Internet. Para cambiar puertos o claves (y poner el inicio de sesión con Google): `Copy-Item .env.example .env` y editar `.env`.
 
 Grafana trae la fuente **Prometheus** y dos dashboards en la carpeta **ARSW**: *SAFEMODE · Punto de partida* (2 paneles) y
-*ARSW-EQP-01 · Persistencia (Safemode)* (los 8 del laboratorio). Además carga, en la carpeta **SafeMode**, el tablero de Kevyn tal cual cuando él
-lo exporte a `observability/grafana/dashboards/` (hoy solo vive en su Grafana; ver el README de esa carpeta). Espere 15–30 s al primer *scraping*.
+*ARSW-EQP-01 · Persistencia (Safemode)* (los 8 del laboratorio). Además carga, en la carpeta **SafeMode**, el tablero que subió Juli tal cual
+(`observability/dashboards/dashboard-safemode-v2.json`, referencia del equipo; no se modifica). Sus paneles de k6 (usuarios virtuales, peticiones, P95 y
+fallidas) reciben datos porque Prometheus acepta *remote write* y `run --rm k6` envía ahí sus métricas. **Ojo con la versión de Grafana:** ese JSON usa el esquema
+`dashboard.grafana.app/v2beta1`, que Grafana 11.5.1 no carga (solo mostraba los 2 tableros del lab); por eso este compose fija **Grafana 13.3.1**, con la que
+aparecen los tres (comprobado el 12 de noviembre, ver el ADR 0005).
+Espere 15–30 s al primer *scraping*.
 
 **Una sola observabilidad.** Este Prometheus lee cuatro objetivos (`persistencia/monitoring/prometheus.yml`): `access`, `collaboration`, el
 `gateway` del producto (métricas de la rama de Kevyn, puerto 9464 del contenedor) y la sonda `ready-probe` (blackbox → `/ready` del gateway).
@@ -170,8 +174,10 @@ Rename-Item persistencia\results\k6-carga-summary.json k6-carga-solucion.json   
 ```
 
 Extensiones opcionales: `dc run --rm -e TYPE=estres k6` (10→30→60 VU), `pico`, `resistencia` (5 min). Los umbrales (P95 < 500 ms, errores
-< 1 %) son hipótesis de clase. El resumen de k6 **no se importa en Grafana**: Grafana muestra las métricas HTTP que los servicios exponen y
-Prometheus recopila durante la carga. El P95 de k6 mide el recorrido del cliente; el del backend mide su procesamiento y se estima con
+< 1 %) son hipótesis de clase. El archivo de resumen de k6 **no se importa en Grafana**; lo que sí llega a Prometheus (por *remote write*, `-o experimental-prometheus-rw`)
+son las métricas en vivo de k6 (`k6_vus`, `k6_http_reqs_total`, `k6_http_req_duration_p95`, `k6_http_req_failed_rate`), que usan los paneles de k6 del tablero SafeMode;
+los paneles del lab muestran las métricas HTTP que los servicios exponen. Para no pisar la evidencia anterior, renombre el resumen con otro nombre (la
+evidencia del 12-nov es `22-k6-carga-con-remote-write.json`). El P95 de k6 mide el recorrido del cliente; el del backend mide su procesamiento y se estima con
 cubetas: no tienen por qué coincidir.
 
 Los seis paneles añadidos y sus consultas están en el dashboard `persistencia.json` (y exportados en `dashboard.json`).
@@ -260,8 +266,8 @@ dc down -v                                       # BORRA los volúmenes de Postg
 - **Observabilidad (rama `kevynobservabilidad`): ya unida.** El gateway usa Micrometer 1.13.6 (`safemode_alerts_total`,
   `safemode_alert_latency_*`) y estos servicios **la misma librería y versión** con el prefijo `safemode_`, así que el `prometheus.yml`
   de este compose lee los tres (jobs `gateway`, `access` y `collaboration`) más la sonda `/ready`, con los mismos nombres de job que su
-  `observability/prometheus.yml` y sin cambiar sus métricas ni su compose (su tablero de Grafana no está en el repo: ver
-  `observability/grafana/dashboards/README.md`). El gateway publica además `safemode_dependency_up{dependency="database"}`, con el mismo nombre que los otros.
+  `observability/prometheus.yml` y sin cambiar sus métricas ni su compose (su tablero de Grafana lo subió Juli a
+  `observability/dashboards/` y este compose lo monta tal cual). El gateway publica además `safemode_dependency_up{dependency="database"}`, con el mismo nombre que los otros.
 - **Login con Google (rama `Juli/unión`): ya unido, sin cambiar su lógica.** La lista `SAFEMODE_ALLOWED_EMAILS` sigue decidiendo quién entra. Lo nuevo
   se enciende con `SAFEMODE_COLLAB_URL`, `SAFEMODE_ACCESS_URL` y `SAFEMODE_ACCESS_KEY` (el compose de persistencia ya las pasa): el gateway convierte el correo
   de la sesión en un operador de Gestión de acceso (`POST /operators/provision`) y reemplaza la cabecera `X-Operator` por esa identidad. Todos los

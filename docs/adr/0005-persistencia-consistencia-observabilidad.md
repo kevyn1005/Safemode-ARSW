@@ -88,8 +88,11 @@ errores de programación).
 **Observabilidad.** Prometheus recoge `/metrics` de cada servicio cada 5 s; los nombres llevan el prefijo `safemode_` y usan Micrometer
 1.13.6, **la misma librería y versión que la rama de observabilidad del gateway**, para poder unirlas. La ruta de cada métrica es la
 **plantilla** (`/api/puestos/{id}`), nunca el id real. Grafana provisiona dos dashboards (*Punto de partida*, 2 paneles, y
-*ARSW-EQP-01 · Persistencia*, los 8 paneles) y deja lista la carpeta **SafeMode** para cargar, sin modificarlo, el tablero que Kevyn armó en su Grafana
-(no está en el repositorio: ver `observability/grafana/dashboards/README.md`); k6 genera carga de lectura.
+*ARSW-EQP-01 · Persistencia*, los 8 paneles) y carga en la carpeta **SafeMode**, sin modificarlo, el tablero que Kevyn armó y Juli subió al repositorio
+(`observability/dashboards/dashboard-safemode-v2.json`, 12 de noviembre); k6 genera carga de lectura y, con `-o experimental-prometheus-rw`, envía
+sus métricas a Prometheus (que acepta *remote write*) para los paneles de k6 de ese tablero. El JSON es del esquema `v2beta1` de Grafana 12+: con la imagen
+anterior (11.5.1) **no cargaba** (solo aparecían los 2 tableros del lab), así que el compose fija ahora **Grafana 13.3.1**, con la que cargan los tres tableros
+sin modificar ningún JSON (prueba aislada del 12 de noviembre).
 
 **Una sola observabilidad (7 de noviembre).** Hasta ahora había dos Prometheus/Grafana que chocaban en los puertos 9090 y 3000: el de la
 rama de Kevyn (gateway corriendo en el computador, `docker-compose.observability.yml`) y el de persistencia (access y collaboration). El
