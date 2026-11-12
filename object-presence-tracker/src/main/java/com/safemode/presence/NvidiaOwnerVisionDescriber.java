@@ -40,7 +40,10 @@ import java.util.concurrent.atomic.AtomicLong;
 public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
 
     static final String DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
-    static final String DEFAULT_MODEL = "meta/llama-3.2-11b-vision-instruct";
+    // meta/llama-3.2-11b-vision-instruct (el anterior) dejo de existir el 5-nov-2026: NVIDIA responde HTTP 410 "Gone" y el panel
+    // se quedaba sin dictamen. Este responde en ~0,5-1 s con ~540 tokens de entrada (llama gastaba ~6.700). Otro modelo se
+    // elige con NVIDIA_VISION_MODEL; en la cuenta del equipo gemma-3, phi-3-vision, cosmos y neva dan 404 aunque aparezcan listados.
+    static final String DEFAULT_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning";
     // Una respuesta normal tarda ~3 s; las que pasan de 20 s se cuelgan (visto en la primera llamada de dos corridas
     // seguidas), asi que se corta pronto y se reintenta una vez en vez de esperar un minuto.
     static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(20);
@@ -421,7 +424,21 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
         body.addProperty("max_tokens", 200);
         body.addProperty("temperature", 0.1);
         body.addProperty("stream", false);
+        if (needsThinkingOff(model)) {
+            JsonObject templateKwargs = new JsonObject();
+            templateKwargs.addProperty("enable_thinking", false);
+            body.add("chat_template_kwargs", templateKwargs);
+        }
         return body.toString();
+    }
+
+    /**
+     * Los modelos Nemotron "piensan" antes de contestar y ese razonamiento gasta los 200 tokens del limite: la respuesta llega
+     * vacia (finish_reason=length). Con enable_thinking=false contestan el JSON directo (medido: 0,5-0,8 s, 69 tokens de salida).
+     * Los demas modelos no reciben el campo.
+     */
+    static boolean needsThinkingOff(String model) {
+        return model != null && model.startsWith("nvidia/nemotron");
     }
 
     static String encodeJpegBase64(BufferedImage src) throws IOException {
