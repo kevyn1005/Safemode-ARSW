@@ -8,7 +8,7 @@ Integrantes: Hever Barrera Batero, María Juliana Rodríguez Caicedo, Kevyn Dani
 ## Entorno
 
 Windows 11 Pro 10.0.26200 (Docker Desktop) · Docker 29.6.1 · Compose v5.2.0 · Java 26 local (compila a 17) y contenedores con Temurin 17.
-Imágenes: PostgreSQL 16.6, MongoDB 7.0.16, Redis 7.4.2, Nginx 1.27.3, Prometheus 3.1.0, Grafana 11.5.1, k6 0.57.0, Python 3.12.
+Imágenes: PostgreSQL 16.6, MongoDB 7.0.16, Redis 7.4.2, Nginx 1.27.3, Prometheus 3.1.0, Grafana 11.5.1 (13.3.1 desde el 12 de noviembre, ver la evidencia 23), k6 0.57.0, Python 3.12.
 Todas las horas en **UTC-5 (Colombia)**, 6 de noviembre de 2026. «Base» = `DECISIONS_MODE=base` (los defectos del punto de partida); «solución» = por defecto.
 
 ## Registro
@@ -33,6 +33,9 @@ Todas las horas en **UTC-5 (Colombia)**, 6 de noviembre de 2026. «Base» = `DEC
 | Carga k6, base | 23:52:55 – 23:54:40 | `05-k6-carga-base.json`; `capturas/grafana-2…` | P95 del cliente **14,71 ms**, 5376 peticiones, 0 % de fallos. Backend (Prometheus, cubetas): ≈ 9,3 ms. Umbrales cumplidos | Referencia de la lectura |
 | Carga k6, solución | 23:56:53 – 23:58:38 | `10-k6-carga-solucion.json`; `capturas/grafana-3…` | P95 del cliente **13,26 ms**, 5448 peticiones, 0 % de fallos. Backend ≈ 9,2 ms. Umbrales cumplidos | La diferencia con la base es **ruido**: k6 solo lee y la ruta de lectura no cambió |
 | Acceptance final | 23:58:38 – 23:59:09 | `11-acceptance-final.json` | **4/4 `passed:true`, código 0** (tras haber detenido y restaurado Redis y Gestión) | El sistema vuelve a un estado correcto tras las fallas |
+| **Regresión tras el merge con `develop`** (12-nov) | 06:00:57 – 06:03 (UTC-5) | `20-smoke-tras-merge.json`, `21-acceptance-tras-merge.json` | Con el código ya mezclado (refactor de Sonar de Juli + `ReconnectingConnection`) y el stack reconstruido con Grafana 13.3.1: smoke **código 0**; acceptance **4/4 `passed:true`, código 0** (`arranque`, `ediciones_concurrentes`, `permiso_revocado`, `presencia_expira`). Pruebas Java de los 5 módulos del producto: BUILD SUCCESS (151 en el gateway) | El merge no rompió ninguna de las tres decisiones |
+| **Carga k6 enviando a Prometheus** (12-nov) | 06:01 – 06:03 (UTC-5) | `22-k6-carga-con-remote-write.json` | P95 del cliente **3,4 ms**, 5952 peticiones, 0 % de fallos, 0 `semantic_errors`, checks 100 %; k6 termina con código 0 (umbrales cumplidos). La salida dice `output: Prometheus remote write`. En Prometheus aparecen `k6_vus`, `k6_http_reqs_total`, `k6_http_req_duration_p95` y `k6_http_req_failed_rate` | **No se compara con la fila de k6 del 6-nov** (13,26 ms): máquina y carga del equipo distintas y sin controlar. Lo que cambia es que ahora las métricas de k6 **sí** llegan a Prometheus, que es lo que consultan los paneles de k6 del tablero de Juli |
+| **Tablero SafeMode de Juli en Grafana** (12-nov) | 05:55 – 06:10 (UTC-5) | `23-tablero-safemode-grafana-13.txt` | El JSON (`dashboard.grafana.app/v2beta1`, sin modificar) **no carga en Grafana 11.5.1** y **sí en 13.3.1**: aparecen 3 tableros (SafeMode + los 2 del lab). El tablero tiene **24 paneles y 26 consultas**, todas con el datasource `prometheus`, y esas consultas devuelven datos a través de Grafana (k6, JVM, sonda `/ready`) | Para cargar el tablero de Juli hay que usar Grafana 12 o superior: el compose fija **13.3.1**. Falta mirar los paneles en el navegador y verlos con alertas reales (requiere el tracker con cámara) |
 
 ## Observabilidad
 
@@ -73,8 +76,8 @@ Comprobado levantando el stack completo (`up -d --build --wait`, 11 contenedores
 | Pruebas contra PostgreSQL real (`SAFEMODE_TEST_PG_URL`) | `PostgresStoresIntegrationTest` **3/3** con los almacenes ya reconectables |
 
 El P95 sale `NaN` mientras no haya alertas (no hay observaciones del histograma). Se verificó por la API de Prometheus, no con capturas. **Los paneles de
-Kevyn no se tocaron:** su tablero vive en su Grafana y no está en el repositorio, así que no se pudo ni se quiso reemplazar (ver
-`observability/grafana/dashboards/README.md`).
+Kevyn no se tocaron:** su tablero vive en su Grafana y no está en el repositorio, así que no se pudo ni se quiso reemplazar. *(Actualización del 12 de noviembre: Juli subió ese
+tablero a `observability/dashboards/` y el compose de persistencia ya lo monta tal cual; falta comprobar que Grafana lo cargue, ver el ADR 0005.)*
 
 ## Hallazgos que salieron de medir (no de suponer)
 
