@@ -1,0 +1,15 @@
+apiVersion: 1
+providers:
+  - name: ARSW
+    folder: ARSW
+    type: file
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+  # El tablero SafeMode (JSON de Juli): se carga TAL CUAL desde observability/dashboards/ (docker-compose.persistencia.yml).
+  - name: SafeMode
+    folder: SafeMode
+    type: file
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards-safemode

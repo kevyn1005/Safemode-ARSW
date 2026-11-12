@@ -8,6 +8,9 @@ node_modules/
 # Agregado con el gateway (ADR 0002): datos locales del tracker (base H2, fotos de personas, modelos de ~200 MB),
 # modelos PyTorch, logs, secretos y el editor.
 object-presence-tracker/data
+# pruebas de Node del panel (no hacen falta en la imagen)
+security-dashboard/test
+security-dashboard/node_modules
 *.pt
 *.log
 .env

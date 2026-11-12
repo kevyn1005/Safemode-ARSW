@@ -424,7 +424,7 @@ class DashboardHttpServerTest {
     void entregaLosScriptsYLaPaginaDePruebaDelPanel() throws Exception {
         startServerWithTracker();
         for (String name : new String[]{"camera-zones.js", "camera-names.js", "camera-share.js", "tracker-control.js", "report.js",
-                "browser-notifications.js"}) {
+                "browser-notifications.js", "puesto-sync.js"}) {
             Files.writeString(tmp.resolve("dashboard").resolve(name), "// " + name);
             HttpResponse<String> response = send("GET", "/" + name, null);
             assertEquals(200, response.statusCode(), name);

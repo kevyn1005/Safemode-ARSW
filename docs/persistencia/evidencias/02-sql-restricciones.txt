@@ -1,0 +1,66 @@
+== 1. ROLLBACK: una revocacion a medias se deshace (permiso y auditoria cambian juntos o no cambian)
+ etapa | operator_id | puesto_id |   role   | can_configure 
+-------+-------------+-----------+----------+---------------
+ ANTES | luis        | puesto-1  | operator | t
+(1 row)
+
+ etapa | filas_de_auditoria 
+-------+--------------------
+ ANTES |                  0
+(1 row)
+
+BEGIN
+UPDATE 1
+INSERT 0 1
+          etapa           | operator_id | can_configure 
+--------------------------+-------------+---------------
+ DENTRO DE LA TRANSACCION | luis        | f
+(1 row)
+
+ROLLBACK
+        etapa         | operator_id | can_configure 
+----------------------+-------------+---------------
+ DESPUES DEL ROLLBACK | luis        | t
+(1 row)
+
+        etapa         | filas_de_auditoria 
+----------------------+--------------------
+ DESPUES DEL ROLLBACK |                  0
+(1 row)
+
+== 2. CLAVE PRIMARIA: una membresia no se repite (ERROR esperado)
+BEGIN
+psql:/lab/evidence.sql:20: ERROR:  duplicate key value violates unique constraint "membership_pkey"
+DETAIL:  Key (operator_id, puesto_id)=(ana, puesto-1) already exists.
+ROLLBACK
+== 3. CLAVE FORANEA: no hay membresia de un operador que no existe (ERROR esperado)
+BEGIN
+psql:/lab/evidence.sql:25: ERROR:  insert or update on table "membership" violates foreign key constraint "membership_operator_id_fkey"
+DETAIL:  Key (operator_id)=(operador-inexistente) is not present in table "operator".
+ROLLBACK
+== 4. CLAVE FORANEA: ni de un puesto que no existe (ERROR esperado)
+BEGIN
+psql:/lab/evidence.sql:30: ERROR:  insert or update on table "membership" violates foreign key constraint "membership_puesto_id_fkey"
+DETAIL:  Key (puesto_id)=(puesto-inexistente) is not present in table "puesto".
+ROLLBACK
+== 5. CHECK: el rol es uno de los tres definidos (ERROR esperado)
+BEGIN
+psql:/lab/evidence.sql:35: ERROR:  new row for relation "membership" violates check constraint "membership_role_check"
+DETAIL:  Failing row contains (luis, puesto-1, superusuario, t).
+ROLLBACK
+== 6. UNIQUE: un correo pertenece a un solo operador (ERROR esperado)
+BEGIN
+psql:/lab/evidence.sql:40: ERROR:  duplicate key value violates unique constraint "operator_email_key"
+DETAIL:  Key (email)=(ana@safemode.test) already exists.
+ROLLBACK
+== 7. UNIQUE de las alertas (HU-14): cada evento genera UNA sola alerta (ERROR esperado en la segunda insercion)
+BEGIN
+INSERT 0 1
+psql:/lab/evidence.sql:48: ERROR:  duplicate key value violates unique constraint "alert_event_id_event_occurred_at_key"
+DETAIL:  Key (event_id, event_occurred_at)=(900001, 2026-11-06 15:00:00+00) already exists.
+ROLLBACK
+                    etapa                    | count 
+---------------------------------------------+-------
+ ALERTAS DE PRUEBA QUE QUEDARON (debe ser 0) |     0
+(1 row)
+

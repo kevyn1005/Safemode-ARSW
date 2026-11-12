@@ -1,0 +1,17 @@
+{
+  "mode": "redis-up",
+  "utc": "2026-11-07T04:52:15.527888+00:00",
+  "results": [
+    {
+      "test": "recuperacion_redis",
+      "passed": true,
+      "evidence": {
+        "intentos": 1,
+        "segundos_hasta_recuperar": 0.2,
+        "presence_status": 200,
+        "presence": "{\"available\":true,\"operator\":\"ana\",\"puesto\":\"puesto-1\"}",
+        "lista": "{\"available\":true,\"operators\":[\"ana\"]}"
+      }
+    }
+  ]
+}

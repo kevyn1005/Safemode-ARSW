@@ -1,9 +1,9 @@
 package com.safemode.alerts;
 
 import com.safemode.presence.PresenceEventStore;
+import com.safemode.presence.ReconnectingConnection;
+import com.safemode.presence.SqlDialect;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -16,7 +16,9 @@ import java.util.Optional;
 
 /**
  * Guarda las alertas en la tabla {@code alert} de H2. Puede vivir en la misma base que los eventos de presencia (mismo
- * archivo, AUTO_SERVER permite que el tracker y el alert-engine la abran a la vez desde procesos distintos).
+ * archivo, AUTO_SERVER permite que el tracker y el alert-engine la abran a la vez desde procesos distintos). Con
+ * SAFEMODE_DB_URL = jdbc:postgresql://... la tabla vive en PostgreSQL, con la misma restriccion UNIQUE que garantiza una
+ * sola alerta por evento (ADR 0005).
  */
 public class AlertStore implements AutoCloseable {
 
@@ -29,26 +31,31 @@ public class AlertStore implements AutoCloseable {
     private static final String SELECT_ALL = SELECT_BASE + ORDER_DESC;
     private static final String SELECT_PENDING = SELECT_BASE + "WHERE acknowledged = FALSE" + ORDER_DESC;
 
-    private final Connection connection;
+    /** Conexion que se reabre sola si la base se reinicia (ver {@link ReconnectingConnection}). */
+    private final ReconnectingConnection connection;
 
-    private AlertStore(Connection connection) {
+    /** H2 (por defecto) o PostgreSQL (compose de persistencia, ADR 0005): ver {@link SqlDialect}. */
+    private final SqlDialect dialect;
+
+    private AlertStore(ReconnectingConnection connection) {
         this.connection = connection;
-        try (Statement st = connection.createStatement()) {
+        try (Statement st = connection.get().createStatement()) {
+            this.dialect = SqlDialect.of(connection.get());
             st.execute("""
                 CREATE TABLE IF NOT EXISTS alert (
-                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    id %s,
                     event_id BIGINT NOT NULL,
-                    event_occurred_at TIMESTAMP NOT NULL,
+                    event_occurred_at %s NOT NULL,
                     alert_type VARCHAR(40) NOT NULL,
                     severity VARCHAR(10) NOT NULL,
                     class_name VARCHAR(50) NOT NULL,
                     message VARCHAR(500) NOT NULL,
                     frame_path VARCHAR(500),
-                    created_at TIMESTAMP NOT NULL,
+                    created_at %s NOT NULL,
                     acknowledged BOOLEAN DEFAULT FALSE NOT NULL,
                     UNIQUE (event_id, event_occurred_at)
                 )
-                """);
+                """.formatted(dialect.idColumn(), dialect.timestampType(), dialect.timestampType()));
         } catch (SQLException e) {
             throw new IllegalStateException("No se pudo crear la tabla alert", e);
         }
@@ -64,6 +71,11 @@ public class AlertStore implements AutoCloseable {
         return open(PresenceEventStore.jdbcUrlFor(System.getenv(PresenceEventStore.DB_URL_ENV), defaultFilePath));
     }
 
+    /** Abre la base de esa URL JDBC (H2 o PostgreSQL); igual que {@code PresenceEventStore.forUrl}. */
+    public static AlertStore forUrl(String jdbcUrl) {
+        return open(jdbcUrl);
+    }
+
     /** Base en memoria con ese nombre; PresenceEventStore.inMemory(mismoNombre) apunta a la misma base. */
     public static AlertStore inMemory(String name) {
         return open("jdbc:h2:mem:" + name + ";DB_CLOSE_DELAY=-1");
@@ -71,7 +83,7 @@ public class AlertStore implements AutoCloseable {
 
     private static AlertStore open(String url) {
         try {
-            return new AlertStore(DriverManager.getConnection(url));
+            return new AlertStore(new ReconnectingConnection(url));
         } catch (SQLException e) {
             throw new IllegalStateException("No se pudo abrir la base de datos de alertas", e);
         }
@@ -81,7 +93,7 @@ public class AlertStore implements AutoCloseable {
     public Optional<Alert> insertIfAbsent(long eventId, Instant eventOccurredAt, AlertType type, Severity severity,
                                           String className, String message, String framePath, Instant createdAt) {
         try {
-            try (PreparedStatement ps = connection.prepareStatement(
+            try (PreparedStatement ps = connection.get().prepareStatement(
                     "SELECT COUNT(*) FROM alert WHERE event_id = ? AND event_occurred_at = ?")) {
                 ps.setLong(1, eventId);
                 ps.setTimestamp(2, Timestamp.from(eventOccurredAt));
@@ -94,7 +106,7 @@ public class AlertStore implements AutoCloseable {
             }
             String sql = "INSERT INTO alert (event_id, event_occurred_at, alert_type, severity, class_name, message, "
                     + "frame_path, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-            try (PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            try (PreparedStatement ps = dialect.prepareInsert(connection.get(), sql)) {
                 ps.setLong(1, eventId);
                 ps.setTimestamp(2, Timestamp.from(eventOccurredAt));
                 ps.setString(3, type.name());
@@ -130,7 +142,7 @@ public class AlertStore implements AutoCloseable {
 
     /** Marca la alerta como revisada; devuelve false si no existe. */
     public boolean acknowledge(long id) {
-        try (PreparedStatement ps = connection.prepareStatement("UPDATE alert SET acknowledged = TRUE WHERE id = ?")) {
+        try (PreparedStatement ps = connection.get().prepareStatement("UPDATE alert SET acknowledged = TRUE WHERE id = ?")) {
             ps.setLong(1, id);
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
@@ -139,7 +151,7 @@ public class AlertStore implements AutoCloseable {
     }
 
     private List<Alert> query(String sql, Long param) {
-        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+        try (PreparedStatement ps = connection.get().prepareStatement(sql)) {
             if (param != null) {
                 ps.setLong(1, param);
             }

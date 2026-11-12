@@ -76,4 +76,26 @@
         </plugins>
     </build>
 
+    <profiles>
+        <!--
+            Persistencia y consistencia (ADR 0005): tres servicios nuevos que se SUMAN al reactor solo si sus carpetas existen.
+            Por que asi y no en <modules>: los Dockerfiles de camera-feed-service, vision-detection-service y realtime-gateway
+            copian unicamente los cinco modulos de arriba; si el pom padre exigiera siempre los nuevos, esas tres imagenes
+            (que ya funcionan) dejarian de construirse con "Child module ... does not exist". En el repo completo (y en los
+            Dockerfiles de los servicios nuevos, que copian service-common) el perfil se activa solo.
+        -->
+        <profile>
+            <id>persistencia</id>
+            <activation>
+                <file>
+                    <exists>${basedir}/service-common/pom.xml</exists>
+                </file>
+            </activation>
+            <modules>
+                <module>service-common</module>
+                <module>access-service</module>
+                <module>collaboration-service</module>
+            </modules>
+        </profile>
+    </profiles>
 </project>

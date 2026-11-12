@@ -1,0 +1,39 @@
+# Reinicio de PostgreSQL: que se recupera solo y que no · 2026-11-07 00:01:21 SAPST (UTC-5)
+
+## 0. Antes: Gestion de acceso y flujo de alertas funcionan
+GET permiso de luis -> HTTP 200
+
+## 1. PostgreSQL detenido (00:01:27)
+GET permiso de luis -> HTTP 503 en 1.732722s
+GET permiso de luis -> HTTP 503 en 1.733533s
+{"error":"No se pudo verificar el permiso (Gestion de acceso no disponible); no se guardo nada"} -> HTTP 503
+
+## 2. PostgreSQL restaurado (00:01:49)
+  intento 1: GET permiso de luis -> HTTP 200 (00:01:50)
+
+## 3. El gateway (motor de alertas) despues del reinicio: un retiro sospechoso nuevo, hay alerta?
+INSERT 0 1
+ id | event_id | alert_type | severity 
+----+----------+------------+----------
+(0 rows)
+
+## logs del gateway:
+realtime-gateway-1  | [ALERTAS] No se pudieron procesar los eventos: No se pudo leer object_presence_event
+realtime-gateway-1  | [GATEWAY] No se pudieron refrescar las alertas: No se pudo leer la tabla alert
+realtime-gateway-1  | [ALERTAS] No se pudieron procesar los eventos: No se pudo leer object_presence_event
+realtime-gateway-1  | [ALERTAS] No se pudieron procesar los eventos: No se pudo leer object_presence_event
+realtime-gateway-1  | [GATEWAY] No se pudieron refrescar las alertas: No se pudo leer la tabla alert
+realtime-gateway-1  | [ALERTAS] No se pudieron procesar los eventos: No se pudo leer object_presence_event
+
+## 4. Reiniciar el gateway lo recupera (00:02:15)
+ id | event_id |   alert_type   | severity 
+----+----------+----------------+----------
+  5 |        1 | POSSIBLE_THEFT | HIGH
+(1 row)
+
+
+## Conclusion
+- Gestion de acceso (pool con reconexion): se recupera sola; mientras PostgreSQL esta caido responde 503 y no guarda nada.
+- El gateway y el tracker abren UNA sola conexion JDBC (PresenceEventStore/AlertStore) y no reconectan: tras reiniciar PostgreSQL hay que
+  reiniciar el gateway (docker compose restart realtime-gateway). Es la misma limitacion que ya existia con el servidor H2 (ADR 0002); la mejora
+  natural es un pool con reconexion en los dos almacenes (no se hizo: es codigo del producto que ya funciona).
