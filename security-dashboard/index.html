@@ -1525,6 +1525,7 @@
       <div class="hero-ctas">
         <a class="btn btn-primary" href="#consola">Abrir consola de alertas</a>
         <a class="btn" href="#lente">Ver arquitectura y funcionamiento</a>
+        <a class="btn" href="/grafana/d/safemode-observabilidad/arsw-safemode-observabilidad?orgId=1&from=now-15m&to=now&refresh=10s" target="_blank" rel="noopener">Ver gráficas</a>
       </div>
       <ul class="spec-row" aria-label="Especificaciones operativas">
         <li><b>YOLOv8</b> ONNX Local</li>
@@ -2378,7 +2379,7 @@
 
     var ws = null;
     var WS_URL = new URLSearchParams(location.search).get('ws') ||
-            ((location.protocol === 'https:' ? 'wss://' : 'ws://') + (location.hostname || 'localhost') + ':8090');
+            ((location.protocol === 'https:' ? 'wss://' : 'ws://') + (location.hostname || 'localhost') + (location.protocol === 'https:' ? '/ws' : ':8090'));
 
     function fmtTime(iso) {
       var d = new Date(iso);

@@ -15,3 +15,5 @@ security-dashboard/node_modules
 *.log
 .env
 .vscode
+
+object-presence-tracker/data

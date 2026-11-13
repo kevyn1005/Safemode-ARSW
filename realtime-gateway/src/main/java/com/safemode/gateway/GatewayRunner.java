@@ -42,7 +42,12 @@ public class GatewayRunner {
         try (PresenceEventStore events = PresenceEventStore.fromEnvironment(DB_PATH);
              AlertStore alerts = AlertStore.fromEnvironment(DB_PATH);
              AlertEngine engine = new AlertEngine(events, alerts)) {
-            Set<String> panelOrigins = Set.of("http://localhost:" + HTTP_PORT, "http://127.0.0.1:" + HTTP_PORT);
+            Set<String> panelOrigins = new java.util.HashSet<>(Set.of("http://localhost:" + HTTP_PORT, "http://127.0.0.1:" + HTTP_PORT));
+            String publicHost = System.getenv("SAFEMODE_PUBLIC_HOST");
+            if (publicHost != null && !publicHost.isBlank()) {
+                panelOrigins.add("https://" + publicHost.trim());
+                panelOrigins.add("http://" + publicHost.trim());
+            }
             AlertGateway gateway = new AlertGateway(engine, alerts, bindHost, WS_PORT, panelOrigins).withAuth(auth);
             // Avisos de las alertas nuevas altas y medias por Telegram (clave y chats solo por variables de entorno; ver ADR 0004)
             NotificationService notifications = NotificationService.fromEnvironment(System.getenv(),
