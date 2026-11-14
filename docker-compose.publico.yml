@@ -1,0 +1,26 @@
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    network_mode: host
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+    restart: unless-stopped
+
+  realtime-gateway:
+    environment:
+      SAFEMODE_PUBLIC_HOST: safemode-arsw.duckdns.org
+
+  tracker:
+    environment:
+      SAFEMODE_PUBLIC_HOST: safemode-arsw.duckdns.org
+
+  grafana:
+    environment:
+      GF_SERVER_ROOT_URL: https://safemode-arsw.duckdns.org/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+
+volumes:
+  caddydata:

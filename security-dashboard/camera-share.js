@@ -101,7 +101,7 @@
 
   function framesUrl() {
     var host = location.hostname || 'localhost';
-    return (location.protocol === 'https:' ? 'wss://' : 'ws://') + host + ':' + FRAMES_PORT;
+    return location.protocol === 'https:' ? 'wss://' + host + '/frames' : 'ws://' + host + ':' + FRAMES_PORT;
   }
 
   function connectSocket() {
