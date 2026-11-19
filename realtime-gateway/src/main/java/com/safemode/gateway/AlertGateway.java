@@ -39,6 +39,7 @@ import java.util.concurrent.TimeUnit;
 public class AlertGateway extends WebSocketServer {
 
     private static final int RECENT_ALERTS_TRACKED = 50;
+    private static final int CLOSE_POLICY_VIOLATION = 1008; // codigo estandar de cierre de WebSocket: "no cumple la politica"
 
     private final AlertEngine engine;
     private final AlertStore alerts;
@@ -93,7 +94,14 @@ public class AlertGateway extends WebSocketServer {
             thread.setDaemon(true);
             return thread;
         });
-        refresher.scheduleWithFixedDelay(this::refreshRecent, 2, 2, TimeUnit.SECONDS);
+        refresher.scheduleWithFixedDelay(() -> {
+            try {
+                closeRevokedConnections(); // una excepcion aqui cancelaria todas las ejecuciones siguientes
+            } catch (RuntimeException e) {
+                System.err.println("[GATEWAY] No se pudieron revisar las sesiones de los sockets: " + e.getClass().getSimpleName());
+            }
+            refreshRecent();
+        }, 2, 2, TimeUnit.SECONDS);
     }
 
     /** Puerto en el que realmente escucha (util cuando se pidio el puerto 0). */
@@ -124,8 +132,52 @@ public class AlertGateway extends WebSocketServer {
             if (authService.userFor(cookie).isEmpty()) {
                 throw new InvalidDataException(401, "Sesion requerida");
             }
+            conn.setAttachment(cookie); // con que sesion se abrio: se vuelve a comprobar en cada mensaje y cada envio
         }
         return builder;
+    }
+
+    // Auditoria de seguridad (pista 2): la sesion solo se revisaba al abrir el socket, asi que cerrar sesion o vencer los 12 h
+    // no cortaba un socket ya abierto: seguia recibiendo alertas y podia marcarlas como revisadas.
+    private boolean stillAuthorized(WebSocket conn) {
+        AuthService authService = auth;
+        if (authService == null) {
+            return true; // servidor sin autenticacion (pruebas): no hay sesion que revisar
+        }
+        String cookie = conn.getAttachment();
+        return cookie != null && authService.userFor(cookie).isPresent();
+    }
+
+    private void closeUnauthorized(WebSocket conn) {
+        try {
+            conn.close(CLOSE_POLICY_VIOLATION, "Sesion terminada");
+        } catch (RuntimeException e) {
+            System.err.println("[GATEWAY] No se pudo cerrar un socket sin sesion: " + e.getClass().getSimpleName());
+        }
+    }
+
+    /** Cierra los sockets cuya sesion ya termino (cerro sesion o vencio), aunque no llegue ninguna alerta. */
+    void closeRevokedConnections() {
+        for (WebSocket conn : getConnections()) {
+            if (!stillAuthorized(conn)) {
+                closeUnauthorized(conn);
+            }
+        }
+    }
+
+    /** Como {@code broadcast}, pero solo a los sockets con sesion vigente; los demas se cierran en vez de recibir el mensaje. */
+    private void pushToAuthorized(String text) {
+        for (WebSocket conn : getConnections()) {
+            if (!stillAuthorized(conn)) {
+                closeUnauthorized(conn);
+                continue;
+            }
+            try {
+                conn.send(text);
+            } catch (RuntimeException e) {
+                // la conexion se cerro justo ahora: la libreria la saca de la lista
+            }
+        }
     }
 
     @Override
@@ -139,6 +191,10 @@ public class AlertGateway extends WebSocketServer {
 
     @Override
     public void onMessage(WebSocket conn, String message) {
+        if (!stillAuthorized(conn)) {
+            closeUnauthorized(conn); // sesion terminada: ni se lee el comando
+            return;
+        }
         try {
             JsonObject request = JsonParser.parseString(message).getAsJsonObject();
             if ("ack".equals(request.get("action").getAsString())) {
@@ -176,7 +232,7 @@ public class AlertGateway extends WebSocketServer {
                 lastSent.remove(lastSent.keySet().iterator().next());
             }
         }
-        broadcast(AlertJson.envelope(type, json).toString());
+        pushToAuthorized(AlertJson.envelope(type, json).toString());
         wsSent.increment(getConnections().size());
     }
 
@@ -206,7 +262,7 @@ public class AlertGateway extends WebSocketServer {
 
     /** Avisa a todos los paneles de los nombres vigentes de las camaras (tras renombrar una). */
     public void broadcastCameras() {
-        broadcast(AlertJson.camerasMessage(engine.cameraNames()).toString());
+        pushToAuthorized(AlertJson.camerasMessage(engine.cameraNames()).toString());
         // las alertas ya enviadas llevan el nombre viejo: se reenvian para que el panel las muestre con el nuevo
         refreshRecent();
     }
