@@ -19,13 +19,16 @@
   var RETRY_MS = 2000;      // espera antes de volver a conectar cuando la sesion sigue viva
 
   /**
-   * URL del WebSocket de alertas: el mismo servidor que entrego la pagina, en el puerto del gateway. Solo mira el protocolo y
-   * el nombre del servidor; NO lee la query ni el hash, asi que nada que venga en un enlace puede cambiar el destino.
+   * URL del WebSocket de alertas: el mismo servidor que entrego la pagina. Solo mira el protocolo y el nombre del servidor; NO lee
+   * la query ni el hash, asi que nada que venga en un enlace puede cambiar el destino.
+   *   - por HTTP (en el computador): directo al puerto del gateway, ws://host:8090;
+   *   - por HTTPS (despliegue en AWS): la pagina esta detras del proxy (Caddyfile), que reenvia /ws al gateway; el 8090 solo esta
+   *     publicado en 127.0.0.1 del servidor y no se alcanza desde internet, asi que va por wss://host/ws.
    */
   function socketUrl(loc) {
-    var scheme = loc && loc.protocol === 'https:' ? 'wss://' : 'ws://';
     var host = (loc && loc.hostname) || 'localhost';
-    return scheme + host + ':' + WS_PORT;
+    if (loc && loc.protocol === 'https:') return 'wss://' + host + '/ws';
+    return 'ws://' + host + ':' + WS_PORT;
   }
 
   /**

@@ -4,17 +4,24 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const R = require('../realtime-session.js');
 
-test('la URL del WebSocket sale del servidor que entrego la pagina, en el puerto del gateway', () => {
+test('por HTTP la URL del WebSocket sale del servidor que entrego la pagina, en el puerto del gateway', () => {
   assert.equal(R.socketUrl({ protocol: 'http:', hostname: 'localhost' }), 'ws://localhost:8090');
   assert.equal(R.socketUrl({ protocol: 'http:', hostname: '127.0.0.1' }), 'ws://127.0.0.1:8090');
-  assert.equal(R.socketUrl({ protocol: 'https:', hostname: 'panel.example' }), 'wss://panel.example:8090');
 });
 
-test('un parametro ?ws= (o cualquier query o hash) NO cambia el destino del WebSocket', () => {
-  const normal = R.socketUrl({ protocol: 'http:', hostname: 'localhost' });
-  for (const search of ['?ws=wss://sitio-ajeno.example/', '?ws=ws://localhost:9999', '?demo&ws=ws://127.0.0.1:1']) {
-    const loc = { protocol: 'http:', hostname: 'localhost', search, hash: '#ws=wss://otro.example', href: 'http://localhost:8080/' + search };
-    assert.equal(R.socketUrl(loc), normal, search);
+test('por HTTPS (despliegue detras de Caddy) el WebSocket va por la ruta /ws, no por el puerto 8090', () => {
+  // en AWS el 8090 solo esta publicado en 127.0.0.1 del servidor: desde internet solo se llega por el proxy (/ws)
+  assert.equal(R.socketUrl({ protocol: 'https:', hostname: 'safemode-arsw.duckdns.org' }), 'wss://safemode-arsw.duckdns.org/ws');
+  assert.equal(R.socketUrl({ protocol: 'https:', hostname: '' }), 'wss://localhost/ws');
+});
+
+test('un parametro ?ws= (o cualquier query o hash) NO cambia el destino del WebSocket, ni por HTTP ni por HTTPS', () => {
+  for (const protocol of ['http:', 'https:']) {
+    const normal = R.socketUrl({ protocol, hostname: 'localhost' });
+    for (const search of ['?ws=wss://sitio-ajeno.example/', '?ws=ws://localhost:9999', '?demo&ws=ws://127.0.0.1:1']) {
+      const loc = { protocol, hostname: 'localhost', search, hash: '#ws=wss://otro.example', href: protocol + '//localhost/' + search };
+      assert.equal(R.socketUrl(loc), normal, protocol + ' ' + search);
+    }
   }
 });
 
