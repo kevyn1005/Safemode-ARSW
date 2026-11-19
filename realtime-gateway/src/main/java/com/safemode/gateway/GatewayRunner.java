@@ -22,8 +22,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 // Variables de entorno (todas opcionales):
 //   SAFEMODE_DB_URL     URL JDBC de la base (por defecto el archivo local del tracker; en Docker, el servicio h2-db)
 //   SAFEMODE_BIND_HOST  direccion donde escuchar (por defecto localhost; en Docker, 0.0.0.0 para que llegue el puerto publicado)
-//   SAFEMODE_METRICS_HOST  direccion de /metrics y /ready, puerto 9464 (por defecto la misma de SAFEMODE_BIND_HOST; con el gateway en
-//                       el computador y el Prometheus de docker-compose.observability.yml hay que poner 0.0.0.0 para que llegue)
+//   SAFEMODE_METRICS_HOST  direccion de /metrics y /ready, puerto 9464 (por defecto la misma de SAFEMODE_BIND_HOST). Con Docker Desktop
+//                       (Windows/Mac) el Prometheus de docker-compose.observability.yml alcanza el gateway del computador por
+//                       host.docker.internal aunque escuche solo en localhost; en Linux (el contenedor llega por la IP del puente) hace
+//                       falta 0.0.0.0, que deja el puerto abierto a la red de la maquina
 // Boton "Iniciar vigilancia" del panel: lanza el tracker como proceso hijo (ver TrackerProcess). Solo se ofrece si el
 // gateway escucha unicamente en esta maquina (no en un contenedor ni abierto a la red) y se corre desde la raiz del repo.
 public class GatewayRunner {
@@ -123,7 +125,7 @@ public class GatewayRunner {
             HttpServer observability = Observability.start(metricsHost, 9464, databaseUp);
             Observability.watchDependency("database", databaseUp, Duration.ofSeconds(5));
             System.out.println("Metricas y /ready en " + metricsHost + ":9464" + (loopbackOnly(metricsHost)
-                    ? " (solo esta maquina; para que el Prometheus de docker-compose.observability.yml las alcance define SAFEMODE_METRICS_HOST=0.0.0.0)"
+                    ? " (solo esta maquina; si un Prometheus en Linux/Docker no las alcanza, define SAFEMODE_METRICS_HOST=0.0.0.0)"
                     : ""));
             System.out.println("Inicio de sesion con Google: " + allowedEmails.size() + " correo(s) autorizado(s)");
             System.out.println(seconds > 0 ? "Escuchando durante " + seconds + " s..." : "Escuchando hasta que lo detengan...");

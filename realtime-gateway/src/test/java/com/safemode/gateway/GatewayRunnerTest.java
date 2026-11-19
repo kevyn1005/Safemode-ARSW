@@ -38,7 +38,7 @@ class GatewayRunnerTest {
 
     @Test
     void conVariableLasMetricasEscuchanDondeSeIndique() {
-        assertEquals("0.0.0.0", GatewayRunner.metricsHost(" 0.0.0.0 ", "localhost"));  // Prometheus de docker-compose.observability.yml
+        assertEquals("0.0.0.0", GatewayRunner.metricsHost(" 0.0.0.0 ", "localhost"));  // p. ej. un Prometheus en Docker sobre Linux
         assertEquals("127.0.0.1", GatewayRunner.metricsHost("127.0.0.1", "0.0.0.0"));
     }
 

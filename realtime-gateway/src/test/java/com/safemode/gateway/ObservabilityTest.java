@@ -50,7 +50,7 @@ class ObservabilityTest {
 
     @Test
     void conSAFEMODE_METRICS_HOSTExplicitoSePuedeAbrirATodasLasInterfaces() throws Exception {
-        // el caso del Prometheus de docker-compose.observability.yml con el gateway en el computador: se pide a proposito
+        // el caso de un Prometheus en Docker sobre Linux que lee el gateway del host: se pide a proposito
         HttpServer opened = Observability.start(GatewayRunner.metricsHost("0.0.0.0", "localhost"), 0, ready::get);
         try {
             assertTrue(opened.getAddress().getAddress().isAnyLocalAddress(), "escucha en " + opened.getAddress());
