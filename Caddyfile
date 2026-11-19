@@ -1,0 +1,14 @@
+safemode-arsw.duckdns.org {
+	handle /ws {
+		reverse_proxy 127.0.0.1:8090
+	}
+	handle /frames {
+		reverse_proxy 127.0.0.1:8091
+	}
+	handle /grafana* {
+		reverse_proxy 127.0.0.1:3000
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8080
+	}
+}

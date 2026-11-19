@@ -1525,6 +1525,7 @@
       <div class="hero-ctas">
         <a class="btn btn-primary" href="#consola">Abrir consola de alertas</a>
         <a class="btn" href="#lente">Ver arquitectura y funcionamiento</a>
+        <a class="btn" href="/grafana/d/safemode-observabilidad/arsw-safemode-observabilidad?orgId=1&from=now-15m&to=now&refresh=10s" target="_blank" rel="noopener">Ver gráficas</a>
       </div>
       <ul class="spec-row" aria-label="Especificaciones operativas">
         <li><b>YOLOv8</b> ONNX Local</li>
@@ -2388,7 +2389,8 @@
        ========================================================= */
 
     var ws = null;
-    // Siempre el gateway que entrego esta pagina: ningun parametro de la URL (antes ?ws=) puede cambiar el destino (ver realtime-session.js)
+    // Siempre el gateway que entrego esta pagina: ningun parametro de la URL (antes ?ws=) puede cambiar el destino. Por HTTPS va por /ws
+    // (proxy Caddy del despliegue en AWS) y por HTTP al puerto 8090; ver realtime-session.js
     var WS_URL = RealtimeSession.socketUrl(location);
 
     function fmtTime(iso) {

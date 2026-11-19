@@ -1,0 +1,20 @@
+services:
+  tracker:
+    build:
+      context: .
+      dockerfile: object-presence-tracker/Dockerfile
+    # red del host: el tracker escucha frames en "localhost":8091 (fijo en el codigo) y asi llega por el tunel SSH
+    network_mode: host
+    environment:
+      SAFEMODE_FRAME_SOURCE: browser
+      SAFEMODE_CAMERAS: ${SAFEMODE_CAMERAS:-1}
+      SAFEMODE_MODEL: /workspace/vision-detection-service/src/main/resources/models/yolov8s.onnx
+      SAFEMODE_DB_URL: jdbc:postgresql://localhost:5433/safemode?user=safemode&password=${POSTGRES_PASSWORD}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY}
+    volumes:
+      # modelos y fotos: el gateway lee las mismas fotos desde esta carpeta del host
+      - ./object-presence-tracker/data:/workspace/object-presence-tracker/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
