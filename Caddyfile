@@ -3,6 +3,12 @@ safemode-arsw.duckdns.org {
 		reverse_proxy 127.0.0.1:8090
 	}
 	handle /frames {
+		# Solo con sesion de operador: el receptor de frames del tracker no autentica a nadie (solo mira el Origin de un navegador,
+		# que un cliente cualquiera puede omitir o falsificar). /auth/me del gateway responde 200 con sesion y 401 sin ella; la cookie
+		# viaja en el upgrade del WebSocket porque es el mismo dominio. Validacion: docs/seguridad/validaciones/frames-forward-auth
+		forward_auth 127.0.0.1:8080 {
+			uri /auth/me
+		}
 		reverse_proxy 127.0.0.1:8091
 	}
 	handle /grafana* {
