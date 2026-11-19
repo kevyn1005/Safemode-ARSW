@@ -85,6 +85,9 @@ Espere 15–30 s al primer *scraping*.
 Todo con el prefijo `safemode_` y la misma librería (Micrometer 1.13.6), y `safemode_dependency_up` incluye ahora `gateway → database`.
 `docker-compose.observability.yml` (el de Kevyn) sigue sirviendo para correr el gateway **en el computador, sin Docker**; **no se usa junto con
 este compose**: los dos publican Prometheus en el 9090 y Grafana en el 3000.
+Ojo: con el gateway en el computador, `/metrics` y `/ready` (puerto 9464) escuchan **solo en esta máquina** por defecto (igual que el panel); para que el
+Prometheus de `docker-compose.observability.yml` los alcance hay que arrancar el gateway con `SAFEMODE_METRICS_HOST=0.0.0.0` (queda abierto a la red de la
+máquina: depende del firewall). En Docker no hace falta nada: el contenedor ya escucha en `0.0.0.0` y el 9464 no se publica.
 
 ## 3. Las tres decisiones (dónde están en el código)
 
