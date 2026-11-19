@@ -1,0 +1,25 @@
+﻿Validacion ES-3 (integridad de /frames) - 2026-11-19 04:20:24
+commit: 4848d3e   Caddy: caddy:2.8-alpine   Java: java version "26.0.1" 2026-04-21
+
+Escenarios (cliente -> Caddy):
+A) atacante: sin Origin, sin cookie            [/frames]       -> BLOQUEADO por Caddy, HTTP 401
+B) atacante: Origin falsificado, sin cookie    [/frames]       -> BLOQUEADO por Caddy, HTTP 401
+C) atacante: Origin falso + cookie inventada   [/frames]       -> BLOQUEADO por Caddy, HTTP 401
+D) operador: Origin del panel + cookie valida  [/frames]       -> CONECTO (101) y mando un frame
+E) atacante SIN forward_auth (como hoy)        [/frames-open]  -> CONECTO (101) y mando un frame
+F) atacante contra el gateway REAL             [/frames-real]  -> BLOQUEADO por Caddy, HTTP 401
+
+Frames que llegaron al receptor real del tracker:
+  FRAME RECIBIDO EN EL RECEPTOR: VERDE (operador legitimo)
+  FRAME RECIBIDO EN EL RECEPTOR: AZUL (atacante sin proteccion)
+
+Comprobaciones:
+  [OK] A  atacante sin Origin ni cookie: bloqueado (401)
+  [OK] B  atacante con Origin falsificado: bloqueado (401)
+  [OK] C  atacante con cookie inventada: bloqueado (401)
+  [OK] D  operador con sesion: conecta (101) y manda frames
+  [OK] E  control sin forward_auth (como estaba): el atacante pasa
+  [OK] F  atacante contra el gateway real como autenticador: 401
+  [OK] G  al receptor llegaron solo frames del operador y del control
+
+RESULTADO: OK (7/7)

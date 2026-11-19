@@ -1,0 +1,27 @@
+{
+	auto_https off
+	admin off
+}
+
+:18080 {
+	# SIN proteccion: como esta hoy /frames en el Caddyfile de Juli (referencia para ver el hueco)
+	handle /frames-open {
+		reverse_proxy host.docker.internal:18091
+	}
+
+	# CON forward_auth contra un servicio que imita a /auth/me (200 solo con la cookie de sesion buena)
+	handle /frames {
+		forward_auth host.docker.internal:18081 {
+			uri /auth/me
+		}
+		reverse_proxy host.docker.internal:18091
+	}
+
+	# CON forward_auth contra el gateway REAL del stack (puerto 8080): sin sesion valida debe dar 401
+	handle /frames-real {
+		forward_auth host.docker.internal:8080 {
+			uri /auth/me
+		}
+		reverse_proxy host.docker.internal:18091
+	}
+}
