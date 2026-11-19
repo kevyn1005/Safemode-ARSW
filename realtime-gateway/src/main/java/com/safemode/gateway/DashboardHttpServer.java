@@ -10,6 +10,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.nio.charset.StandardCharsets;
@@ -32,7 +35,19 @@ import java.util.Optional;
  */
 public class DashboardHttpServer {
 
+    // Auditoria de seguridad (pista 3): el HttpServer del JDK, sin executor, atiende TODO en un unico hilo y, por defecto, sin
+    // limites de tiempo; una conexion a medias, una descarga que nadie lee o una verificacion lenta de Google congelaban el
+    // panel entero. Ahora cada peticion corre en un pool y el JDK corta las que tardan demasiado (en segundos). Los limites
+    // son propiedades del sistema del propio JDK (se pueden cambiar con -D) y solo se leen al crear el PRIMER HttpServer de
+    // la JVM; GatewayRunner crea este antes que el de metricas.
+    private static final int WORKER_THREADS = 32;
+    static {
+        System.getProperties().putIfAbsent("sun.net.httpserver.maxReqTime", "30");   // recibir una peticion completa
+        System.getProperties().putIfAbsent("sun.net.httpserver.maxRspTime", "60");   // entregar una respuesta completa
+    }
+
     private final HttpServer server;
+    private final ExecutorService workers;
     private static final int MAX_BODY_BYTES = 2048;
     private static final int MAX_PUESTO_BODY_BYTES = 8192; // un puesto con 8 camaras y sus zonas pesa menos de 1 KB
     private static final int HISTORY_DEFAULT_LIMIT = 20;
@@ -71,6 +86,13 @@ public class DashboardHttpServer {
         this.dashboardDir = dashboardDir.toAbsolutePath().normalize();
         this.photosDir = photosDir.toAbsolutePath().normalize();
         this.server = HttpServer.create(new InetSocketAddress(host, port), 0);
+        AtomicInteger threadNumber = new AtomicInteger();
+        this.workers = Executors.newFixedThreadPool(WORKER_THREADS, runnable -> {
+            Thread thread = new Thread(runnable, "dashboard-http-" + threadNumber.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        });
+        server.setExecutor(workers);
         server.createContext("/", this::handle);
     }
 
@@ -112,6 +134,7 @@ public class DashboardHttpServer {
 
     public void stop() {
         server.stop(0);
+        workers.shutdownNow();
     }
 
     private void handle(HttpExchange exchange) throws IOException {
