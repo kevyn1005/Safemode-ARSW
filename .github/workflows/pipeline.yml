@@ -85,10 +85,28 @@ jobs:
     name: Deploy
     needs: quality
     runs-on: ubuntu-latest
-    # Apagado hasta que exista el despliegue: se activa creando la variable de repositorio DEPLOY_ENABLED=true
-    if: github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    # Se activa creando la variable de repositorio DEPLOY_ENABLED=true; corre en develop y en main
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && vars.DEPLOY_ENABLED == 'true'
+    concurrency: deploy-aws
+    env:
+      EC2_HOST: ${{ secrets.EC2_HOST }}
+      SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+      BRANCH: ${{ github.ref_name }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Despliegue (pendiente)
+      - name: Preparar SSH
         run: |
-          echo "Aquí irá el despliegue, por definir."
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
+      - name: Actualizar y levantar en la EC2
+        run: |
+          ssh -i ~/.ssh/id_deploy ubuntu@"$EC2_HOST" "BRANCH=$BRANCH bash -s" <<'EOF'
+          set -euo pipefail
+          cd ~/SafeMode
+          git fetch origin "$BRANCH"
+          git checkout -f -B "$BRANCH" "origin/$BRANCH"
+          docker compose -f docker-compose.yml -f docker-compose.persistencia.yml -f docker-compose.tracker.yml -f docker-compose.publico.yml up -d --build postgres mongo redis access-service collaboration-service console blackbox prometheus grafana realtime-gateway tracker caddy k6
+          EOF
+      - name: Verificar que el panel responde
+        run: curl -fsS --retry 12 --retry-delay 10 --retry-all-errors -o /dev/null https://safemode-arsw.duckdns.org/
