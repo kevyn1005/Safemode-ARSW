@@ -12,7 +12,8 @@ if (-not (docker images -q safemode-latex)) {
     if ($LASTEXITCODE -ne 0) { throw 'No se pudo construir la imagen safemode-latex' }
 }
 # la version del codigo que describe el documento (la demo y los documentos deben reflejar la MISMA version)
-$hash = (git -C $repo rev-parse --short HEAD).Trim()
+# (el ultimo commit que toco algo FUERA de docs/: el documento no puede llevar su propio commit)
+$hash = (git -C $repo log -1 --format=%h -- . ':(exclude)docs' ':(exclude)README.md' ':(exclude).gitignore').Trim()
 Set-Content -Path (Join-Path $carpeta 'version.tex') -Value "\newcommand{\versionrepo}{$hash}" -Encoding ASCII
 # se monta la carpeta docs completa: el documento incluye graficas de docs\rendimiento
 $docs = Join-Path $repo 'docs'

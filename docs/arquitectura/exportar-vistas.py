@@ -1,4 +1,4 @@
-"""Exporta a PNG las vistas ArchiMate del documento de arquitectura (vistas 4 a 16 de docs/diagramas/safemode-arquitectura.archimate)
+"""Exporta a PNG las vistas ArchiMate del documento de arquitectura (vistas 4 a 17 de docs/diagramas/safemode-arquitectura.archimate)
 usando Archi en linea de comandos (no abre la interfaz). Las imagenes quedan en docs/arquitectura/figuras/ con los nombres que usa el LaTeX.
 
     python docs/arquitectura/exportar-vistas.py                       (Archi en C:\Program Files\Archi\Archi.exe)
@@ -18,7 +18,7 @@ MODELO = os.path.join(RAIZ, 'docs', 'diagramas', 'safemode-arquitectura.archimat
 SALIDA = os.path.join(RAIZ, 'docs', 'arquitectura', 'figuras')
 NOMBRES = {4: 'contexto', 5: 'componentes-flujo', 6: 'componentes-puesto', 7: 'clases-deteccion', 8: 'clases-persistencia', 9: 'clases-gateway',
            10: 'entidad-relacion', 11: 'secuencia-alerta', 12: 'secuencia-login', 13: 'despliegue-actual', 14: 'despliegue-objetivo',
-           15: 'actividades-retiro', 16: 'actividades-alerta'}
+           15: 'actividades-retiro', 16: 'actividades-alerta', 17: 'articulo'}
 
 
 def main():

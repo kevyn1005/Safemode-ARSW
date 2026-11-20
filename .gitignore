@@ -49,7 +49,7 @@ ESTUDIAR.md
 security-dashboard/coverage/
 
 # LaTeX (docs/arquitectura y docs/articulo): solo se versionan los .tex, las figuras y el PDF
-docs/arquitectura/_vista/
+docs/*/_vista/
 docs/*/*.aux
 docs/*/*.toc
 docs/*/*.lof
