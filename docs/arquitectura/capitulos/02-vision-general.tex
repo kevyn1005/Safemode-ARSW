@@ -1,0 +1,80 @@
+\chapter{Visión general}
+
+\section{Descripción del sistema}
+\textbf{Necesidad.} El jugador que deja su maleta en la banca mientras juega necesita cuidarla sin depender de que alguien se quede
+vigilando. SafeMode es una aplicación que analiza la imagen de las cámaras que ya existen (la ventana de su software de cámaras, compartida
+desde el navegador) y avisa en segundos cuando alguien se lleva un objeto dejado.
+
+\textbf{Valor diferencial.} No pide hardware nuevo, no reemplaza las cámaras y no guarda video: la alerta trae fotos, fecha, hora y cámara
+para encontrar ese momento en la grabación del software de cámaras. Cada decisión (qué se guarda, qué sale a terceros) se tomó para proteger
+la privacidad de las personas.
+
+\begin{table}[H]
+\centering\small
+\caption{Actores del sistema.}\label{tab:actores}
+\begin{tabularx}{\textwidth}{lY}
+\toprule
+\textbf{Actor} & \textbf{Qué necesita} \\
+\midrule
+Jugador (dueño de la maleta) & Que su maleta no desaparezca sin que alguien se entere. No usa la aplicación directamente \\
+Operador de seguridad & Enterarse al instante, ver la evidencia y decidir si interviene; usa el panel, Telegram y las notificaciones \\
+Administrador del puesto & Conectar la ventana de cámaras, dibujar las zonas, iniciar o detener la vigilancia y configurar permisos \\
+Sistemas externos & Google (identidad), Telegram (avisos), servicio de visión de NVIDIA (descripción opcional), GitHub Actions y SonarCloud (CI/CD) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\textbf{Cómo funciona, en una frase por etapa.} El panel captura la ventana de cámaras y envía un recorte por cámara; un detector (YOLOv8)
+encuentra personas y maletas; un seguimiento por cámara decide cuándo un objeto «se asienta» (3~s quieto), quién es su dueño probable y
+cuándo lo retiran; un motor de alertas convierte los retiros sospechosos en alertas con severidad; y un servidor en tiempo real las empuja
+por WebSocket a todos los paneles abiertos y manda un aviso de texto por Telegram. La Figura~\ref{fig:contexto} (capítulo~6) muestra el sistema
+y sus vecinos.
+
+\section{Requerimientos funcionales clave}
+El backlog completo (38 historias de usuario con criterios en Gherkin, prioridad MoSCoW y story map) está en \cod{docs/backlog.md}. La
+Tabla~\ref{tab:rf} resume las que sostienen la promesa de valor.
+
+\begin{table}[H]
+\centering\small
+\caption{Requerimientos funcionales clave y su estado al cierre del Release 2.}\label{tab:rf}
+\begin{tabularx}{\textwidth}{llYl}
+\toprule
+\textbf{HU} & \textbf{Prio.} & \textbf{Historia (resumen)} & \textbf{Estado} \\
+\midrule
+HU-01, 02 & Must & Detectar personas, maletas, mochilas y bolsos, varios a la vez & Hecho \\
+HU-03 & Must & Registrar un objeto cuando lleva 3~s quieto, con foto & Hecho \\
+HU-05, 06 & Must/Should & Detectar el retiro sin darlo por retirado si solo está tapado & Hecho \\
+HU-07, 09 & Should/Must & Dueño probable con foto; clasificar el retiro (dueño, otra persona, ambos, nadie, sin dueño) & Hecho \\
+HU-13, 14 & Must & Una alerta, con su severidad, por cada evento aunque haya varios paneles o réplicas & Hecho \\
+HU-15, 16, 17 & Must/Should & Ver las alertas en vivo, marcarlas como revisadas y alarma sonora & Hecho \\
+HU-18, 19 & Must/Should & Evidencia (cámara, hora, fotos) y reporte en tabla & Hecho \\
+HU-21 a 26 & Must/Should & Compartir la ventana de cámaras, 1 o 2 cámaras, zonas dibujadas con prueba previa & Hecho \\
+HU-33, 34 & Must & Entrar con Google solo si el correo está autorizado; proteger panel, WebSocket y botones & Hecho \\
+HU-30 & Should & Aviso de Telegram con cada alerta alta o media & Parcial (lista fija de chats) \\
+HU-28 & Must & Probar con dos cámaras físicas reales & Pendiente \\
+HU-20, 31, 32 & Could & Retención de fotos, aviso por correo, preferencias por usuario & Pendiente \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Requerimientos no funcionales clave}
+Los atributos de calidad se expresaron como escenarios con medida (capítulo~4). Las metas cuantitativas que gobiernan el diseño son:
+
+\begin{table}[H]
+\centering\small
+\caption{Requerimientos no funcionales y su meta medible.}\label{tab:rnf}
+\begin{tabularx}{\textwidth}{lYY}
+\toprule
+\textbf{Atributo} & \textbf{Meta} & \textbf{Dónde se mide (capítulo 4)} \\
+\midrule
+Tiempo real & Una alerta se ve en el panel en menos de 5~s & Escenario de rendimiento; latencia evento$\rightarrow$panel \\
+Rendimiento & Con 20 operadores: P95 $<$ 500~ms, 0\,\% de errores, entrega de alertas P95 $<$ 2~s & Pruebas k6 de carga, estrés y pico \\
+Disponibilidad & Que la caída de una réplica no corte a los operadores; objetivo 99,9375\,\% & Escenario ED-1 y prototipo de dos réplicas \\
+Seguridad & Solo operadores autorizados; sesión terminada = acceso terminado & Escenarios ES-1 a ES-3 (aprobados) \\
+Mantenibilidad & Cobertura $\geq$ 80\,\% en backend y panel; calificación A & SonarQube/SonarCloud y reusable workflows \\
+Portabilidad & Todo componente se ejecuta en contenedores y se configura por variables de entorno & Docker Compose; mismo stack en AWS y en el equipo \\
+Observabilidad & Métricas de aplicación y de dependencias, con alertas sobre degradación & Prometheus, Grafana y reglas de alerta \\
+Concurrencia & Dos operadores no se pisan; una dependencia caída no autoriza por error & Laboratorio de consistencia (ADR~0005) \\
+\bottomrule
+\end{tabularx}
+\end{table}

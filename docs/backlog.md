@@ -71,16 +71,17 @@ Prioridad **MoSCoW**. Estado: *Hecho*, *Parcial*, *Pendiente*. Release y sprint 
 | HU-31 | F6.3 Correo | Recibir un correo con cada alerta alta o media | Could | 3 | R3 · S8 | Pendiente |
 | HU-32 | F6.4 Preferencias | Elegir por qué canales quiero que me avisen | Could | 3 | R3 · S8 | Pendiente |
 | | **E7 · Acceso y seguridad** | | | | | |
-| HU-33 | F7.1 Login | Entrar con Google solo si mi correo está autorizado | Must | 8 | R3 · S8 | Pendiente |
-| HU-34 | F7.1 | Proteger el panel, el WebSocket y los botones con la sesión | Must | 5 | R3 · S8 | Pendiente |
+| HU-33 | F7.1 Login | Entrar con Google solo si mi correo está autorizado | Must | 8 | R3 · S8 | Hecho |
+| HU-34 | F7.1 | Proteger el panel, el WebSocket y los botones con la sesión | Must | 5 | R3 · S8 | Hecho |
 | HU-35 | F7.2 Protección actual | Que solo el panel propio lea las alertas y accione el tracker | Must | 3 | R2 · S5 | Hecho |
 | | **E8 · Operación y calidad** | | | | | |
 | HU-36 | F8.1 Despliegue | Levantar el gateway y la base con Docker | Should | 3 | R2 · S5 | Hecho |
 | HU-37 | F8.2 Medición | Conocer el rendimiento y la latencia reales | Should | 3 | R3 · S6 | Hecho |
 | HU-38 | F8.3 Observabilidad | Entender por qué el sistema tomó una decisión | Should | 2 | R3 · S7 | Hecho |
 
-**Cuenta:** 38 HU · 31 hechas · 1 parcial · 6 pendientes. Por prioridad: de las 19 *Must*, 16 están hechas y 3 pendientes (HU-28, HU-33 y
-HU-34).
+**Cuenta:** 38 HU · 33 hechas · 1 parcial · 4 pendientes (128 de 145 puntos). Por prioridad: de las 19 *Must*, 18 están hechas y 1 pendiente (HU-28).
+HU-33 y HU-34 (inicio de sesión con Google y protección de toda la superficie) se completaron después de escribir esta tabla: ver los escenarios
+ES-1 a ES-3 en `docs/seguridad/`.
 
 ## 3. Definition of Ready y Definition of Done
 

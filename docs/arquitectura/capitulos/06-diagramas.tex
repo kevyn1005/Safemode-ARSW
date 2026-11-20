@@ -1,0 +1,102 @@
+\chapter{Diagramas de arquitectura}
+
+\section{Notación y fuente de los diagramas}
+Los diagramas se modelaron en \textbf{ArchiMate} con la herramienta Archi, en un solo modelo versionado
+(\cod{docs/diagramas/safemode-arquitectura.archimate}); las figuras de este capítulo son las vistas 4 a 16 de ese modelo, exportadas con Archi
+en línea de comandos (\cod{docs/arquitectura/exportar-vistas.py}). Describen \textbf{lo implementado}: cada puerto, ruta, clase, tabla y servicio
+se verificó contra el código. Las tres vistas anteriores del equipo (1 a 3, de la etapa de diseño) siguen en el modelo como historia.
+
+ArchiMate no trae la notación UML, así que cada tipo de diagrama que pide el requerimiento se expresa con los elementos que el estándar sí
+tiene. La Tabla~\ref{tab:uml} dice cuál vista cubre cada uno y cómo se lee.
+
+\begin{table}[H]
+\centering\small
+\caption{Diagramas requeridos y la vista ArchiMate que los cubre.}\label{tab:uml}
+\begin{tabularx}{\textwidth}{lllY}
+\toprule
+\textbf{Diagrama} & \textbf{Vista} & \textbf{Figura} & \textbf{Cómo se expresa en ArchiMate} \\
+\midrule
+Contexto & 4 & \ref{fig:contexto} & El sistema como un componente de aplicación rodeado de actores y sistemas externos (en gris) \\
+Componentes & 5 y 6 & \ref{fig:comp-flujo}, \ref{fig:comp-puesto} & Componentes de aplicación con composición (partes de un proceso) y flujos entre ellos \\
+Clases & 7, 8 y 9 & \ref{fig:clases-1}--\ref{fig:clases-3} & Cada clase es un componente; \emph{Realization} = implementa la interfaz; \emph{Composition} = contiene; \emph{Serving} = presta servicio a \\
+Entidad-relación & 10 & \ref{fig:er} & Objetos de datos (tablas, documentos, claves) con asociaciones N:1 \\
+Secuencia & 11 y 12 & \ref{fig:secuencia-alerta}, \ref{fig:secuencia-login} & Vista dinámica: componentes y flujos numerados en el orden de la interacción \\
+Despliegue & 13 y 14 & \ref{fig:despliegue-actual}, \ref{fig:despliegue-objetivo} & Nodos, software de sistema y redes de la capa de tecnología \\
+Actividades & 15 y 16 & \ref{fig:act-1}, \ref{fig:act-2} & Procesos con relaciones de disparo, eventos y uniones (O = decisión; Y = unión) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\textbf{Convenciones.} Gris = sistema externo o fuera de nuestro control; azul = capa de aplicación; verde = tecnología; amarillo =
+negocio; naranja (Figura~\ref{fig:despliegue-objetivo}) = diseñado y calculado pero \emph{no desplegado}. Las líneas punteadas con flecha son
+flujos; las continuas con rombo, composición.
+
+\section{Contexto}
+El sistema se ve como una sola pieza rodeada de quienes lo usan y de los sistemas con los que habla. El personal de seguridad y el administrador
+reciben servicio del sistema; las cámaras se ven en el software de cámaras (VMS), cuya ventana compartida es la entrada de imagen; Google
+verifica la identidad; Telegram recibe avisos de texto; el servicio de visión de NVIDIA es opcional; y GitHub Actions y SonarCloud
+despliegan y analizan el código. El video no se guarda en SafeMode.
+
+\vista{04-contexto.png}{Contexto del sistema (vista 4).}{fig:contexto}
+
+\section{Componentes}
+La Figura~\ref{fig:comp-flujo} sigue el camino de una alerta: el panel recibe la ventana del VMS y envía un fotograma por cámara al
+\emph{Camera Feed}; el detector produce detecciones que el seguimiento convierte en eventos (y fotos); el motor de alertas, dentro del gateway,
+lee los retiros nuevos, crea la alerta y la entrega al servidor WebSocket y al servicio de avisos. El gateway tiene seis partes (composición) y
+lanza el tracker con un comando fijo. La Figura~\ref{fig:comp-puesto} muestra el Release~2: el puesto compartido (zonas, historial y presencia) en
+\emph{collaboration-service}, los permisos en \emph{access-service} (que la colaboración consulta antes de cada escritura y que falla cerrada), los
+tres motores de datos y la observabilidad.
+
+\vista{05-componentes-flujo.png}{Componentes: de la cámara a la alerta (vista 5).}{fig:comp-flujo}
+\vista{06-componentes-puesto.png}{Componentes: puesto compartido, permisos y observabilidad (vista 6).}{fig:comp-puesto}
+
+\section{Clases}
+Se muestran las clases que sostienen las decisiones de diseño, en tres vistas. La primera (Figura~\ref{fig:clases-1}): el
+\cod{ObjectTracker} (uno por cámara) contiene objetos y personas seguidos, usa descriptores de apariencia y una huella de la zona para
+verificar un retiro, y delega la descripción por IA en una interfaz que implementa el cliente de NVIDIA. La segunda (Figura~\ref{fig:clases-2}):
+los almacenes de eventos y alertas comparten conexión con reconexión automática y dialecto (H2 o PostgreSQL), y el motor de alertas combina
+eventos y reglas para crear alertas únicas que avisa a sus oyentes. La tercera (Figura~\ref{fig:clases-3}): el \cod{GatewayRunner} arma el
+servidor HTTP, el WebSocket, la autenticación y el servicio de avisos; la sesión y la verificación del token son interfaces con dos
+implementaciones (memoria o base) y una (Google), lo que permitió replicar el gateway sin cambiar su código.
+
+\vista{07-clases-deteccion.png}{Clases (1/3): detección y seguimiento (vista 7).}{fig:clases-1}
+\vista{08-clases-persistencia.png}{Clases (2/3): persistencia y motor de alertas (vista 8).}{fig:clases-2}
+\vista{09-clases-gateway.png}{Clases (3/3): gateway, sesiones y avisos (vista 9).}{fig:clases-3}
+
+\section{Entidad-relación}
+El modelo de datos tiene cuatro grupos. En la base de eventos (H2 por defecto, PostgreSQL con una URL): \cod{object_presence_event} y
+\cod{alert} (una alerta por evento, garantizada por \cod{UNIQUE}), \cod{camera} y \cod{operator_session} (la huella SHA-256 de la cookie, nunca la
+cookie). En PostgreSQL de acceso: puestos, operadores, membresías (rol y permiso de configurar) y auditoría de concesiones y revocaciones. En MongoDB:
+el documento del puesto con su versión y el historial de cambios (índice único por puesto y versión, retención de 90 días). En Redis: presencia y
+caché de permisos, con vencimiento.
+
+\vista{10-entidad-relacion.png}{Modelo de datos: tablas, documentos y claves (vista 10).}{fig:er}
+
+\section{Secuencia}
+La primera secuencia (Figura~\ref{fig:secuencia-alerta}) es la promesa de valor: del retiro de un objeto al aviso en el panel en menos de
+5~s, con el presupuesto de tiempo anotado. La segunda (Figura~\ref{fig:secuencia-login}) es el inicio de sesión con Google: el ID token se
+verifica en el servidor (se le pregunta a Google y se comprueban emisor, audiencia y vigencia), el correo debe estar en la lista blanca, la sesión se guarda por su huella y el
+navegador recibe una cookie \cod{HttpOnly}; el WebSocket revalida la sesión.
+
+\vista{11-secuencia-alerta.png}{Secuencia: del retiro de un objeto al aviso en el panel (vista 11).}{fig:secuencia-alerta}
+\vista{12-secuencia-login.png}{Secuencia: inicio de sesión con Google (vista 12).}{fig:secuencia-login}
+
+\section{Despliegue}
+La Figura~\ref{fig:despliegue-actual} es el despliegue público de hoy: una instancia EC2 que ejecuta Docker Compose con Caddy delante (TLS,
+\cod{forward_auth} para \cod{/frames} y \cod{/grafana}) y todos los servicios detrás; un solo servidor, por lo que su caída es total. La
+Figura~\ref{fig:despliegue-objetivo} pone lado a lado el \textbf{prototipo validado} (dos réplicas detrás de un balanceador con PostgreSQL, medido en
+la sección~\ref{sec:disponibilidad}) y el \textbf{diseño objetivo} en AWS (Route~53, balanceador multi-AZ, dos instancias en zonas distintas y RDS
+Multi-AZ), señalado como no desplegado.
+
+\vista{13-despliegue-actual.png}{Despliegue actual: servidor único en AWS con Docker Compose (vista 13).}{fig:despliegue-actual}
+\vista{14-despliegue-objetivo.png}{Prototipo de escalado validado y diseño objetivo en AWS (vista 14).}{fig:despliegue-objetivo}
+
+\section{Actividades}
+El flujo se parte en dos. En la Figura~\ref{fig:act-1}, cada fotograma se detecta y se empareja con lo ya seguido; un objeto se registra cuando lleva 3~s
+quieto; y se da por retirado si desaparece 3 fotogramas o se desplaza más de 25~px en 2 seguidos, siempre que la verificación por imagen
+(huella de 24$\times$24 puntos, sin contar a las personas que tapan) confirme que cambió. En la Figura~\ref{fig:act-2}, el retiro se clasifica
+según quién estaba cerca y se traduce a una alerta de severidad alta, media o baja; la alerta se crea una sola vez, se publica a todos los
+operadores y, si es alta o media, sale el aviso de texto.
+
+\vista{15-actividades-retiro.png}{Actividades (1/2): del fotograma al retiro confirmado (vista 15).}{fig:act-1}
+\vista{16-actividades-alerta.png}{Actividades (2/2): del retiro a la alerta y el aviso (vista 16).}{fig:act-2}

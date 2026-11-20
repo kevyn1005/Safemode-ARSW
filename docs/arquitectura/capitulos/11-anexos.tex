@@ -1,0 +1,94 @@
+\chapter{Anexos}
+
+\section{Glosario}\label{sec:glosario}
+\begin{table}[H]
+\centering\small
+\caption{Términos propios del proyecto.}\label{tab:glosario}
+\begin{tabularx}{\textwidth}{lY}
+\toprule
+\textbf{Término} & \textbf{Significado} \\
+\midrule
+Dueño probable & Persona más frecuente junto al objeto mientras se asentó; es por cercanía, no una identidad \\
+Objeto en reposo (\emph{at rest}) & Objeto que lleva 3~s quieto; solo entonces se registra \\
+RemovalKind & Tipo de retiro: \cod{BY_OWNER}, \cod{BY_OTHER}, \cod{OWNER_AND_OTHER_NEAR}, \cod{NO_ONE_NEAR}, \cod{OWNER_UNKNOWN} \\
+Alerta & Evento que el motor convierte en aviso, con tipo y severidad (alta, media o baja); única por evento \\
+Snapshot & Mensaje que recibe un WebSocket al conectar, con las alertas pendientes \\
+VMS & Software de cámaras (\emph{video management system}) del cliente: graba el video y muestra las cámaras \\
+Puesto & Lugar de vigilancia: su configuración (cámaras y zonas) y sus operadores son compartidos \\
+TPS / TPM & Transacciones por segundo / por minuto; aquí, solicitudes HTTP y alertas entregadas \\
+P95 / P99 & Latencia por debajo de la cual queda el 95\,\% o el 99\,\% de las peticiones \\
+Fallar cerrado (\emph{fail closed}) & Ante una falla de verificación se deniega en vez de permitir \\
+ADR & Registro de una decisión de arquitectura (\emph{architecture decision record}) \\
+ArchiMate & Lenguaje de modelado de arquitectura empresarial; se usa con la herramienta Archi \\
+SLA & Acuerdo de nivel de servicio publicado por el proveedor (disponibilidad comprometida) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Referencias}
+\begin{thebibliography}{99}
+\bibitem{bass} L. Bass, P. Clements y R. Kazman, \emph{Software Architecture in Practice}, 4.\textsuperscript{a} ed. Addison-Wesley, 2021.
+\bibitem{archimate} The Open Group, \emph{ArchiMate 3.2 Specification}, 2022.
+\bibitem{scrum} K. Schwaber y J. Sutherland, \emph{The Scrum Guide}, 2020. \url{https://scrumguides.org}
+\bibitem{adr} M. Nygard, ``Documenting architecture decisions,'' 2011. \url{https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions}
+\bibitem{nygard} M. T. Nygard, \emph{Release It!}, 2.\textsuperscript{a} ed. Pragmatic Bookshelf, 2018.
+\bibitem{kleppmann} M. Kleppmann, \emph{Designing Data-Intensive Applications}. O'Reilly, 2017.
+\bibitem{sre} B. Beyer, C. Jones, J. Petoff y N. R. Murphy (eds.), \emph{Site Reliability Engineering}. O'Reilly, 2016.
+\bibitem{little} J. D. C. Little, ``A proof for the queuing formula: $L=\lambda W$,'' \emph{Operations Research}, vol. 9, n.\textsuperscript{o} 3, pp. 383--387, 1961.
+\bibitem{yolo} G. Jocher, A. Chaurasia y J. Qiu, ``Ultralytics YOLOv8,'' 2023. \url{https://github.com/ultralytics/ultralytics}
+\bibitem{onnx} ONNX Runtime developers, \emph{ONNX Runtime}. \url{https://onnxruntime.ai}
+\bibitem{google} Google, ``Verify the Google ID token on your server side.'' \url{https://developers.google.com/identity/gsi/web/guides/verify-google-id-token}
+\bibitem{k6} Grafana Labs, \emph{k6 documentation}. \url{https://grafana.com/docs/k6/latest/}
+\bibitem{prom} Prometheus Authors, \emph{Prometheus documentation}. \url{https://prometheus.io/docs/}
+\bibitem{docker} Docker Inc., \emph{Compose file reference}. \url{https://docs.docker.com/compose/}
+\bibitem{caddy} Caddy, \emph{forward\_auth (Caddyfile directive)}. \url{https://caddyserver.com/docs/caddyfile/directives/forward_auth}
+\bibitem{sonar} SonarSource, \emph{SonarQube documentation: quality gates}. \url{https://docs.sonarsource.com/sonarqube/}
+\bibitem{aws} Amazon Web Services, ``Service Level Agreements'' de Amazon EC2, Elastic Load Balancing y Amazon RDS (consultados el 19 de noviembre de 2026). \url{https://aws.amazon.com/legal/service-level-agreements/}
+\end{thebibliography}
+
+\section{Repositorios y enlaces}
+\begin{itemize}
+  \item Código e historial: \url{https://github.com/kevyn1005/Safemode-ARSW} (si el repositorio es privado, el acceso se concede al docente
+  institucional antes del cierre).
+  \item Sitio desplegado: \url{https://safemode-arsw.duckdns.org/} (acceso solo con una cuenta de Google autorizada).
+  \item Flujos de GitHub Actions: pestaña \emph{Actions} del repositorio (\cod{.github/workflows/}). Análisis de calidad: proyecto en SonarCloud del
+  equipo, una vez configurados el token y las variables (\cod{docs/mantenibilidad/escenario-y-resultados.md}, sección 6).
+\end{itemize}
+
+\section{Scripts de pruebas}
+\begin{table}[H]
+\centering\small
+\caption{Scripts y comandos que reproducen la evidencia.}\label{tab:scripts}
+\begin{tabularx}{\textwidth}{lY}
+\toprule
+\textbf{Ruta} & \textbf{Qué reproduce} \\
+\midrule
+\cod{performance/k6/safemode.js}, \cod{performance/ejecutar.ps1} & Pruebas de carga, estrés y pico con k6; resultados en \cod{docs/rendimiento/resultados/} \\
+\cod{performance/graficar.py} & Gráficas y tabla por escalón a partir de Prometheus \\
+\cod{performance/monitoring/reglas-alertas.yml} & Las ocho reglas de alerta (validadas con \cod{promtool}) \\
+\cod{docs/disponibilidad/validaciones/escalado/ejecutar.ps1} & Prototipo de dos réplicas: reparto, sesiones compartidas, alertas y caída de una réplica (17 comprobaciones) \\
+\cod{docs/disponibilidad/calcular-disponibilidad.mjs} & Cálculo de disponibilidad en serie y en paralelo \\
+\cod{docs/seguridad/validaciones/frames-forward-auth/ejecutar.ps1} & ES-3: 12 comprobaciones con Caddy y el receptor reales \\
+\cod{mvn -o verify} (raíz) & 479 pruebas Java con cobertura JaCoCo por módulo \\
+\cod{npm run test:coverage} (\cod{security-dashboard}) & 144 pruebas del panel con cobertura c8 \\
+\cod{docs/mantenibilidad/analizar-local.ps1} & Análisis de Sonar con un SonarQube local \\
+\cod{docs/despliegue/verificar-despliegue.ps1} & Comprobación de solo lectura del sitio publicado \\
+\cod{persistencia/} y \cod{docs/persistencia/} & Laboratorio de consistencia y concurrencia (acceptance, k6, fallas de Redis y de la autoridad) \\
+\cod{docs/arquitectura/compilar.ps1}, \cod{exportar-vistas.py} & Compila este documento y re-exporta las vistas de ArchiMate \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Dashboards y exportaciones}
+El tablero del equipo está en \cod{observability/dashboards/dashboard-safemode-v2.json} (formato \cod{dashboard.grafana.app/v2beta1}, que carga en
+Grafana 13.3.1) y los de persistencia en \cod{docs/persistencia/dashboard.json}. La configuración de Prometheus y sus reglas están en
+\cod{performance/monitoring/} y en \cod{persistencia/monitoring/}; las capturas de Grafana del laboratorio de consistencia están en
+\cod{docs/persistencia/evidencias/capturas/}. \textbf{Pendiente:} la captura del tablero con el período de una prueba de k6.
+
+\section{Evidencias relevantes de CI/CD}
+\begin{itemize}
+  \item \textbf{Pipeline:} \cod{.github/workflows/pipeline.yml} con tres \emph{reusable workflows} y el despliegue por SSH.
+  \item \textbf{Calidad medida con SonarQube local (20 de noviembre de 2026):} control de calidad verde, cobertura 86,0\,\% (código nuevo 98,5\,\%),
+  fiabilidad, seguridad y mantenibilidad en A, 0 errores y 0 vulnerabilidades, 1 olor de código (\cod{docs/mantenibilidad/}).
+  \item \textbf{Cobertura:} backend 81,8\,\% de líneas (3\,387 de 4\,142) y panel 99,3\,\% (1\,636 de 1\,647).
+\end{itemize}

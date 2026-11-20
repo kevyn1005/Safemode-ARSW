@@ -1,0 +1,5 @@
+# Imagen para compilar los documentos LaTeX del Release 2 (docs/arquitectura y docs/articulo) sin instalar TeX Live en el equipo.
+# La imagen base trae TeX Live "small"; se le agregan la clase IEEEtran del articulo y los paquetes que le faltan.
+#   docker build -t safemode-latex -f docs/arquitectura/Dockerfile.latex docs/arquitectura
+FROM ghcr.io/xu-cheng/texlive-small:latest
+RUN tlmgr update --self && tlmgr install ieeetran cite titlesec xurl

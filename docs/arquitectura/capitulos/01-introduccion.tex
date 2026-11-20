@@ -1,0 +1,56 @@
+\chapter{Introducción}
+
+\section{Objetivo}
+Este documento describe la arquitectura de SafeMode en su versión de entrega final (Release 2): qué sistema se construyó, con qué estilo
+arquitectónico, qué decisiones se tomaron y por qué, y qué evidencia medida respalda que cumple los atributos de calidad comprometidos
+(rendimiento, escalabilidad, disponibilidad, seguridad, mantenibilidad, portabilidad, observabilidad y robustez en concurrencia).
+
+El documento es \textbf{consistente con la solución implementada}: cada cifra procede de una prueba, una medición o un análisis que se puede
+volver a ejecutar desde el repositorio, y cada diagrama describe lo que el código hace hoy, no lo que se planeó. Donde algo está diseñado
+pero no desplegado, o medido en condiciones limitadas, el texto lo dice con esas palabras.
+
+\section{Alcance}
+SafeMode analiza en tiempo real la imagen de cámaras de seguridad ya instaladas, detecta mochilas, bolsos y maletas dejados sin vigilancia,
+registra quién es su dueño probable y quién los retira, y avisa en segundos al personal de seguridad con la evidencia necesaria para
+actuar (fotos, fecha, hora y cámara).
+
+\begin{itemize}
+  \item \textbf{Dentro del alcance:} detección y seguimiento de objetos y personas, análisis del retiro, motor de alertas, panel web en tiempo
+  real, avisos de texto, inicio de sesión con Google, configuración compartida del puesto y permisos, observabilidad, despliegue en AWS y las
+  pruebas de calidad de este Release.
+  \item \textbf{Fuera del alcance:} reemplazar las cámaras, guardar video (lo graba el software de cámaras del cliente), reconocimiento facial
+  o biométrico. El «dueño» es solo \emph{probable} (por cercanía al objeto), nunca una identidad.
+  \item \textbf{Límites declarados del Release 2:} el despliegue público es un solo servidor (el despliegue distribuido en dos zonas está
+  diseñado y calculado, y se validó como prototipo, pero no se desplegó en AWS); el envío de alertas por correo no se implementó; la prueba con
+  dos cámaras físicas reales está pendiente (se probó con una cámara física y un mosaico de dos).
+\end{itemize}
+
+\section{Audiencia}
+El documento está escrito para tres lectores: (1) el docente evaluador, que debe poder contrastarlo con el código, las pruebas y los diagramas;
+(2) el equipo, que lo usa como referencia para defender la solución en la sustentación; y (3) quien mantenga el sistema después, que necesita
+saber por qué las cosas están como están. Los términos propios se definen en el glosario (Anexo~\ref{sec:glosario}).
+
+\section{Cómo leer este documento}
+\begin{table}[H]
+\centering\small
+\caption{Dónde está cada entregable del Release 2 (sección 3 del documento de requerimientos).}\label{tab:mapa}
+\begin{tabularx}{\textwidth}{lY}
+\toprule
+\textbf{Capítulo} & \textbf{Contenido} \\
+\midrule
+2. Visión general & Descripción del sistema, requerimientos funcionales y no funcionales clave \\
+3. Marco metodológico & Scrum, DoR/DoD, planificación y estimación \\
+4. Atributos de calidad & Un escenario con medida por atributo, con su evidencia \\
+5. Vista de arquitectura & Estilo, modelo cloud, decisiones clave, balanceo, despliegue distribuido y tiempo real \\
+6. Diagramas & Contexto, componentes, clases, entidad-relación, secuencia, despliegue y actividades (ArchiMate) \\
+7. Detalles tecnológicos & Lenguajes, infraestructura, DevOps, Docker/Compose, Prometheus, Grafana y k6 \\
+8. Seguridad & Autenticación, autorización, cifrado, buenas prácticas y los tres escenarios aprobados \\
+9. Bitácora & Sprints, ceremonias, lecciones aprendidas y contribuciones \\
+10. Conclusiones & Logros, riesgos, mejora continua y resultados \\
+11. Anexos & Glosario, referencias, repositorio, scripts, tableros y evidencias de CI/CD \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+El código y su historial están en \url{https://github.com/kevyn1005/Safemode-ARSW}. Los informes extensos de cada atributo viven en
+\cod{docs/} (por ejemplo \cod{docs/rendimiento/informe-k6.md}) y este documento los resume y enlaza.

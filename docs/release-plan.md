@@ -11,11 +11,11 @@ sprint se describe por la **capacidad de producto** que deja funcionando, no por
 
 | | |
 |---|---|
-| **Sprints con incremento demostrable** | 7 de 8 (el S8 está a la mitad) |
-| **HU** | 31 hechas · 1 parcial · 6 pendientes (de 38) |
-| **Pruebas automáticas** | 301 de Java y 35 de Node, todas pasan |
+| **Sprints con incremento demostrable** | 8 de 8 (S8 completo salvo el correo y las preferencias por usuario) |
+| **HU** | 33 hechas · 1 parcial · 4 pendientes (de 38; 128 de 145 puntos) |
+| **Pruebas automáticas** | 479 de Java (3 se omiten sin base de datos) y 144 de Node, todas pasan; cobertura 81,8 % del backend y 99,3 % del panel (`docs/mantenibilidad/`) |
 | **Latencia medida** (del evento al panel) | media 0,5 s · p95 0,9 s; peor caso extremo a extremo ≈ 3,5 s con 1 cámara (objetivo: < 5 s) |
-| **Pendiente** | correo, inicio de sesión con Google, preferencias por usuario, prueba con dos cámaras reales y retención de fotos |
+| **Pendiente** | correo, preferencias por usuario, prueba con dos cámaras reales y retención de fotos (el inicio de sesión con Google ya está: ES-1 a ES-3) |
 
 ## Releases y sprints
 
