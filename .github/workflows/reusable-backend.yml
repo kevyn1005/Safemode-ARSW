@@ -1,0 +1,50 @@
+# Workflow REUTILIZABLE: compila, prueba y mide la cobertura (JaCoCo) del backend Java. Lo llama pipeline.yml; tambien puede llamarlo
+# cualquier otro workflow del repositorio con `uses: ./.github/workflows/reusable-backend.yml`.
+name: reusable-backend
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        description: Version de Java (temurin)
+        type: string
+        default: "17"
+
+jobs:
+  backend:
+    name: Backend (compilar, probar, cobertura)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java-version }}
+          cache: maven
+      # verify = compilar + pruebas + informe JaCoCo (jacoco.xml por modulo). Las pruebas que se miden son las que se ejecutan aqui.
+      - name: Compilar, probar y medir la cobertura
+        run: mvn -B verify
+      - name: Resultados de las pruebas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: "**/target/surefire-reports/"
+          if-no-files-found: ignore
+      - name: Guardar los jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: jars
+          path: "**/target/*.jar"
+          if-no-files-found: warn
+      # Lo que necesita el analisis de calidad (otro job): las clases compiladas y la cobertura de cada modulo
+      - name: Guardar lo que necesita el analisis de calidad
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-analisis
+          path: |
+            **/target/classes
+            **/target/test-classes
+            **/target/site/jacoco/jacoco.xml
+          retention-days: 7
+          if-no-files-found: error

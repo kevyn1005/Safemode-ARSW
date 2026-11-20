@@ -1,0 +1,69 @@
+# Workflow REUTILIZABLE: analisis estatico con SonarQube Cloud (SonarCloud) y control de calidad. Usa los informes que dejaron los jobs de
+# backend y de frontend (clases compiladas, JaCoCo y lcov), asi la cobertura reportada es la de las pruebas que de verdad se ejecutaron.
+#
+# Configuracion (la hace el equipo, una sola vez, en GitHub): secreto SONAR_TOKEN y variables de repositorio SONAR_ORGANIZATION y
+# SONAR_PROJECT_KEY. Si falta alguna, el analisis se omite con un aviso (no rompe el pipeline). Con todo configurado, el job FALLA si el
+# control de calidad no pasa (sonar.qualitygate.wait=true): ese es el control de calidad aplicado.
+name: reusable-sonar
+
+on:
+  workflow_call:
+    inputs:
+      organization:
+        description: Organizacion de SonarCloud
+        type: string
+        default: ""
+      project-key:
+        description: Clave del proyecto en SonarCloud
+        type: string
+        default: ""
+      host-url:
+        description: Servidor de Sonar (SonarCloud por defecto)
+        type: string
+        default: https://sonarcloud.io
+    secrets:
+      SONAR_TOKEN:
+        required: false
+
+jobs:
+  sonar:
+    name: Calidad (SonarCloud)
+    runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_ORGANIZATION: ${{ inputs.organization }}
+      SONAR_PROJECT_KEY: ${{ inputs.project-key }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # Sonar necesita el historial para atribuir el codigo nuevo
+      - name: Comprobar la configuracion
+        id: config
+        run: |
+          if [ -n "$SONAR_TOKEN" ] && [ -n "$SONAR_ORGANIZATION" ] && [ -n "$SONAR_PROJECT_KEY" ]; then
+            echo "listo=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "listo=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Falta SONAR_TOKEN, SONAR_ORGANIZATION o SONAR_PROJECT_KEY: se omite el analisis de calidad."
+          fi
+      - name: Traer las clases compiladas y la cobertura del backend
+        if: steps.config.outputs.listo == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-analisis
+      - name: Traer la cobertura del frontend
+        if: steps.config.outputs.listo == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-cobertura
+          path: security-dashboard/coverage
+      - name: Analisis y control de calidad
+        if: steps.config.outputs.listo == 'true'
+        uses: SonarSource/sonarqube-scan-action@v5
+        with:
+          args: >
+            -Dsonar.organization=${{ inputs.organization }}
+            -Dsonar.projectKey=${{ inputs.project-key }}
+            -Dsonar.host.url=${{ inputs.host-url }}
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=300
