@@ -77,7 +77,8 @@ public final class MiniHttpServer implements AutoCloseable {
         }
     }
 
-    private record Route(String method, String pattern, String[] segments, Handler handler) {
+    /** Visible en el paquete (no publico) solo para poder probarlo: tiene un arreglo y compara por contenido. */
+    record Route(String method, String pattern, String[] segments, Handler handler) {
 
         @Override
         public boolean equals(Object other) {

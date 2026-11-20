@@ -35,6 +35,37 @@ class MiniHttpServerRecordsTest {
         assertFalse(base.equals("hola"));
     }
 
+    private static final MiniHttpServer.Handler MANEJADOR = peticion -> MiniHttpServer.Response.text(200, "ok");
+
+    private static MiniHttpServer.Route ruta(String metodo, String patron, String[] segmentos, MiniHttpServer.Handler manejador) {
+        return new MiniHttpServer.Route(metodo, patron, segmentos, manejador);
+    }
+
+    @Test
+    void dosRutasConLosMismosSegmentosSonIgualesAunqueSeanArreglosDistintos() {
+        MiniHttpServer.Route a = ruta("GET", "/api/puestos/{id}", new String[] {"api", "puestos", "{id}"}, MANEJADOR);
+        MiniHttpServer.Route b = ruta("GET", "/api/puestos/{id}", new String[] {"api", "puestos", "{id}"}, MANEJADOR);
+        assertEquals(a, b);
+        assertEquals(a.hashCode(), b.hashCode());
+        assertTrue(a.equals(a));
+    }
+
+    @Test
+    void unaRutaDistintaEnCualquierCampoNoEsIgual() {
+        MiniHttpServer.Route base = ruta("GET", "/a", new String[] {"a"}, MANEJADOR);
+        assertNotEquals(base, ruta("PUT", "/a", new String[] {"a"}, MANEJADOR));
+        assertNotEquals(base, ruta("GET", "/b", new String[] {"a"}, MANEJADOR));
+        assertNotEquals(base, ruta("GET", "/a", new String[] {"b"}, MANEJADOR));
+        assertNotEquals(base, ruta("GET", "/a", new String[] {"a"}, peticion -> MiniHttpServer.Response.text(204, "")));
+        assertFalse(base.equals(null));
+        assertFalse(base.equals("GET /a"));
+    }
+
+    @Test
+    void elTextoDeUnaRutaDiceMetodoYPatron() {
+        assertEquals("Route[GET /api/puestos/{id}]", ruta("GET", "/api/puestos/{id}", new String[] {"api"}, MANEJADOR).toString());
+    }
+
     @Test
     void elCuerpoPuedeSerNuloYElTextoNoVuelcaLosBytes() {
         MiniHttpServer.Response sinCuerpo = new MiniHttpServer.Response(204, "text/plain", null);
