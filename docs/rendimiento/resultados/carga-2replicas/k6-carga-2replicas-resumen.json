@@ -1,0 +1,43 @@
+{
+  "tipo": "carga",
+  "etiqueta": "2replicas",
+  "duracion_s": 255,
+  "solicitudes_http": 8501,
+  "TPS_solicitudes": 33.33,
+  "TPM_solicitudes": 1999.9,
+  "alertas_entregadas": 9004,
+  "TPS_alertas_entregadas": 35.3,
+  "TPM_alertas_entregadas": 2118.3,
+  "error_rate": 0,
+  "http_p95_ms": 726.2,
+  "http_p99_ms": 2761.3,
+  "entrega_p95_ms": 1248.6,
+  "entrega_p99_ms": 2424.9,
+  "vus_max": 40,
+  "ws_errores": 0,
+  "umbrales": {
+    "alerta_entrega_ms": {
+      "p(95)<2000": true,
+      "p(99)<5000": true
+    },
+    "ws_errores": {
+      "count==0": true
+    },
+    "http_req_duration{name:auth_me}": {
+      "p(95)<300": true
+    },
+    "checks": {
+      "rate>0.99": true
+    },
+    "http_req_duration": {
+      "p(99)<1500": false,
+      "p(95)<500": false
+    },
+    "http_req_duration{name:report}": {
+      "p(95)<800": false
+    },
+    "http_req_failed": {
+      "rate<0.01": true
+    }
+  }
+}

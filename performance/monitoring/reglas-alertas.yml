@@ -1,0 +1,80 @@
+# Condiciones de degradacion o falla DETECTABLES de Safemode (Release 2, seccion 2.6) y como se identifican con metricas.
+# Cada regla dice que mide, por que ese umbral y que hacer. Se cargan en el Prometheus del prototipo (performance/monitoring/prometheus.yml);
+# el informe docs/rendimiento/informe-k6.md contrasta cada una con lo que ocurrio en las pruebas de carga, estres y pico.
+groups:
+  - name: safemode-disponibilidad
+    rules:
+      - alert: GatewayCaido
+        # Prometheus no puede leer /metrics de una replica: el proceso murio o la red fallo. Con 2 replicas el servicio sigue; con 1, no.
+        expr: up{job="gateway"} == 0
+        for: 15s
+        labels: {severity: critical}
+        annotations:
+          resumen: "Una replica del gateway no responde ({{ $labels.instance }})"
+          accion: "Mirar docker logs de la replica; el balanceador ya la saco de la rotacion. Docker la reinicia sola (restart: unless-stopped)."
+
+      - alert: BaseDeDatosInaccesible
+        # La replica vive pero no llega a PostgreSQL: no puede crear alertas ni validar sesiones. Es el punto unico de falla de mayor peso.
+        expr: safemode_dependency_up{dependency="database"} == 0
+        for: 15s
+        labels: {severity: critical}
+        annotations:
+          resumen: "El gateway {{ $labels.instance }} no llega a la base de datos"
+          accion: "Revisar PostgreSQL. Las conexiones se reabren solas cuando vuelve; mientras tanto no hay sesiones ni alertas nuevas."
+
+      - alert: ReplicaNoLista
+        # blackbox pide /ready; 0 = la replica esta viva pero no esta lista (distinto de up).
+        expr: probe_success{job="ready-probe"} == 0
+        for: 15s
+        labels: {severity: warning}
+        annotations:
+          resumen: "La replica {{ $labels.instance }} no esta lista (/ready)"
+
+  - name: safemode-rendimiento
+    rules:
+      - alert: EntregaDeAlertasLenta
+        # Requisito del proyecto: una alerta debe verse en el panel en menos de 5 s. Aviso a 2 s (P95) para actuar ANTES de incumplirlo.
+        expr: histogram_quantile(0.95, sum by (le) (rate(safemode_alert_delivery_seconds_bucket[1m]))) > 2
+        for: 1m
+        labels: {severity: warning}
+        annotations:
+          resumen: "El P95 de entrega de alertas supera 2 s"
+          accion: "Mirar CPU y conexiones de WebSocket; escalar replicas (--scale realtime-gateway=N)."
+
+      - alert: LatenciaHttpAlta
+        # P95 de las peticiones del panel (por ruta); 1 s es lo que un operador percibe como lento.
+        expr: histogram_quantile(0.95, sum by (route, le) (rate(safemode_http_request_seconds_bucket[1m]))) > 1
+        for: 1m
+        labels: {severity: warning}
+        annotations:
+          resumen: "P95 de {{ $labels.route }} por encima de 1 s"
+
+      - alert: ErroresHttp5xx
+        # Mas del 2 % de las peticiones terminan en error del servidor durante un minuto.
+        expr: |
+          sum(rate(safemode_http_request_seconds_count{status="5xx"}[1m]))
+            / clamp_min(sum(rate(safemode_http_request_seconds_count[1m])), 1) > 0.02
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          resumen: "Mas del 2 % de las peticiones HTTP fallan en el servidor"
+
+      - alert: CpuDelGatewayAlta
+        # Saturacion de CPU. process_cpu_usage es la fraccion de TODAS las CPUs del equipo: en una EC2 t3.small (2 vCPU) 0,85 son 1,7 nucleos.
+        # OJO: en las pruebas locales (16 CPUs) esta regla NO se disparo ni en el estres (el gateway uso <= 0,7 nucleos mientras el P95 llegaba a
+        # segundos: el cuello de botella era la conexion unica a la base, no la CPU); la degradacion la detectaron LatenciaHttpAlta y
+        # EntregaDeAlertasLenta. Por eso se vigila la experiencia del usuario y no solo el recurso (docs/rendimiento/informe-k6.md, 6 y 8).
+        expr: process_cpu_usage{job="gateway"} > 0.85
+        for: 1m
+        labels: {severity: warning}
+        annotations:
+          resumen: "CPU del gateway {{ $labels.instance }} sobre 85 %"
+          accion: "Anadir una replica; revisar la consulta de /report y el pool de conexiones a la base."
+
+      - alert: MuchosSocketsPorReplica
+        # Capacidad: cada socket cuesta memoria e hilos; sobre 500 por replica conviene repartir.
+        expr: safemode_ws_sessions{job="gateway"} > 500
+        for: 1m
+        labels: {severity: warning}
+        annotations:
+          resumen: "Mas de 500 WebSockets en {{ $labels.instance }}"

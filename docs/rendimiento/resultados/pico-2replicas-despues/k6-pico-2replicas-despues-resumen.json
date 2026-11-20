@@ -1,0 +1,32 @@
+{
+  "tipo": "pico",
+  "etiqueta": "2replicas-despues",
+  "duracion_s": 250,
+  "solicitudes_http": 54205,
+  "TPS_solicitudes": 216.81,
+  "TPM_solicitudes": 13008.6,
+  "alertas_entregadas": 52575,
+  "TPS_alertas_entregadas": 210.29,
+  "TPM_alertas_entregadas": 12617.5,
+  "error_rate": 0,
+  "http_p95_ms": 608.2,
+  "http_p99_ms": 1119.5,
+  "entrega_p95_ms": 5662,
+  "entrega_p99_ms": 6680,
+  "vus_max": 600,
+  "ws_errores": 55,
+  "umbrales": {
+    "ws_errores": {
+      "count<20": false
+    },
+    "http_req_duration": {
+      "p(95)<1500": true
+    },
+    "alerta_entrega_ms": {
+      "p(95)<5000": false
+    },
+    "http_req_failed": {
+      "rate<0.02": true
+    }
+  }
+}

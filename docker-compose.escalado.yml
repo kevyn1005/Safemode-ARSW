@@ -47,3 +47,13 @@ services:
     depends_on:
       - realtime-gateway
     restart: unless-stopped
+
+  # ---- Observabilidad del prototipo (pruebas de rendimiento: performance/ejecutar.ps1) --------------------------------------------------
+  # Prometheus y Grafana del stack de persistencia, con la configuracion DE ESTE prototipo: descubre cada replica del gateway por DNS
+  # (una lista fija las confundiria) y carga las reglas de alerta. Puertos propios para no chocar con el stack normal:
+  #   PROMETHEUS_PORT=19090 GRAFANA_PORT=13000 (los fija performance/ejecutar.ps1)
+  prometheus:
+    volumes: !override
+      - ./performance/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./performance/monitoring/reglas-alertas.yml:/etc/prometheus/reglas-alertas.yml:ro
+      - promdata:/prometheus
