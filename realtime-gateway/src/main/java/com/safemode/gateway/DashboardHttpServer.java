@@ -2,16 +2,20 @@ package com.safemode.gateway;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import io.micrometer.core.instrument.Timer;
 
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.time.Duration;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -137,7 +141,60 @@ public class DashboardHttpServer {
         workers.shutdownNow();
     }
 
+    /** Mide cada peticion (cuantas, cuanto tardan, con que resultado) y deja el trabajo de siempre en {@link #handleRequest}. */
     private void handle(HttpExchange exchange) throws IOException {
+        long started = System.nanoTime();
+        String route = routeLabel(exchange.getRequestURI().getPath());
+        try {
+            handleRequest(exchange);
+        } finally {
+            recordRequest(route, exchange.getResponseCode(), System.nanoTime() - started);
+        }
+    }
+
+    // Un temporizador por (ruta, clase de resultado); los intervalos del histograma son los de un panel interactivo.
+    private final ConcurrentHashMap<String, Timer> requestTimers = new ConcurrentHashMap<>();
+
+    private void recordRequest(String route, int status, long nanos) {
+        String statusClass = status < 100 ? "5xx" : (status / 100) + "xx";   // sin respuesta enviada = fallo del servidor
+        requestTimers.computeIfAbsent(route + '|' + statusClass, key -> Timer.builder("safemode.http.request")
+                .description("Peticiones HTTP del panel: duracion por ruta y clase de resultado")
+                .tags("route", route, "status", statusClass)
+                .serviceLevelObjectives(Duration.ofMillis(50), Duration.ofMillis(100), Duration.ofMillis(250), Duration.ofMillis(500),
+                        Duration.ofSeconds(1), Duration.ofMillis(2500), Duration.ofSeconds(5))
+                .register(Observability.REGISTRY)).record(nanos, TimeUnit.NANOSECONDS);
+    }
+
+    /**
+     * Etiqueta de la ruta para las metricas. Pocas variantes a proposito: una ruta cualquiera (un escaner probando direcciones) cae
+     * en {@code estatico_otro} y no crea series nuevas en Prometheus.
+     */
+    static String routeLabel(String path) {
+        if (path.startsWith("/auth/")) {
+            return "auth";
+        }
+        if (path.startsWith("/tracker/")) {
+            return "tracker";
+        }
+        if (path.equals("/cameras") || path.startsWith("/cameras/")) {
+            return "cameras";
+        }
+        if (path.equals("/report")) {
+            return "report";
+        }
+        if (path.startsWith(AlertJson.PHOTO_PREFIX)) {
+            return "foto";
+        }
+        if (isPuestoPath(path)) {
+            return "puesto";
+        }
+        if (path.equals("/") || path.equals("/index.html")) {
+            return "pagina";
+        }
+        return "estatico_otro";
+    }
+
+    private void handleRequest(HttpExchange exchange) throws IOException {
         try {
             String path = exchange.getRequestURI().getPath();
             if (auth != null && path.startsWith("/auth/")) {
