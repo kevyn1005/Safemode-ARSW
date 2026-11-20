@@ -590,7 +590,9 @@ public class NvidiaOwnerVisionDescriber implements OwnerVisionDescriber {
      */
     static String withoutSides(String text) {
         String cleaned = text.replaceAll("(?i)\\b(izquierd[oa]s?|derech[oa]s?)\\b", "");
-        return cleaned.replaceAll("\\s++,", ",").replaceAll("\\s{2,}+", " ").trim();
+        // primero se juntan las rachas de blancos y despues se quita el blanco que queda pegado a una coma (mismo resultado que antes, sin
+        // la expresion "\\s++," cuyo costo crecia con el cuadrado de una racha larga de blancos)
+        return cleaned.replaceAll("\\s{2,}", " ").replaceAll("\\s,", ",").trim();
     }
 
     /** true si el texto del modelo contiene un objeto JSON (aunque no traiga datos utiles). */

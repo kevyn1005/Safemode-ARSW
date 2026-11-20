@@ -2395,7 +2395,7 @@
 
     function fmtTime(iso) {
       var d = new Date(iso);
-      if (isNaN(d)) return String(iso || '');
+      if (Number.isNaN(d.getTime())) return String(iso || '');
       return pad(d.getDate()) + '-' + pad(d.getMonth() + 1) + '-' + d.getFullYear() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
     }
     function aiPending(photo, desc, ai, createdAt) {

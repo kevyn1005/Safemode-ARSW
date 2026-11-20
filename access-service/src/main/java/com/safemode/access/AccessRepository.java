@@ -229,14 +229,38 @@ public class AccessRepository implements AutoCloseable {
      */
     static String operatorIdFor(String email, int attempt) {
         String local = email.substring(0, Math.max(0, email.indexOf('@'))).toLowerCase(java.util.Locale.ROOT);
-        String slug = local.replaceAll("[^a-z0-9_-]+", "-").replaceAll("^[-_]+|-+$", "");
+        String slug = trimSeparators(local.replaceAll("[^a-z0-9_-]+", "-"));
         if (slug.length() > 30) {
-            slug = slug.substring(0, 30).replaceAll("-+$", "");
+            slug = stripTrailingDashes(slug.substring(0, 30));
         }
         if (slug.isEmpty()) {
             slug = "operador";
         }
         return attempt <= 1 ? slug : slug + "-" + attempt;
+    }
+
+    // A mano y no con expresiones regulares (antes "^[-_]+|-+$" y "-+$"): una racha larga de guiones hacia crecer el costo con el cuadrado de su largo.
+
+    /** Quita los guiones y guiones bajos del principio y los guiones del final. */
+    private static String trimSeparators(String text) {
+        int start = 0;
+        int end = text.length();
+        while (start < end && (text.charAt(start) == '-' || text.charAt(start) == '_')) {
+            start++;
+        }
+        while (end > start && text.charAt(end - 1) == '-') {
+            end--;
+        }
+        return text.substring(start, end);
+    }
+
+    /** Quita los guiones del final. */
+    private static String stripTrailingDashes(String text) {
+        int end = text.length();
+        while (end > 0 && text.charAt(end - 1) == '-') {
+            end--;
+        }
+        return text.substring(0, end);
     }
 
     private static boolean exists(Connection connection, String sql, String value) throws SQLException {

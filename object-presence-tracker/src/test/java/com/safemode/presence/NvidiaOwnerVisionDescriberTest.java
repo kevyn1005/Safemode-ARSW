@@ -406,6 +406,15 @@ class NvidiaOwnerVisionDescriberTest {
     }
 
     @Test
+    void alQuitarIzquierdaYDerechaNoQuedanBlancosSobrantesNiBlancosAntesDeUnaComa() {
+        assertEquals("antebrazo, gris", NvidiaOwnerVisionDescriber.withoutSides("antebrazo derecho , gris"));
+        assertEquals("tatuaje, ancla", NvidiaOwnerVisionDescriber.withoutSides("tatuaje   ,   ancla"));
+        assertEquals("a, b", NvidiaOwnerVisionDescriber.withoutSides("a\n, b"), "un salto de linea pegado a la coma tambien se quita");
+        assertEquals("brazo gris", NvidiaOwnerVisionDescriber.withoutSides("  brazo   izquierdo   gris  "));
+        assertEquals("", NvidiaOwnerVisionDescriber.withoutSides("   "));
+    }
+
+    @Test
     void siElModeloNoDevuelveJsonNoHayDescripcionNiExcepcion() {
         responseBody = serviceResponse("La persona lleva una camiseta negra y pantalon azul.");
 
