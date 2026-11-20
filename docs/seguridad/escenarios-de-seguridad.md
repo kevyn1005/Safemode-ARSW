@@ -1,6 +1,6 @@
 # Escenarios de calidad de seguridad — Safemode (Release 2)
 
-Propuesta de tres escenarios para revisión y aprobación del profesor. Cada uno se expresa en el formato de escenario de calidad
+Tres escenarios de seguridad del Release 2, **aprobados por el profesor**. Cada uno se expresa en el formato de escenario de calidad
 (fuente, estímulo, artefacto, entorno, respuesta y medida de la respuesta), nombra las tácticas de seguridad que lo atienden
 (*Software Architecture in Practice*, Bass, Clements y Kazman) y trae una **validación ejecutable**: un comando que se puede correr y
 que comprueba la medida de la respuesta.
