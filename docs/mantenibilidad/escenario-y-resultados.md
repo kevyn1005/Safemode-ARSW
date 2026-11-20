@@ -10,11 +10,11 @@ Qué pide el requerimiento y dónde está cada entregable:
 | Estado general A / Verde, evidencia del pipeline y controles aplicados | [§4](#4-análisis-estático-y-control-de-calidad), [§6](#6-lo-que-falta-y-solo-puede-hacer-el-equipo) |
 | Defectos que las pruebas encontraron | [§5](#5-defectos-reales-que-las-pruebas-encontraron) |
 
-**Estado, sin adornos.** La cobertura está **medida y cumple** en las dos capas (backend 81,7 % de líneas; panel 99,3 %), el pipeline con *reusable workflows*
-está escrito y validado (`actionlint`), y el control de calidad corta el despliegue si falla. **Medido con un SonarQube local (20-nov-2026): control de calidad en
-VERDE, cobertura 85,9 %, mantenibilidad A, duplicación 0 %, pero fiabilidad C (4 errores) y seguridad C (4 vulnerabilidades): el requerimiento pide A y está
-pendiente de corregir** ([§4](#4-análisis-estático-y-control-de-calidad)). **Lo que no está hecho:** una corrida real en SonarCloud (requiere la cuenta, el token y dos
-variables del repositorio, que solo puede crear el equipo).
+**Estado, sin adornos.** La cobertura está **medida y cumple** en las dos capas (backend 81,8 % de líneas; panel 99,3 %), el pipeline con *reusable workflows*
+está escrito y validado (`actionlint`), y el control de calidad corta el despliegue si falla. **Medido con un SonarQube local (20-nov-2026, tras corregir lo que
+encontró): control de calidad en VERDE, cobertura 86,0 % (código nuevo 98,5 %), fiabilidad A, seguridad A, mantenibilidad A, duplicación 0 %, 0 errores y 0 vulnerabilidades**
+([§4](#4-análisis-estático-y-control-de-calidad)). **Lo que no está hecho:** una corrida real en SonarCloud (requiere la cuenta, el token y dos variables del repositorio,
+que solo puede crear el equipo): la calificación de arriba es la del SonarQube local con la misma configuración (`sonar-project.properties`).
 
 ---
 
@@ -58,20 +58,20 @@ completa el job `quality` **falla** si el control de calidad no pasa; sin ella, 
 
 | Módulo | Líneas cubiertas | % líneas | Ramas cubiertas | % ramas |
 |---|---|---|---|---|
-| object-presence-tracker | 1.525 / 1.635 | 93,3 % | 699 / 832 | 84,0 % |
-| realtime-gateway | 1.100 / 1.193 | 92,2 % | 526 / 600 | 87,7 % |
-| alert-engine | 147 / 169 | 87,0 % | 39 / 45 | 86,7 % |
+| object-presence-tracker | 1.532 / 1.640 | 93,4 % | 699 / 832 | 84,0 % |
+| realtime-gateway | 1.101 / 1.194 | 92,2 % | 526 / 600 | 87,7 % |
+| alert-engine | 148 / 170 | 87,1 % | 39 / 45 | 86,7 % |
 | camera-feed-service | 77 / 86 | 89,5 % | 23 / 28 | 82,1 % |
 | vision-detection-service | 143 / 183 | 78,1 % | 46 / 54 | 85,2 % |
-| service-common | 192 / 204 | 94,1 % | 68 / 84 | 81,0 % |
+| service-common | 200 / 212 | 94,3 % | 88 / 104 | 84,6 % |
 | collaboration-service | 171 / 482 | 35,5 % | 138 / 213 | 64,8 % |
-| access-service | 8 / 164 | 4,9 % | 6 / 42 | 14,3 % |
-| **Total** | **3.363 / 4.116** | **81,7 %** | **1.545 / 1.898** | **81,4 %** |
+| access-service | 19 / 175 | 10,9 % | 19 / 56 | 33,9 % |
+| **Total** | **3.387 / 4.142** | **81,8 %** | **1.568 / 1.932** | **81,2 %** |
 
 El **núcleo del producto** (los cinco primeros módulos del Release 1) está en **91,6 %** de líneas. Los dos módulos de persistencia del Release 2 tienen poca cobertura *por pruebas
 unitarias* porque sus adaptadores (`AccessRepository` → PostgreSQL, `CollaborationApi`/`PuestoStore` → MongoDB, `RedisPresenceStore` → Redis) solo se prueban de verdad contra las bases
 reales; esa verificación existe (laboratorio de consistencia y concurrencia, `docs/persistencia/`) pero **no corre en el pipeline**, así que no cuenta para este porcentaje. El margen sobre el
-80 % es de **1,7 puntos**: ajustado; es honesto decir que depende de que esos adaptadores no crezcan sin pruebas.
+80 % es de **1,8 puntos**: ajustado; es honesto decir que depende de que esos adaptadores no crezcan sin pruebas.
 
 ### Qué NO se cuenta y por qué
 
@@ -98,25 +98,37 @@ Antes de este trabajo el pipeline ejecutaba `npm test --if-present`, que **no ha
 - **Corrida local** para ver calificaciones y control de calidad sin esperar al pipeline: [`analizar-local.ps1`](analizar-local.ps1) (contra un SonarQube propio con `docker-compose.sonar.yml`; el token lo crea quien
   la ejecuta y no se guarda en ningún archivo ni se imprime). Imprime el estado del control de calidad, la cobertura, las calificaciones de fiabilidad, seguridad y mantenibilidad y **la lista de problemas** (tipo, gravedad,
   regla, archivo y línea); con `-SoloProblemas` solo lista, sin volver a analizar.
-- **Resultado de la corrida local** (SonarQube Community Build 26.11, perfil «Sonar way», 164 archivos, 10.588 líneas de código; el análisis importó los 8 informes de JaCoCo y el `lcov.info` del panel):
+- **Resultado final de la corrida local** (SonarQube Community Build 26.11, perfil «Sonar way», 165 archivos, 10.638 líneas de código; el análisis importó los 8 informes de JaCoCo y el `lcov.info` del panel):
 
 | Medida | Resultado | ¿Cumple? |
 |---|---|---|
-| Control de calidad | **OK (verde)** | Sí |
-| Cobertura (backend + panel, como la calcula Sonar) | **85,9 %** (líneas 86,7 %) | Sí (≥ 80 %) |
-| Mantenibilidad (deuda técnica) | **A** (5 «olores de código») | Sí |
+| Control de calidad | **OK (verde)**: cobertura del código nuevo 98,5 % (≥ 80), duplicación nueva 0 %, 0 problemas nuevos | Sí |
+| Cobertura (backend + panel, como la calcula Sonar) | **86,0 %** (líneas 86,8 %) | Sí (≥ 80 %) |
+| **Fiabilidad** | **A** (0 errores) | Sí |
+| **Seguridad** | **A** (0 vulnerabilidades, 0 *hotspots*) | Sí |
+| **Mantenibilidad** (deuda técnica) | **A** (1 «olor de código») | Sí |
 | Duplicación | 0,0 % | Sí |
-| Puntos de seguridad por revisar (*hotspots*) | 0 | Sí |
-| **Fiabilidad** | **C** (4 errores) | **No: se pide A** |
-| **Seguridad** | **C** (4 vulnerabilidades) | **No: se pide A** |
 
-  El control de calidad pasa porque el «Sonar way» exige las calificaciones A solo sobre el código *nuevo*; el requerimiento del curso pide estado general A, así que **hay que
-  corregir los 4 errores y las 4 vulnerabilidades**. Se listan con `analizar-local.ps1 -SoloProblemas` (regla, archivo, línea y mensaje) y su corrección se anota aquí.
-- La cobertura de Sonar (85,9 %) es mayor que la de §3 (81,7 % del backend) porque Sonar mezcla el backend con el panel (99,3 %); por capa, las cifras de §3 son las que corresponden a cada requisito.
+- **Cómo se llegó ahí.** La primera corrida dio el control de calidad en verde pero fiabilidad C y seguridad C (el «Sonar way» exige la A solo sobre código *nuevo*; el requerimiento del curso pide
+  estado general A). Se listaron 13 problemas con `analizar-local.ps1 -SoloProblemas` y se corrigieron, cada cambio con su prueba:
 
-## 5. Defectos reales que las pruebas encontraron
+| Problema (regla) | Qué era | Qué se hizo |
+|---|---|---|
+| 2 × errores S6218 en `MiniHttpServer` | `Response` y `Route` son *records* con un arreglo: su igualdad y su `toString` comparaban la identidad del arreglo, no el contenido | `equals`/`hashCode`/`toString` por contenido; `MiniHttpServerRecordsTest` |
+| Error S5850 en `AccessRepository.operatorIdFor` | La expresión `^[-_]+\|-+$` mezcla la precedencia de la alternancia | Dos recortes a mano; comprobado contra la expresión original con 200.000 entradas al azar (cero diferencias) y pruebas en `OperatorIdTest` |
+| Error `InputWithoutLabelCheck` en `mosaico-prueba.html` | El `input` de video oculto no tenía etiqueta | `aria-label` |
+| 4 × S2077 «vulnerabilidades» de SQL formateado | Tres `CREATE TABLE` con `%s` y `findByIds` con marcadores `?`: **no recibían ningún dato de fuera** (solo constantes del enum `SqlDialect` y la cantidad de `?`) | **Falsos positivos justificados**: comentario y `NOSONAR` con la razón en cada sitio (`PresenceEventStore`, `AlertStore`, `JdbcSessionStore`); el SQL no cambió, porque duplicar el DDL por dialecto empeoraría la mantenibilidad |
+| 3 × olor S8786 (expresiones regulares de costo cuadrático) y `isNaN` | `AccessRepository` (2) y `NvidiaOwnerVisionDescriber.withoutSides` | Recortes a mano y orden distinto de la limpieza (misma salida en 300.000 entradas al azar); `Number.isNaN(d.getTime())` en el panel |
 
-Medir la cobertura del panel obligó a probar comportamiento que nadie había ejercitado, y apareció código roto:
+- **Una lección del control de calidad.** Tras la primera corrección el control de calidad pasó de verde a **ERROR** (`new_coverage` 77,3 % < 80 %): el código que se agrega para corregir también cuenta como
+  código nuevo, y los `equals` de `Route` no tenían prueba. Se agregaron las pruebas y volvió a verde (98,5 %). Es el control funcionando como debe: un arreglo sin prueba no pasa.
+- **Queda 1 olor de código** (`Web:S6825`: `aria-hidden` en el `canvas` de la sección del video de `index.html`). No afecta ninguna calificación; se dejó porque cambiar esa sección puede mover el diseño.
+- Las supresiones `NOSONAR` están **en el código** (no en la interfaz de Sonar), así que SonarCloud las respeta igual y el equipo no tiene que marcar nada a mano.
+- La cobertura de Sonar (86,0 %) es mayor que la de §3 (81,8 % del backend) porque Sonar mezcla el backend con el panel (99,3 %); por capa, las cifras de §3 son las que corresponden a cada requisito.
+
+## 5. Defectos reales que las pruebas y el análisis encontraron
+
+Medir la cobertura del panel obligó a probar comportamiento que nadie había ejercitado, y apareció código roto; el análisis estático encontró además errores que ninguna prueba veía (los de §4):
 
 | Dónde | Defecto | Arreglo |
 |---|---|---|
@@ -129,5 +141,5 @@ Medir la cobertura del panel obligó a probar comportamiento que nadie había ej
 1. **Crear el proyecto en SonarCloud** (organización y proyecto), generar un **token** y guardarlo como secreto del repositorio `SONAR_TOKEN`.
 2. Crear las **variables de repositorio** `SONAR_ORGANIZATION` y `SONAR_PROJECT_KEY`.
 3. Hacer un `push` y comprobar el job **Quality** en GitHub Actions; ese es el enlace/evidencia del pipeline y del análisis que pide el requerimiento. Si el control de calidad marca algo en rojo, corregirlo antes de la sustentación.
-4. Corregir los 4 errores y 4 vulnerabilidades que dejaron fiabilidad y seguridad en C (el análisis local ya las muestra, [§4](#4-análisis-estático-y-control-de-calidad)) y volver a analizar hasta ver A.
+4. Después del primer análisis en SonarCloud, comparar con el local ([§4](#4-análisis-estático-y-control-de-calidad)): el perfil de reglas puede diferir un poco entre SonarQube y SonarCloud, y lo que aparezca de nuevo se corrige igual (cada problema, con su prueba).
 5. Las **pruebas de integración contra PostgreSQL, MongoDB y Redis** (tres pruebas de `alert-engine` se omiten sin base de datos) se podrían correr en el pipeline con *service containers*; hoy no corren ahí.
