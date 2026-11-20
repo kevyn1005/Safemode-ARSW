@@ -110,7 +110,7 @@ sustentación hay que comprobar con una sesión real que «Compartir ventana» s
 |---|---|---|
 | Resistir | Identificar / autenticar / autorizar actores | ✔ ES-1 |
 | Resistir | Limitar acceso | ✔ ES-1, ES-2, ES-3 |
-| Resistir | Limitar exposición | ✔ puertos de la pila publicados solo en `127.0.0.1` y Caddy como única entrada pública; ✔ el panel de métricas (`/grafana`) exige sesión de operador (validado, ES-3); ⚠ pendiente revisar en el despliegue los servicios auxiliares |
+| Resistir | Limitar exposición | ✔ puertos de la pila publicados solo en `127.0.0.1` y Caddy como única entrada pública; ✔ el panel de métricas (`/grafana`) exige sesión de operador en el proxy (validado, ES-3) y ya no admite acceso anónimo; ⚠ pendiente revisar en el despliegue los servicios auxiliares |
 | Resistir | Cifrar datos | ✔ HTTPS con Caddy en el despliegue público; ⚠ la cookie no lleva el atributo `Secure` |
 | Resistir | Cambiar la configuración por defecto | ✗ pendiente: las credenciales de laboratorio de los compose deben sustituirse en el entorno desplegado; con `/grafana` detrás de la sesión ya no están al alcance de internet, solo de operadores autorizados |
 | Reaccionar | Revocar acceso | ✔ ES-2 (cierre de sockets al terminar la sesión) |

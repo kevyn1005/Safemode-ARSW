@@ -48,8 +48,8 @@ El script descarga `caddy:2.8-alpine` si falta, levanta todo, ejecuta los diez e
 
 ## Grafana (escenarios H a L)
 
-El despliegue público también publicaba `/grafana` sin autenticación (acceso anónimo de lectura y, si el servidor no cambió `GRAFANA_PASSWORD`, la
-clave de administrador por defecto que aparece en el repositorio). La corrección es la misma táctica: `forward_auth` contra `/auth/me` antes de
+El despliegue público también publicaba `/grafana` sin autenticación en el proxy: acceso anónimo de lectura (que `develop` ya retiró) y la pantalla
+de inicio de sesión de Grafana, con la clave de administrador por defecto que aparece en el repositorio si el servidor no la cambió. La corrección es la misma táctica: `forward_auth` contra `/auth/me` antes de
 reenviar. La prueba pone detrás de Caddy un servidor que hace de «Grafana» (`open-upstream.js`: contesta 200 a todo y **registra cada petición
 que recibe**), para comprobar no solo que Caddy responde 401, sino que la petición bloqueada **nunca llega** a Grafana.
 
