@@ -122,6 +122,11 @@ public class AlertStore implements AutoCloseable {
                 }
             }
         } catch (SQLException e) {
+            // Con dos replicas del gateway, ambas pueden pasar el SELECT de arriba a la vez; la restriccion UNIQUE deja pasar solo
+            // al INSERT de una. Quien pierde la carrera no falla: el evento ya tiene su alerta (23505 = unique_violation en H2 y en PostgreSQL).
+            if ("23505".equals(e.getSQLState())) {
+                return Optional.empty();
+            }
             throw new IllegalStateException("No se pudo guardar la alerta", e);
         }
     }
@@ -133,6 +138,14 @@ public class AlertStore implements AutoCloseable {
     /** Todas las alertas, de la mas nueva a la mas vieja. */
     public List<Alert> listAll() {
         return query(SELECT_ALL, null);
+    }
+
+    /**
+     * Las ultimas {@code limit} alertas (revisadas o no), de la mas nueva a la mas vieja. Cada replica del gateway la usa para
+     * enterarse de las alertas que creo OTRA replica y avisar a sus propios operadores.
+     */
+    public List<Alert> listRecent(int limit) {
+        return query(SELECT_BASE + ORDER_DESC + " LIMIT ?", (long) limit);
     }
 
     /** Las alertas que nadie ha revisado todavia, de la mas nueva a la mas vieja. */

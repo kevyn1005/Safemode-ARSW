@@ -42,8 +42,10 @@ public class GatewayRunner {
             throw new IllegalStateException("Faltan SAFEMODE_GOOGLE_CLIENT_ID y/o SAFEMODE_ALLOWED_EMAILS: "
                     + "el panel solo permite iniciar sesion con Google (ver ADR 0004)");
         }
-        AuthService auth = AuthService.google(googleClientId.trim(), allowedEmails);
-        try (PresenceEventStore events = PresenceEventStore.fromEnvironment(DB_PATH);
+        SessionStore sessionStore = sessionStoreFor(System.getenv("SAFEMODE_SESSION_STORE"), DB_PATH);
+        AuthService auth = AuthService.google(googleClientId.trim(), allowedEmails, sessionStore);
+        try (SessionStore sessions = sessionStore;
+             PresenceEventStore events = PresenceEventStore.fromEnvironment(DB_PATH);
              AlertStore alerts = AlertStore.fromEnvironment(DB_PATH);
              AlertEngine engine = new AlertEngine(events, alerts)) {
             Set<String> panelOrigins = new java.util.HashSet<>(Set.of("http://localhost:" + HTTP_PORT, "http://127.0.0.1:" + HTTP_PORT));
@@ -127,7 +129,8 @@ public class GatewayRunner {
             System.out.println("Metricas y /ready en " + metricsHost + ":9464" + (loopbackOnly(metricsHost)
                     ? " (solo esta maquina; si un Prometheus en Linux/Docker no las alcanza, define SAFEMODE_METRICS_HOST=0.0.0.0)"
                     : ""));
-            System.out.println("Inicio de sesion con Google: " + allowedEmails.size() + " correo(s) autorizado(s)");
+            System.out.println("Inicio de sesion con Google: " + allowedEmails.size() + " correo(s) autorizado(s); sesiones "
+                    + (sessionStore instanceof JdbcSessionStore ? "en la base de datos (compartidas entre replicas)" : "en memoria de este proceso"));
             System.out.println(seconds > 0 ? "Escuchando durante " + seconds + " s..." : "Escuchando hasta que lo detengan...");
             // Parada unica: al terminar el tiempo, o con docker stop (SIGTERM), que dispara el hook de cierre
             AtomicBoolean stopped = new AtomicBoolean();
@@ -198,6 +201,21 @@ public class GatewayRunner {
      * (auditoria de seguridad, pista 1). En Docker no cambia nada: la imagen fija SAFEMODE_BIND_HOST=0.0.0.0 y el puerto 9464 no
      * se publica, solo lo alcanzan Prometheus y la sonda por la red del compose.
      */
+    /**
+     * Donde guardar las sesiones: nada o {@code memory} = en memoria de este proceso (lo de siempre); {@code database} = en la base
+     * compartida, necesario si hay varias replicas del gateway detras de un balanceador. Un valor desconocido falla al arrancar:
+     * quien cree tener sesiones compartidas por un error de escritura se enteraria con operadores que se desconectan.
+     */
+    static SessionStore sessionStoreFor(String mode, String defaultDbPath) {
+        if (mode == null || mode.isBlank() || mode.trim().equalsIgnoreCase("memory")) {
+            return new SessionStore.InMemory();
+        }
+        if (mode.trim().equalsIgnoreCase("database")) {
+            return JdbcSessionStore.fromEnvironment(defaultDbPath);
+        }
+        throw new IllegalStateException("SAFEMODE_SESSION_STORE debe ser 'memory' o 'database', no '" + mode.trim() + "'");
+    }
+
     static String metricsHost(String envValue, String bindHost) {
         return envValue == null || envValue.isBlank() ? bindHost : envValue.trim();
     }

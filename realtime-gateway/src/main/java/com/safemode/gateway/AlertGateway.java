@@ -39,6 +39,10 @@ import java.util.concurrent.TimeUnit;
 public class AlertGateway extends WebSocketServer {
 
     private static final int RECENT_ALERTS_TRACKED = 50;
+    // Cuantas alertas recientes revisa el barrido que detecta las creadas por otra replica (debe ser menor que RECENT_ALERTS_TRACKED,
+    // para que una ya anunciada nunca salga del registro mientras todavia cae en la ventana del barrido y se vuelva a anunciar).
+    private static final int NEW_ALERT_SCAN = 20;
+    private static final long OTHER_REPLICAS_POLL_MS = 500;
     private static final int CLOSE_POLICY_VIOLATION = 1008; // codigo estandar de cierre de WebSocket: "no cumple la politica"
 
     private final AlertEngine engine;
@@ -89,11 +93,16 @@ public class AlertGateway extends WebSocketServer {
     public void startAndWait() throws InterruptedException {
         start();
         started.await();
+        seedAlreadyKnownAlerts();
         refresher = Executors.newSingleThreadScheduledExecutor(runnable -> {
             Thread thread = new Thread(runnable, "gateway-refresh");
             thread.setDaemon(true);
             return thread;
         });
+        // Con varias replicas detras de un balanceador, la alerta la inserta solo una (la base lo garantiza); las demas se
+        // enteran mirando la tabla y avisan a sus propios operadores. Con una sola replica este barrido no encuentra nada nuevo.
+        refresher.scheduleWithFixedDelay(this::announceAlertsFromOtherReplicas, OTHER_REPLICAS_POLL_MS, OTHER_REPLICAS_POLL_MS,
+                TimeUnit.MILLISECONDS);
         refresher.scheduleWithFixedDelay(() -> {
             try {
                 closeRevokedConnections(); // una excepcion aqui cancelaria todas las ejecuciones siguientes
@@ -218,15 +227,28 @@ public class AlertGateway extends WebSocketServer {
         System.err.println("[GATEWAY] Error de WebSocket: " + ex.getMessage());
     }
 
+    /** Alerta nueva: la anuncia a los operadores de esta replica, salvo que ya lo haya hecho (la vea el motor o el barrido). */
     private void publishNew(Alert alert) {
-        broadcastAlert("alert", alert);
-        engine.evidenceOf(alert).ifPresent(e ->
-                deliveryLatency.record(Duration.between(e.occurredAt(), Instant.now())));
+        if (announce("alert", alert, true)) {
+            engine.evidenceOf(alert).ifPresent(e ->
+                    deliveryLatency.record(Duration.between(e.occurredAt(), Instant.now())));
+        }
     }
 
     private void broadcastAlert(String type, Alert alert) {
+        announce(type, alert, false);
+    }
+
+    /**
+     * Registra y empuja el JSON de la alerta. Con {@code onlyIfUnseen} no hace nada si esta replica ya la anuncio: el motor
+     * propio y el barrido de alertas de otras replicas pueden llegar a la misma alerta, y el operador debe recibirla una vez.
+     */
+    private boolean announce(String type, Alert alert, boolean onlyIfUnseen) {
         JsonObject json = AlertJson.toJson(alert, engine.evidenceOf(alert), engine::cameraName);
         synchronized (lastSent) {
+            if (onlyIfUnseen && lastSent.containsKey(alert.id())) {
+                return false;
+            }
             lastSent.put(alert.id(), json.toString());
             if (lastSent.size() > RECENT_ALERTS_TRACKED) {
                 lastSent.remove(lastSent.keySet().iterator().next());
@@ -234,6 +256,38 @@ public class AlertGateway extends WebSocketServer {
         }
         pushToAuthorized(AlertJson.envelope(type, json).toString());
         wsSent.increment(getConnections().size());
+        return true;
+    }
+
+    /**
+     * Al arrancar, las alertas recientes que ya existen quedan como "ya conocidas": van en el snapshot de quien se conecta, no
+     * se reenvian como nuevas, y si luego cambian (llega la descripcion por IA, otro operador la revisa) se empuja un update.
+     */
+    private void seedAlreadyKnownAlerts() {
+        try {
+            List<Alert> recent = alerts.listRecent(RECENT_ALERTS_TRACKED);
+            for (int i = recent.size() - 1; i >= 0; i--) {   // de la mas vieja a la mas nueva, como si se hubieran anunciado en orden
+                Alert alert = recent.get(i);
+                String json = AlertJson.toJson(alert, engine.evidenceOf(alert), engine::cameraName).toString();
+                synchronized (lastSent) {
+                    lastSent.putIfAbsent(alert.id(), json);
+                }
+            }
+        } catch (RuntimeException e) {
+            System.err.println("[GATEWAY] No se pudieron leer las alertas recientes al arrancar: " + e.getMessage());
+        }
+    }
+
+    /** Anuncia las alertas recientes de la base que esta replica todavia no conoce (las creo otra replica). */
+    void announceAlertsFromOtherReplicas() {
+        try {
+            List<Alert> newest = alerts.listRecent(NEW_ALERT_SCAN);
+            for (int i = newest.size() - 1; i >= 0; i--) {   // en orden de creacion
+                publishNew(newest.get(i));
+            }
+        } catch (RuntimeException e) {
+            System.err.println("[GATEWAY] No se pudo revisar si hay alertas de otras replicas: " + e.getMessage());
+        }
     }
 
     /** Reenvia las alertas recientes cuya evidencia cambio (por ejemplo cuando llega la descripcion por IA). */

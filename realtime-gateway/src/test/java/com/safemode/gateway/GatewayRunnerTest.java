@@ -49,4 +49,18 @@ class GatewayRunnerTest {
         assertFalse(GatewayRunner.loopbackOnly("0.0.0.0"));
         assertFalse(GatewayRunner.loopbackOnly("192.168.1.5"));
     }
+
+    @Test
+    void sinConfigurarLasSesionesSiguenEnMemoriaComoSiempre() {
+        assertTrue(GatewayRunner.sessionStoreFor(null, "x") instanceof SessionStore.InMemory);
+        assertTrue(GatewayRunner.sessionStoreFor("  ", "x") instanceof SessionStore.InMemory);
+        assertTrue(GatewayRunner.sessionStoreFor("memory", "x") instanceof SessionStore.InMemory);
+    }
+
+    @Test
+    void unModoDeSesionesDesconocidoFallaAlArrancarEnVezDeCaerEnMemoriaEnSilencio() {
+        IllegalStateException error = org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> GatewayRunner.sessionStoreFor("databse", "x"));   // error de escritura tipico
+        assertTrue(error.getMessage().contains("'memory' o 'database'"));
+    }
 }
