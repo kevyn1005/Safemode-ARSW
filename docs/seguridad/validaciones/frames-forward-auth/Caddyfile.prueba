@@ -24,4 +24,18 @@
 		}
 		reverse_proxy host.docker.internal:18091
 	}
+
+	# --- Grafana (/grafana* en el Caddyfile real) -------------------------------------------------------------------------------
+	# SIN proteccion: como estaba /grafana* (Grafana publicado en internet con acceso anonimo y la clave de administrador por defecto)
+	handle /grafana-open* {
+		reverse_proxy host.docker.internal:18082
+	}
+
+	# CON forward_auth: solo un operador con sesion llega a Grafana
+	handle /grafana* {
+		forward_auth host.docker.internal:18081 {
+			uri /auth/me
+		}
+		reverse_proxy host.docker.internal:18082
+	}
 }

@@ -16,7 +16,7 @@ $contenedor = 'safemode-caddy-frames-test'
 $procesos = @()
 
 function Puerto-Libre([int]$p) { -not (Get-NetTCPConnection -State Listen -LocalPort $p -ErrorAction SilentlyContinue) }
-foreach ($p in 18080, 18081, 18091) { if (-not (Puerto-Libre $p)) { throw "El puerto $p esta ocupado; liberalo y repite." } }
+foreach ($p in 18080, 18081, 18082, 18091) { if (-not (Puerto-Libre $p)) { throw "El puerto $p esta ocupado; liberalo y repite." } }
 
 # 1) receptor de frames real (camera-feed-service compilado) y sus dependencias
 $clases = Join-Path $repo 'camera-feed-service\target\classes'
@@ -36,6 +36,7 @@ try {
     Remove-Item (Join-Path $trabajo '*') -ErrorAction SilentlyContinue
     # 2) servicio que imita /auth/me del gateway (200 solo con la cookie buena) y el receptor real
     $procesos += Start-Process node -ArgumentList "`"$aqui\stub-auth.js`"", "`"$trabajo\stub.log`"" -WindowStyle Hidden -PassThru
+    $procesos += Start-Process node -ArgumentList "`"$aqui\open-upstream.js`"", "`"$trabajo\grafana.log`"" -WindowStyle Hidden -PassThru
     $procesos += Start-Process java -ArgumentList '-cp', "`"$cp`"", "`"$aqui\FrameServer.java`"", '90' `
         -RedirectStandardOutput "$trabajo\receptor.out" -RedirectStandardError "$trabajo\receptor.err" -WindowStyle Hidden -PassThru
     for ($i = 0; $i -lt 40; $i++) { if (-not (Puerto-Libre 18091) -and -not (Puerto-Libre 18081)) { break }; Start-Sleep -Seconds 1 }
@@ -49,9 +50,11 @@ try {
     if (Puerto-Libre 18080) { throw 'Caddy no arranco: ' + (docker logs $contenedor 2>&1 | Select-Object -Last 3) }
 
     # 4) escenarios
-    $lineas = java "$aqui\CaddyClient.java" 2>&1 | Select-String -Pattern '^[A-F]\)' | ForEach-Object { $_.Line }
+    $lineas = java "$aqui\CaddyClient.java" 2>&1 | Select-String -Pattern '^[A-K]\)' | ForEach-Object { $_.Line }
     Start-Sleep -Seconds 1
     $recibidos = @(Get-Content "$trabajo\receptor.out" | Select-String 'FRAME RECIBIDO' | ForEach-Object { $_.Line })
+
+    $grafanaLlegaron = @(Get-Content "$trabajo\grafana.log" -ErrorAction SilentlyContinue | ForEach-Object { $_ })
 
     function Linea([string]$letra) { $lineas | Where-Object { $_ -like "$letra)*" } | Select-Object -First 1 }
     $comprobaciones = @(
@@ -62,10 +65,16 @@ try {
         @{ Nombre = 'E  control sin forward_auth (como estaba): el atacante pasa';  Ok = (Linea 'E') -match 'CONECTO' },
         @{ Nombre = 'F  atacante contra el gateway real como autenticador: 401';    Ok = (Linea 'F') -match 'BLOQUEADO por Caddy, HTTP 401' },
         @{ Nombre = 'G  al receptor llegaron solo frames del operador y del control';
-           Ok = (($recibidos -join "`n") -match 'VERDE') -and (($recibidos -join "`n") -match 'AZUL') -and (($recibidos -join "`n") -notmatch 'ROJO') })
+           Ok = (($recibidos -join "`n") -match 'VERDE') -and (($recibidos -join "`n") -match 'AZUL') -and (($recibidos -join "`n") -notmatch 'ROJO') },
+        @{ Nombre = 'H  sin cookie no entra a Grafana (401)';                       Ok = (Linea 'H') -match 'HTTP 401' },
+        @{ Nombre = 'I  con cookie inventada no entra a Grafana (401)';             Ok = (Linea 'I') -match 'HTTP 401' },
+        @{ Nombre = 'J  operador con sesion: llega a Grafana (200)';                Ok = (Linea 'J') -match 'HTTP 200 llego a Grafana' },
+        @{ Nombre = 'K  control sin forward_auth (como estaba): el atacante entra'; Ok = (Linea 'K') -match 'HTTP 200 llego a Grafana' },
+        @{ Nombre = 'L  a Grafana solo llegaron las peticiones del operador y del control (las bloqueadas no llegaron)';
+           Ok = ($grafanaLlegaron.Count -eq 2) -and (($grafanaLlegaron -join "`n") -match '"url":"/grafana/","tieneCookie":true') -and (($grafanaLlegaron -join "`n") -match 'grafana-open') -and (($grafanaLlegaron -join "`n") -notmatch 'api/health') })
 
     $salidaTexto = @()
-    $salidaTexto += "Validacion ES-3 (integridad de /frames) - " + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+    $salidaTexto += "Validacion ES-3 (integridad de /frames) y acceso a /grafana - " + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
     $salidaTexto += "commit: " + (git -C $repo rev-parse --short HEAD) + "   Caddy: caddy:2.8-alpine   Java: " + ((java -version 2>&1 | Select-Object -First 1))
     $salidaTexto += ''
     $salidaTexto += 'Escenarios (cliente -> Caddy):'
@@ -73,6 +82,9 @@ try {
     $salidaTexto += ''
     $salidaTexto += 'Frames que llegaron al receptor real del tracker:'
     $salidaTexto += ($recibidos | ForEach-Object { '  ' + $_ })
+    $salidaTexto += ''
+    $salidaTexto += 'Peticiones que llegaron al "Grafana" de la prueba (las bloqueadas por Caddy no deben aparecer):'
+    $salidaTexto += ($grafanaLlegaron | ForEach-Object { '  ' + $_ })
     $salidaTexto += ''
     $salidaTexto += 'Comprobaciones:'
     foreach ($c in $comprobaciones) { $salidaTexto += ('  [{0}] {1}' -f $(if ($c.Ok) { 'OK' } else { 'FALLA' }), $c.Nombre) }

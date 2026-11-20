@@ -9,7 +9,7 @@ que comprueba la medida de la respuesta.
 |---|---|---|---|---|---|
 | **ES-1** | Solo operadores autorizados entran al panel, a las fotos y al canal de alertas | Autenticación y autorización | Identificar, autenticar y autorizar actores; limitar acceso | Implementado | 4 clases de prueba (JUnit), 35 pruebas |
 | **ES-2** | Una página o conexión hostil no puede usar la sesión del operador ni degradar el servicio, y una sesión terminada deja de valer | Protección frente a ataques | Limitar acceso y exposición; revocar acceso; limitar el efecto de conexiones retenidas | Implementado | 4 clases de prueba (JUnit), 58 pruebas, + 6 del panel (Node) |
-| **ES-3** | Nadie sin sesión puede inyectar imágenes falsas en el detector | Integridad | Autenticar actores y limitar acceso en el proxy (`forward_auth`) | Implementado en el repo; **falta redesplegar** | Script reproducible, 7 comprobaciones |
+| **ES-3** | Nadie sin sesión puede inyectar imágenes falsas en el detector | Integridad | Autenticar actores y limitar acceso en el proxy (`forward_auth`) | Implementado en el repo; **falta redesplegar** | Script reproducible, 12 comprobaciones |
 
 Entorno común: sistema en operación normal; en producción detrás de Caddy con HTTPS (AWS) y, para las pruebas, en loopback.
 
@@ -98,7 +98,7 @@ inyecta frames (se comprobó con la clase real). El despliegue público publicab
 powershell -ExecutionPolicy Bypass -File docs\seguridad\validaciones\frames-forward-auth\ejecutar.ps1 -Salida docs\seguridad\evidencias\es3-frames-forward-auth.txt
 ```
 
-Resultado de la última ejecución: **7/7 comprobaciones** (`evidencias/es3-frames-forward-auth.txt`), incluido el control sin `forward_auth`, donde el atacante sí pasa.
+Resultado de la última ejecución: **12/12 comprobaciones** (`evidencias/es3-frames-forward-auth.txt`): 7 sobre `/frames` y 5 sobre `/grafana`, que se protege con la misma regla (sin sesión, 401 y la petición **no llega** a Grafana; con sesión, pasa). Incluye el control sin `forward_auth`, donde el atacante sí pasa.
 Implementación: bloque `/frames` del `Caddyfile`. **Límites:** el inicio de sesión real con Google y el servidor desplegado no se probaron; antes de la
 sustentación hay que comprobar con una sesión real que «Compartir ventana» sigue funcionando después de redesplegar.
 
@@ -110,9 +110,9 @@ sustentación hay que comprobar con una sesión real que «Compartir ventana» s
 |---|---|---|
 | Resistir | Identificar / autenticar / autorizar actores | ✔ ES-1 |
 | Resistir | Limitar acceso | ✔ ES-1, ES-2, ES-3 |
-| Resistir | Limitar exposición | ✔ puertos de la pila publicados solo en `127.0.0.1` y Caddy como única entrada pública; ⚠ pendiente revisar en el despliegue los servicios auxiliares y el acceso anónimo a Grafana (decisión del equipo) |
+| Resistir | Limitar exposición | ✔ puertos de la pila publicados solo en `127.0.0.1` y Caddy como única entrada pública; ✔ el panel de métricas (`/grafana`) exige sesión de operador (validado, ES-3); ⚠ pendiente revisar en el despliegue los servicios auxiliares |
 | Resistir | Cifrar datos | ✔ HTTPS con Caddy en el despliegue público; ⚠ la cookie no lleva el atributo `Secure` |
-| Resistir | Cambiar la configuración por defecto | ✗ pendiente: las credenciales de laboratorio de los compose deben sustituirse en el entorno desplegado |
+| Resistir | Cambiar la configuración por defecto | ✗ pendiente: las credenciales de laboratorio de los compose deben sustituirse en el entorno desplegado; con `/grafana` detrás de la sesión ya no están al alcance de internet, solo de operadores autorizados |
 | Reaccionar | Revocar acceso | ✔ ES-2 (cierre de sockets al terminar la sesión) |
 | Detectar | Detectar denegación de servicio | ⚠ se limita su efecto (ES-2) pero no hay alertas; pendiente con las reglas de Prometheus |
 | Recuperar | Mantener un registro de auditoría | ✗ no se registra quién reconoció una alerta o inició la vigilancia; es la brecha de trazabilidad |

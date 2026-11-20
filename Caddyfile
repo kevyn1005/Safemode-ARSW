@@ -12,6 +12,12 @@ safemode-arsw.duckdns.org {
 		reverse_proxy 127.0.0.1:8091
 	}
 	handle /grafana* {
+		# Solo con sesion de operador (mismo mecanismo que /frames). Sin esto Grafana quedaba en internet con acceso anonimo (Viewer) y, si el
+		# .env del servidor no cambio GRAFANA_PASSWORD, con la clave de administrador por defecto que aparece en el repositorio publico.
+		# Validacion: docs/seguridad/validaciones/frames-forward-auth (escenarios H a L)
+		forward_auth 127.0.0.1:8080 {
+			uri /auth/me
+		}
 		reverse_proxy 127.0.0.1:3000
 	}
 	handle {

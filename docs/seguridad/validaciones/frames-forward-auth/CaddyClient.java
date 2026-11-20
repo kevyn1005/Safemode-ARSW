@@ -5,6 +5,8 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.net.http.WebSocket;
 import java.net.http.WebSocketHandshakeException;
 import java.nio.ByteBuffer;
@@ -36,6 +38,20 @@ public class CaddyClient {
         Thread.sleep(3500); // deja pasar los 3 s tras los que el receptor descarta el frame anterior
     }
 
+
+    static void http(String label, String path, String cookie) throws Exception {
+        HttpRequest.Builder b = HttpRequest.newBuilder(URI.create("http://localhost:18080" + path));
+        if (cookie != null) b.header("Cookie", cookie);
+        String res;
+        try {
+            HttpResponse<String> r = HttpClient.newHttpClient().send(b.build(), HttpResponse.BodyHandlers.ofString());
+            res = "HTTP " + r.statusCode() + (r.statusCode() == 200 ? " llego a Grafana: " + r.body() : " bloqueado por Caddy");
+        } catch (Exception e) {
+            res = "fallo: " + e.getClass().getSimpleName();
+        }
+        System.out.printf("%-62s -> %s%n", label, res);
+    }
+
     public static void main(String[] a) throws Exception {
         String panel = "http://localhost:18080";
         probe("A) atacante: sin Origin, sin cookie            [/frames]", "/frames", null, null, Color.RED);
@@ -44,6 +60,10 @@ public class CaddyClient {
         probe("D) operador: Origin del panel + cookie valida  [/frames]", "/frames", panel, "safemode_session=valida", Color.GREEN);
         probe("E) atacante SIN forward_auth (como hoy)        [/frames-open]", "/frames-open", null, null, Color.BLUE);
         probe("F) atacante contra el gateway REAL             [/frames-real]", "/frames-real", panel, "safemode_session=inventada", Color.RED);
+        http("H) atacante: sin cookie                          [/grafana/]", "/grafana/", null);
+        http("I) atacante: cookie inventada                    [/grafana/api/health]", "/grafana/api/health", "safemode_session=inventada");
+        http("J) operador: cookie valida                       [/grafana/]", "/grafana/", "safemode_session=valida");
+        http("K) atacante SIN forward_auth (como estaba)       [/grafana-open/]", "/grafana-open/", null);
         System.exit(0);
     }
 }

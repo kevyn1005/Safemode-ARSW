@@ -1,4 +1,4 @@
-# Validación del escenario ES-3: integridad del canal de frames (`/frames`)
+# Validación del escenario ES-3: integridad del canal de frames (`/frames`) y acceso a Grafana (`/grafana`)
 
 **Qué demuestra.** El receptor de frames del tracker (`BrowserFrameSource`) **no autentica a nadie**: solo rechaza un `Origin` *presente* y
 distinto, así que un cliente que no manda `Origin` (o lo falsifica) puede inyectar imágenes. Como el despliegue público publica
@@ -23,8 +23,8 @@ Requisitos: Docker en marcha, Java 17+, Node, y las dependencias de Maven en `~/
 powershell -ExecutionPolicy Bypass -File docs\seguridad\validaciones\frames-forward-auth\ejecutar.ps1 -Salida docs\seguridad\evidencias\es3-frames-forward-auth.txt
 ```
 
-El script descarga `caddy:2.8-alpine` si falta, levanta todo, ejecuta los seis escenarios, **comprueba** los resultados esperados, limpia
-(contenedor y procesos) y devuelve código de salida 1 si algo falla. Usa los puertos 18080, 18081 y 18091.
+El script descarga `caddy:2.8-alpine` si falta, levanta todo, ejecuta los diez escenarios, **comprueba** los resultados esperados, limpia
+(contenedor y procesos) y devuelve código de salida 1 si algo falla. Usa los puertos 18080, 18081, 18082 y 18091.
 
 ## Resultado esperado
 
@@ -45,3 +45,24 @@ El script descarga `caddy:2.8-alpine` si falta, levanta todo, ejecuta los seis e
   en una dirección que el contenedor alcance; en el servidor real Caddy usa la red del host (`network_mode: host`) y apunta a `127.0.0.1`.
 - No se probó contra el servidor desplegado. Antes de la sustentación, quien redespliegue debe comprobar con una sesión real que
   «Compartir ventana» sigue funcionando.
+
+## Grafana (escenarios H a L)
+
+El despliegue público también publicaba `/grafana` sin autenticación (acceso anónimo de lectura y, si el servidor no cambió `GRAFANA_PASSWORD`, la
+clave de administrador por defecto que aparece en el repositorio). La corrección es la misma táctica: `forward_auth` contra `/auth/me` antes de
+reenviar. La prueba pone detrás de Caddy un servidor que hace de «Grafana» (`open-upstream.js`: contesta 200 a todo y **registra cada petición
+que recibe**), para comprobar no solo que Caddy responde 401, sino que la petición bloqueada **nunca llega** a Grafana.
+
+| | Cliente | Resultado esperado |
+|---|---|---|
+| H | atacante sin cookie, `GET /grafana/` | 401 |
+| I | atacante con cookie inventada, `GET /grafana/api/health` | 401 |
+| J | operador con cookie válida, `GET /grafana/` | 200, llega a Grafana |
+| K | control sin `forward_auth`, `GET /grafana-open/` | 200 (así estaba: el hueco) |
+| L | registro del «Grafana» de la prueba | solo aparecen J y K; H e I no llegaron |
+
+**Límites.** El enlace del panel a Grafana (`<a href="/grafana/...">`) funciona porque la cookie es `Path=/` y el clic es del mismo sitio
+(`SameSite=Strict`); quien abra la URL de Grafana desde otro sitio (por ejemplo un enlace en un correo) verá 401 hasta entrar primero al
+panel. Quien necesite ver Grafana, incluido el profesor en la demostración, debe estar en la lista de correos autorizados
+(`SAFEMODE_ALLOWED_EMAILS`). No se cambió la contraseña de administrador de Grafana: eso se hace en el servidor (`grafana cli admin
+reset-admin-password`), porque `GF_SECURITY_ADMIN_PASSWORD` solo se aplica al crear el volumen.

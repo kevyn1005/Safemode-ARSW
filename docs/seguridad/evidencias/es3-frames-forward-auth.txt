@@ -1,5 +1,5 @@
-﻿Validacion ES-3 (integridad de /frames) - 2026-11-19 04:20:24
-commit: 4848d3e   Caddy: caddy:2.8-alpine   Java: java version "26.0.1" 2026-04-21
+﻿Validacion ES-3 (integridad de /frames) y acceso a /grafana - 2026-11-19 22:53:05
+commit: 0c4df2c   Caddy: caddy:2.8-alpine   Java: java version "26.0.1" 2026-04-21
 
 Escenarios (cliente -> Caddy):
 A) atacante: sin Origin, sin cookie            [/frames]       -> BLOQUEADO por Caddy, HTTP 401
@@ -8,10 +8,18 @@ C) atacante: Origin falso + cookie inventada   [/frames]       -> BLOQUEADO por 
 D) operador: Origin del panel + cookie valida  [/frames]       -> CONECTO (101) y mando un frame
 E) atacante SIN forward_auth (como hoy)        [/frames-open]  -> CONECTO (101) y mando un frame
 F) atacante contra el gateway REAL             [/frames-real]  -> BLOQUEADO por Caddy, HTTP 401
+H) atacante: sin cookie                          [/grafana/]   -> HTTP 401 bloqueado por Caddy
+I) atacante: cookie inventada                    [/grafana/api/health] -> HTTP 401 bloqueado por Caddy
+J) operador: cookie valida                       [/grafana/]   -> HTTP 200 llego a Grafana: grafana-upstream
+K) atacante SIN forward_auth (como estaba)       [/grafana-open/] -> HTTP 200 llego a Grafana: grafana-upstream
 
 Frames que llegaron al receptor real del tracker:
   FRAME RECIBIDO EN EL RECEPTOR: VERDE (operador legitimo)
   FRAME RECIBIDO EN EL RECEPTOR: AZUL (atacante sin proteccion)
+
+Peticiones que llegaron al "Grafana" de la prueba (las bloqueadas por Caddy no deben aparecer):
+  {"metodo":"GET","url":"/grafana/","tieneCookie":true}
+  {"metodo":"GET","url":"/grafana-open/","tieneCookie":false}
 
 Comprobaciones:
   [OK] A  atacante sin Origin ni cookie: bloqueado (401)
@@ -21,5 +29,10 @@ Comprobaciones:
   [OK] E  control sin forward_auth (como estaba): el atacante pasa
   [OK] F  atacante contra el gateway real como autenticador: 401
   [OK] G  al receptor llegaron solo frames del operador y del control
+  [OK] H  sin cookie no entra a Grafana (401)
+  [OK] I  con cookie inventada no entra a Grafana (401)
+  [OK] J  operador con sesion: llega a Grafana (200)
+  [OK] K  control sin forward_auth (como estaba): el atacante entra
+  [OK] L  a Grafana solo llegaron las peticiones del operador y del control (las bloqueadas no llegaron)
 
-RESULTADO: OK (7/7)
+RESULTADO: OK (12/12)
