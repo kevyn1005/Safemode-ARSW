@@ -313,6 +313,34 @@ public class PresenceEventStore implements AutoCloseable {
     }
 
     /** Los ultimos eventos (registros y retiros), del mas nuevo al mas viejo: lo que muestra el reporte del panel. */
+    /**
+     * Los eventos con esos ids, en pocas consultas (por bloques de {@value #IDS_PER_QUERY}): id -> evento. Los que no existen no aparecen.
+     * El panel pedia la evidencia de cada alerta con una consulta propia; con cientos de alertas pendientes cada socket nuevo costaba cientos.
+     */
+    public java.util.Map<Long, StoredEvent> findByIds(java.util.Collection<Long> ids) {
+        java.util.Map<Long, StoredEvent> found = new java.util.HashMap<>();
+        List<Long> distinct = new java.util.ArrayList<>(new java.util.LinkedHashSet<>(ids));
+        for (int from = 0; from < distinct.size(); from += IDS_PER_QUERY) {
+            List<Long> chunk = distinct.subList(from, Math.min(distinct.size(), from + IDS_PER_QUERY));
+            String sql = "SELECT " + EVENT_COLUMNS + " FROM object_presence_event WHERE id IN (" + "?,".repeat(chunk.size() - 1) + "?)";
+            try (PreparedStatement ps = connection.get().prepareStatement(sql)) {
+                for (int i = 0; i < chunk.size(); i++) {
+                    ps.setLong(i + 1, chunk.get(i));
+                }
+                try (var rs = ps.executeQuery()) {
+                    for (StoredEvent event : readEvents(rs)) {
+                        found.put(event.id(), event);
+                    }
+                }
+            } catch (SQLException e) {
+                throw new IllegalStateException("No se pudo leer object_presence_event", e);
+            }
+        }
+        return found;
+    }
+
+    private static final int IDS_PER_QUERY = 500;
+
     public List<StoredEvent> findRecent(int limit) {
         String sql = "SELECT " + EVENT_COLUMNS + " FROM object_presence_event ORDER BY id DESC LIMIT ?";
         try (PreparedStatement ps = connection.get().prepareStatement(sql)) {

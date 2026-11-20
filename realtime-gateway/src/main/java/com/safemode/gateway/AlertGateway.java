@@ -192,8 +192,12 @@ public class AlertGateway extends WebSocketServer {
     @Override
     public void onOpen(WebSocket conn, ClientHandshake handshake) {
         List<JsonObject> pending = new ArrayList<>();
-        for (Alert alert : alerts.listPending()) {
-            pending.add(AlertJson.toJson(alert, engine.evidenceOf(alert), engine::cameraName));
+        List<Alert> pendingAlerts = alerts.listPending();
+        // la evidencia de TODAS las pendientes en pocas consultas (antes: una por alerta) y cada nombre de camara una sola vez
+        java.util.Map<Long, com.safemode.presence.PresenceEventStore.StoredEvent> evidence = engine.evidenceOfAll(pendingAlerts);
+        java.util.function.IntFunction<String> names = AlertJson.memoize(engine::cameraName);
+        for (Alert alert : pendingAlerts) {
+            pending.add(AlertJson.toJson(alert, java.util.Optional.ofNullable(evidence.get(alert.eventId())), names));
         }
         conn.send(AlertJson.snapshot(pending, engine.cameraNames()).toString());
     }
@@ -244,6 +248,13 @@ public class AlertGateway extends WebSocketServer {
      * propio y el barrido de alertas de otras replicas pueden llegar a la misma alerta, y el operador debe recibirla una vez.
      */
     private boolean announce(String type, Alert alert, boolean onlyIfUnseen) {
+        if (onlyIfUnseen) {   // lo barato PRIMERO: el barrido revisa 20 alertas cada 0,5 s y casi todas ya se conocen (no hace falta construir su JSON)
+            synchronized (lastSent) {
+                if (lastSent.containsKey(alert.id())) {
+                    return false;
+                }
+            }
+        }
         JsonObject json = AlertJson.toJson(alert, engine.evidenceOf(alert), engine::cameraName);
         synchronized (lastSent) {
             if (onlyIfUnseen && lastSent.containsKey(alert.id())) {
@@ -266,9 +277,11 @@ public class AlertGateway extends WebSocketServer {
     private void seedAlreadyKnownAlerts() {
         try {
             List<Alert> recent = alerts.listRecent(RECENT_ALERTS_TRACKED);
+            java.util.Map<Long, com.safemode.presence.PresenceEventStore.StoredEvent> evidence = engine.evidenceOfAll(recent);
+            java.util.function.IntFunction<String> names = AlertJson.memoize(engine::cameraName);
             for (int i = recent.size() - 1; i >= 0; i--) {   // de la mas vieja a la mas nueva, como si se hubieran anunciado en orden
                 Alert alert = recent.get(i);
-                String json = AlertJson.toJson(alert, engine.evidenceOf(alert), engine::cameraName).toString();
+                String json = AlertJson.toJson(alert, java.util.Optional.ofNullable(evidence.get(alert.eventId())), names).toString();
                 synchronized (lastSent) {
                     lastSent.putIfAbsent(alert.id(), json);
                 }
@@ -293,21 +306,31 @@ public class AlertGateway extends WebSocketServer {
     /** Reenvia las alertas recientes cuya evidencia cambio (por ejemplo cuando llega la descripcion por IA). */
     void refreshRecent() {
         try {
-            List<Long> ids;
+            java.util.Set<Long> tracked;
             synchronized (lastSent) {
-                ids = new ArrayList<>(lastSent.keySet());
+                tracked = new java.util.HashSet<>(lastSent.keySet());
             }
-            for (long id : ids) {
-                alerts.findById(id).ifPresent(alert -> {
-                    String current = AlertJson.toJson(alert, engine.evidenceOf(alert), engine::cameraName).toString();
-                    boolean changed;
-                    synchronized (lastSent) {
-                        changed = !current.equals(lastSent.get(id));
-                    }
-                    if (changed) {
-                        broadcastAlert("update", alert);
-                    }
-                });
+            if (tracked.isEmpty()) {
+                return;
+            }
+            // el estado actual de las alertas seguidas en UNA consulta (antes: una por alerta) y su evidencia en otra
+            List<Alert> current = new ArrayList<>();
+            for (Alert alert : alerts.listRecent(RECENT_ALERTS_TRACKED)) {
+                if (tracked.contains(alert.id())) {
+                    current.add(alert);
+                }
+            }
+            java.util.Map<Long, com.safemode.presence.PresenceEventStore.StoredEvent> evidence = engine.evidenceOfAll(current);
+            java.util.function.IntFunction<String> names = AlertJson.memoize(engine::cameraName);
+            for (Alert alert : current) {
+                String now = AlertJson.toJson(alert, java.util.Optional.ofNullable(evidence.get(alert.eventId())), names).toString();
+                boolean changed;
+                synchronized (lastSent) {
+                    changed = !now.equals(lastSent.get(alert.id()));
+                }
+                if (changed) {
+                    broadcastAlert("update", alert);
+                }
             }
         } catch (RuntimeException e) {
             System.err.println("[GATEWAY] No se pudieron refrescar las alertas: " + e.getMessage());

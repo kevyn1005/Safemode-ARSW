@@ -46,6 +46,20 @@ class AlertEngineTest {
     }
 
     @Test
+    void evidenceOfAllDevuelveLaEvidenciaDeCadaAlertaIgualQueLaConsultaUnoPorUno() {
+        removed("BY_OTHER");
+        removed("NO_ONE_NEAR");
+        List<Alert> created = engine.processNewEvents();
+
+        java.util.Map<Long, PresenceEventStore.StoredEvent> evidence = engine.evidenceOfAll(created);
+
+        assertEquals(2, evidence.size());
+        for (Alert alert : created) {
+            assertEquals(engine.evidenceOf(alert).orElseThrow(), evidence.get(alert.eventId()));
+        }
+    }
+
+    @Test
     void creaUnaAlertaPorCadaRetiroSospechosoYNingunaPorElRetiroNormal() {
         events.recordRegistered(1, "suitcase", 100, 100, 50, 80, Instant.now(), "frame.png", OWNER);
         removed("BY_OWNER");
