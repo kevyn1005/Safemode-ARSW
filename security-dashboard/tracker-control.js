@@ -36,6 +36,7 @@
   var confirming = false;
   var confirmTimer = null;
   var busy = false;
+  var lastError = '';               // fallo de la ultima accion: se muestra hasta el siguiente clic (render() ya no lo pisa)
 
   function render() {
     var running = state === 'RUNNING';
@@ -58,6 +59,7 @@
         ? 'El tracker se cerró con error (código ' + exitCode + '). Revisa object-presence-tracker/data/tracker.log'
         : 'Vigilancia detenida.';
     }
+    if (lastError && !confirming) status.textContent = lastError;
     button.disabled = busy || stopping;
   }
 
@@ -83,6 +85,7 @@
 
   function post(action) {
     busy = true;
+    lastError = '';
     render();
     var cameras = action === 'start' ? chosenCameras() : 0;
     var query = action === 'start' ? '?cameras=' + cameras : '';
@@ -96,7 +99,7 @@
       if (action === 'stop') startedCameras = null;
       apply(json);
     }).catch(function (err) {
-      status.textContent = 'No se pudo completar la acción: ' + (err && err.message || err);
+      lastError = 'No se pudo completar la acción: ' + (err && err.message || err);
     }).then(function () {
       busy = false;
       render();

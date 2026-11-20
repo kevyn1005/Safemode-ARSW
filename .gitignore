@@ -44,3 +44,6 @@ ESTUDIAR.md
 
 # Respaldos que crea Archi al guardar
 *.archimate.bak
+
+# Cobertura y dependencias del panel (pruebas con c8/jsdom)
+security-dashboard/coverage/

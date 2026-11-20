@@ -214,6 +214,7 @@
     if (oldSocket) oldSocket.close();
     if (stream) stream.getTracks().forEach(function (t) { t.onended = null; t.stop(); });
     stream = null;
+    if (cancelDialog) cancelDialog();   // el video ya no existe: un dialogo abierto lanzaria errores en cada clic
     if (video) { video.srcObject = null; video = null; }
     canvas = null;
     config = null;
@@ -224,6 +225,7 @@
 
   // ------------------------------------------------------------------ dialogo de zonas (2 camaras)
   var dialogOpen = false;
+  var cancelDialog = null;   // cierra el dialogo de zonas abierto (como Cancelar); lo usa stopSharing
 
   /** Abre el dialogo y devuelve una promesa con la configuracion confirmada, o null si se cancelo. */
   function openZoneDialog(initial) {
@@ -390,8 +392,10 @@
         dialog.close();
         dialog.remove();
         dialogOpen = false;
+        cancelDialog = null;
         resolve(result);
       }
+      cancelDialog = function () { close(null); };
 
       startButton.addEventListener('click', function () {
         var r = evaluate();
