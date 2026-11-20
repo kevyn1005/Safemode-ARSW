@@ -1,0 +1,49 @@
+# Escalado horizontal del gateway (docs/disponibilidad/, ADR 0006): DOS replicas del MISMO servicio detras de un balanceador.
+#
+# Se SUMA a los otros dos compose (no los reemplaza) y corre APARTE del stack normal: otro nombre de proyecto (-p safemode-escalado), su
+# propia base y puertos propios, asi que no toca los contenedores que ya tengas levantados.
+#
+#   docker compose -p safemode-escalado -f docker-compose.yml -f docker-compose.persistencia.yml -f docker-compose.escalado.yml \
+#       up -d --build --scale realtime-gateway=2 --wait postgres realtime-gateway balanceador
+#
+# Validacion automatica (reparto, sesiones compartidas, alerta a todos los operadores, caida de una replica):
+#   powershell -ExecutionPolicy Bypass -File docs\disponibilidad\validaciones\escalado\ejecutar.ps1
+#
+# El nombre del proyecto NO se puede cambiar sin editar Caddyfile.escalado: el balanceador llama a cada replica por el nombre que
+# Compose le da al contenedor (safemode-escalado-realtime-gateway-1, -2).
+#
+# Para ver el panel en un navegador con este balanceador, detén antes el stack normal y usa los puertos de siempre:
+#   LB_HTTP_PORT=8080 LB_WS_PORT=8090 (el panel solo acepta origenes http://localhost:8080)
+
+services:
+  postgres:
+    # el stack normal ya publica el 5433; aqui nadie de fuera necesita la base
+    ports: !reset []
+
+  realtime-gateway:
+    # con dos replicas no pueden publicar los mismos puertos del computador: solo el balanceador los publica
+    ports: !reset []
+    # el compose base lo hace depender de h2-db (que el gateway no usa aqui, lee PostgreSQL): se deja solo la dependencia real
+    depends_on: !override
+      postgres:
+        condition: service_healthy
+    environment:
+      # sesiones en la base compartida: cualquier replica reconoce la cookie que emitio otra (JdbcSessionStore)
+      SAFEMODE_SESSION_STORE: database
+      # la configuracion compartida del puesto (MongoDB/Redis) no forma parte de este prototipo: vacia = desactivada
+      SAFEMODE_COLLAB_URL: ""
+      SAFEMODE_ACCESS_URL: ""
+      SAFEMODE_ACCESS_KEY: ""
+
+  # Balanceador de carga: reparte, vigila la salud de cada replica (/ready, que comprueba la base) y reintenta en la otra si una cae.
+  # En AWS este papel lo cumple un Application Load Balancer (ver docs/disponibilidad/arquitectura-de-disponibilidad.md).
+  balanceador:
+    image: caddy:2.8-alpine
+    volumes:
+      - ./Caddyfile.escalado:/etc/caddy/Caddyfile:ro
+    ports:
+      - "127.0.0.1:${LB_HTTP_PORT:-18080}:8080"   # pagina del panel y API
+      - "127.0.0.1:${LB_WS_PORT:-18090}:8090"     # alertas en tiempo real (WebSocket)
+    depends_on:
+      - realtime-gateway
+    restart: unless-stopped
