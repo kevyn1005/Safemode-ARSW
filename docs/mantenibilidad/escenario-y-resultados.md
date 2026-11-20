@@ -11,9 +11,10 @@ Qué pide el requerimiento y dónde está cada entregable:
 | Defectos que las pruebas encontraron | [§5](#5-defectos-reales-que-las-pruebas-encontraron) |
 
 **Estado, sin adornos.** La cobertura está **medida y cumple** en las dos capas (backend 81,7 % de líneas; panel 99,3 %), el pipeline con *reusable workflows*
-está escrito y validado (`actionlint`), y el control de calidad corta el despliegue si falla. **Lo que no está hecho:** una corrida real en SonarCloud
-(requiere la cuenta, el token y dos variables del repositorio, que solo puede crear el equipo) y, por tanto, **la calificación A/Verde todavía no está medida**.
-Está preparado un SonarQube local para verla antes de que corra el pipeline ([§4](#4-análisis-estático-y-control-de-calidad)).
+está escrito y validado (`actionlint`), y el control de calidad corta el despliegue si falla. **Medido con un SonarQube local (20-nov-2026): control de calidad en
+VERDE, cobertura 85,9 %, mantenibilidad A, duplicación 0 %, pero fiabilidad C (4 errores) y seguridad C (4 vulnerabilidades): el requerimiento pide A y está
+pendiente de corregir** ([§4](#4-análisis-estático-y-control-de-calidad)). **Lo que no está hecho:** una corrida real en SonarCloud (requiere la cuenta, el token y dos
+variables del repositorio, que solo puede crear el equipo).
 
 ---
 
@@ -94,9 +95,24 @@ Antes de este trabajo el pipeline ejecutaba `npm test --if-present`, que **no ha
 ## 4. Análisis estático y control de calidad
 
 - `sonar-project.properties` define fuentes, pruebas, exclusiones y las rutas de cobertura (`**/target/site/jacoco/jacoco.xml` y `security-dashboard/coverage/lcov.info`) para Java y JavaScript en un solo proyecto.
-- **Corrida local** para ver calificaciones y control de calidad sin esperar al pipeline: [`analizar-local.ps1`](analizar-local.ps1) (levanta contra un SonarQube propio con `docker-compose.sonar.yml`; el token lo crea quien
-  la ejecuta y no se guarda en ningún archivo). Imprime el estado del control de calidad, las condiciones que falla, la cobertura y las calificaciones de fiabilidad, seguridad y mantenibilidad.
-- **Resultado de esa corrida: pendiente** (al escribir esto no se había hecho; ver §6). No se afirma una calificación que no se ha medido.
+- **Corrida local** para ver calificaciones y control de calidad sin esperar al pipeline: [`analizar-local.ps1`](analizar-local.ps1) (contra un SonarQube propio con `docker-compose.sonar.yml`; el token lo crea quien
+  la ejecuta y no se guarda en ningún archivo ni se imprime). Imprime el estado del control de calidad, la cobertura, las calificaciones de fiabilidad, seguridad y mantenibilidad y **la lista de problemas** (tipo, gravedad,
+  regla, archivo y línea); con `-SoloProblemas` solo lista, sin volver a analizar.
+- **Resultado de la corrida local** (SonarQube Community Build 26.11, perfil «Sonar way», 164 archivos, 10.588 líneas de código; el análisis importó los 8 informes de JaCoCo y el `lcov.info` del panel):
+
+| Medida | Resultado | ¿Cumple? |
+|---|---|---|
+| Control de calidad | **OK (verde)** | Sí |
+| Cobertura (backend + panel, como la calcula Sonar) | **85,9 %** (líneas 86,7 %) | Sí (≥ 80 %) |
+| Mantenibilidad (deuda técnica) | **A** (5 «olores de código») | Sí |
+| Duplicación | 0,0 % | Sí |
+| Puntos de seguridad por revisar (*hotspots*) | 0 | Sí |
+| **Fiabilidad** | **C** (4 errores) | **No: se pide A** |
+| **Seguridad** | **C** (4 vulnerabilidades) | **No: se pide A** |
+
+  El control de calidad pasa porque el «Sonar way» exige las calificaciones A solo sobre el código *nuevo*; el requerimiento del curso pide estado general A, así que **hay que
+  corregir los 4 errores y las 4 vulnerabilidades**. Se listan con `analizar-local.ps1 -SoloProblemas` (regla, archivo, línea y mensaje) y su corrección se anota aquí.
+- La cobertura de Sonar (85,9 %) es mayor que la de §3 (81,7 % del backend) porque Sonar mezcla el backend con el panel (99,3 %); por capa, las cifras de §3 son las que corresponden a cada requisito.
 
 ## 5. Defectos reales que las pruebas encontraron
 
@@ -113,5 +129,5 @@ Medir la cobertura del panel obligó a probar comportamiento que nadie había ej
 1. **Crear el proyecto en SonarCloud** (organización y proyecto), generar un **token** y guardarlo como secreto del repositorio `SONAR_TOKEN`.
 2. Crear las **variables de repositorio** `SONAR_ORGANIZATION` y `SONAR_PROJECT_KEY`.
 3. Hacer un `push` y comprobar el job **Quality** en GitHub Actions; ese es el enlace/evidencia del pipeline y del análisis que pide el requerimiento. Si el control de calidad marca algo en rojo, corregirlo antes de la sustentación.
-4. (Opcional) Antes de eso, ver las calificaciones con el análisis local ([§4](#4-análisis-estático-y-control-de-calidad)).
+4. Corregir los 4 errores y 4 vulnerabilidades que dejaron fiabilidad y seguridad en C (el análisis local ya las muestra, [§4](#4-análisis-estático-y-control-de-calidad)) y volver a analizar hasta ver A.
 5. Las **pruebas de integración contra PostgreSQL, MongoDB y Redis** (tres pruebas de `alert-engine` se omiten sin base de datos) se podrían correr en el pipeline con *service containers*; hoy no corren ahí.

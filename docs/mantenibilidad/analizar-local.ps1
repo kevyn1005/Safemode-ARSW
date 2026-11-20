@@ -4,36 +4,41 @@
 # Una sola vez (lo haces tu: son credenciales de TU servidor local):
 #   1. docker compose -p safemode-sonar -f docker-compose.sonar.yml up -d      (el primer arranque tarda unos 2 minutos)
 #   2. Abrir http://localhost:9000, entrar con admin / admin (pide cambiar la clave) y crear un token:
-#      Mi cuenta > Seguridad > Generar token (tipo "Global analysis token" o "User token").
-#   3. $env:SONAR_TOKEN = "<el token>"      (solo en esta terminal; el token no se escribe en ningun archivo)
+#      Mi cuenta > Seguridad > Generar token (tipo "User token").
+#   3. $env:SONAR_TOKEN = "<el token>"      (solo en esta terminal; el token no se escribe en ningun archivo ni se imprime)
 #
 # Cada vez:
-#   powershell -ExecutionPolicy Bypass -File docs\mantenibilidad\analizar-local.ps1            # usa las coberturas que ya existen
-#   powershell -ExecutionPolicy Bypass -File docs\mantenibilidad\analizar-local.ps1 -Medir     # antes corre las pruebas (mvn verify + npm test:coverage)
+#   powershell -ExecutionPolicy Bypass -File docs\mantenibilidad\analizar-local.ps1                  # analiza con las coberturas que ya existen
+#   powershell -ExecutionPolicy Bypass -File docs\mantenibilidad\analizar-local.ps1 -Medir           # antes corre las pruebas (mvn verify + npm test:coverage)
+#   powershell -ExecutionPolicy Bypass -File docs\mantenibilidad\analizar-local.ps1 -SoloProblemas   # NO analiza: solo lista lo que Sonar ya encontro
 param(
     [string]$Url = 'http://localhost:9000',
     [string]$Proyecto = 'safemode',
-    [switch]$Medir
+    [switch]$Medir,
+    [switch]$SoloProblemas
 )
 $ErrorActionPreference = 'Stop'
 if (-not $env:SONAR_TOKEN) { throw 'Falta $env:SONAR_TOKEN (ver las instrucciones al inicio de este archivo).' }
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$codigo = 0
 
-if ($Medir) {
-    Write-Host '== Pruebas del backend con cobertura (mvn verify)'
-    Push-Location $repo; try { mvn -B -q verify; if ($LASTEXITCODE -ne 0) { throw 'mvn verify fallo' } } finally { Pop-Location }
-    Write-Host '== Pruebas del panel con cobertura (c8)'
-    Push-Location (Join-Path $repo 'security-dashboard'); try { npm run test:coverage; if ($LASTEXITCODE -ne 0) { throw 'las pruebas del panel fallaron' } } finally { Pop-Location }
-}
-foreach ($f in 'security-dashboard\coverage\lcov.info', 'realtime-gateway\target\site\jacoco\jacoco.xml') {
-    if (-not (Test-Path (Join-Path $repo $f))) { throw "No existe ${f}: corre con -Medir para generar la cobertura." }
-}
+if (-not $SoloProblemas) {
+    if ($Medir) {
+        Write-Host '== Pruebas del backend con cobertura (mvn verify)'
+        Push-Location $repo; try { mvn -B -q verify; if ($LASTEXITCODE -ne 0) { throw 'mvn verify fallo' } } finally { Pop-Location }
+        Write-Host '== Pruebas del panel con cobertura (c8)'
+        Push-Location (Join-Path $repo 'security-dashboard'); try { npm run test:coverage; if ($LASTEXITCODE -ne 0) { throw 'las pruebas del panel fallaron' } } finally { Pop-Location }
+    }
+    foreach ($f in 'security-dashboard\coverage\lcov.info', 'realtime-gateway\target\site\jacoco\jacoco.xml') {
+        if (-not (Test-Path (Join-Path $repo $f))) { throw "No existe ${f}: corre con -Medir para generar la cobertura." }
+    }
 
-Write-Host "== Analizando con sonar-scanner (el control de calidad decide el codigo de salida)"
-# host.docker.internal: el scanner corre en un contenedor y el servidor esta en tu equipo
-docker run --rm -e SONAR_TOKEN -e SONAR_HOST_URL="http://host.docker.internal:9000" -v "${repo}:/usr/src" sonarsource/sonar-scanner-cli `
-    "-Dsonar.projectKey=$Proyecto" "-Dsonar.qualitygate.wait=true" "-Dsonar.qualitygate.timeout=300"
-$codigo = $LASTEXITCODE
+    Write-Host "== Analizando con sonar-scanner (el control de calidad decide el codigo de salida)"
+    # host.docker.internal: el scanner corre en un contenedor y el servidor esta en tu equipo
+    docker run --rm -e SONAR_TOKEN -e SONAR_HOST_URL="http://host.docker.internal:9000" -v "${repo}:/usr/src" sonarsource/sonar-scanner-cli `
+        "-Dsonar.projectKey=$Proyecto" "-Dsonar.qualitygate.wait=true" "-Dsonar.qualitygate.timeout=300"
+    $codigo = $LASTEXITCODE
+}
 
 Write-Host "`n== Resultado en $Url"
 $auth = @{ Authorization = 'Basic ' + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$($env:SONAR_TOKEN):")) }
@@ -49,4 +54,14 @@ $medidas | ForEach-Object {
     if ($_.metric -like '*_rating') { $v = $letras[$v] }
     "  {0,-26} {1}" -f $_.metric, $v
 }
+
+# Lo que Sonar marco: error, vulnerabilidad u "olor" (tipo), su gravedad, la regla, donde esta y que dice (sin secretos: solo metadatos del codigo)
+Write-Host "`n== Problemas abiertos (tipo, gravedad, regla, archivo:linea, mensaje)"
+$resp = Invoke-RestMethod -Headers $auth -Uri "$Url/api/issues/search?componentKeys=$Proyecto&types=BUG,VULNERABILITY,CODE_SMELL&resolved=false&ps=200"
+$orden = @{ BUG = 0; VULNERABILITY = 1; CODE_SMELL = 2 }
+$resp.issues | Sort-Object { $orden[$_.type] }, severity | ForEach-Object {
+    $archivo = $_.component -replace "^${Proyecto}:", ''
+    "{0,-13} {1,-8} {2,-14} {3}:{4}  {5}" -f $_.type, $_.severity, $_.rule, $archivo, $_.line, $_.message
+}
+"Total: $($resp.total)"
 exit $codigo
