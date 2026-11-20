@@ -41,7 +41,8 @@ public class AlertStore implements AutoCloseable {
         this.connection = connection;
         try (Statement st = connection.get().createStatement()) {
             this.dialect = SqlDialect.of(connection.get());
-            st.execute("""
+            // Los tres %s son fragmentos FIJOS del dialecto (enum SqlDialect: H2 o PostgreSQL), nunca datos de fuera: no hay forma de inyectar SQL aqui.
+            String createAlerts = """
                 CREATE TABLE IF NOT EXISTS alert (
                     id %s,
                     event_id BIGINT NOT NULL,
@@ -55,7 +56,8 @@ public class AlertStore implements AutoCloseable {
                     acknowledged BOOLEAN DEFAULT FALSE NOT NULL,
                     UNIQUE (event_id, event_occurred_at)
                 )
-                """.formatted(dialect.idColumn(), dialect.timestampType(), dialect.timestampType()));
+                """.formatted(dialect.idColumn(), dialect.timestampType(), dialect.timestampType());
+            st.execute(createAlerts); // NOSONAR java:S2077 - ver el comentario de arriba: solo fragmentos fijos del dialecto
         } catch (SQLException e) {
             throw new IllegalStateException("No se pudo crear la tabla alert", e);
         }

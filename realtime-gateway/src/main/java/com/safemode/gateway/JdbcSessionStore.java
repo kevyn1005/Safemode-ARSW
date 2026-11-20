@@ -33,14 +33,16 @@ final class JdbcSessionStore implements SessionStore {
         this.connection = connection;
         try (Statement st = connection.get().createStatement()) {
             SqlDialect dialect = SqlDialect.of(connection.get());
-            st.execute("""
+            // El %s es un fragmento FIJO del dialecto (enum SqlDialect: H2 o PostgreSQL), nunca datos de fuera: no hay forma de inyectar SQL aqui.
+            String createSessions = """
                     CREATE TABLE IF NOT EXISTS operator_session (
                         id_hash VARCHAR(64) PRIMARY KEY,
                         email VARCHAR(320) NOT NULL,
                         display_name VARCHAR(255),
                         expires_at %s NOT NULL
                     )
-                    """.formatted(dialect.timestampType()));
+                    """.formatted(dialect.timestampType());
+            st.execute(createSessions); // NOSONAR java:S2077 - ver el comentario de arriba: solo un fragmento fijo del dialecto
         } catch (SQLException e) {
             throw new IllegalStateException("No se pudo crear la tabla operator_session", e);
         }

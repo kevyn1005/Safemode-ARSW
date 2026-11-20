@@ -95,7 +95,8 @@ public class PresenceEventStore implements AutoCloseable {
 
     private void createSchema() throws SQLException {
         try (Statement st = connection.get().createStatement()) {
-            st.execute("""
+            // Los dos %s son fragmentos FIJOS del dialecto (enum SqlDialect: H2 o PostgreSQL), nunca datos de fuera: no hay forma de inyectar SQL aqui.
+            String createEvents = """
                 CREATE TABLE IF NOT EXISTS object_presence_event (
                     id %s,
                     tracked_object_id BIGINT NOT NULL,
@@ -109,7 +110,8 @@ public class PresenceEventStore implements AutoCloseable {
                     person_nearby BOOLEAN,
                     frame_path VARCHAR(500)
                 )
-                """.formatted(dialect.idColumn(), dialect.timestampType()));
+                """.formatted(dialect.idColumn(), dialect.timestampType());
+            st.execute(createEvents); // NOSONAR java:S2077 - ver el comentario de arriba: solo fragmentos fijos del dialecto
             // Bases creadas antes de existir frame_path: CREATE TABLE IF NOT EXISTS no las toca.
             st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS frame_path VARCHAR(500)");
             st.execute("ALTER TABLE object_presence_event ADD COLUMN IF NOT EXISTS owner_person_id BIGINT");
@@ -312,7 +314,6 @@ public class PresenceEventStore implements AutoCloseable {
         return query(SELECT_BY_ID, id).stream().findFirst();
     }
 
-    /** Los ultimos eventos (registros y retiros), del mas nuevo al mas viejo: lo que muestra el reporte del panel. */
     /**
      * Los eventos con esos ids, en pocas consultas (por bloques de {@value #IDS_PER_QUERY}): id -> evento. Los que no existen no aparecen.
      * El panel pedia la evidencia de cada alerta con una consulta propia; con cientos de alertas pendientes cada socket nuevo costaba cientos.
@@ -323,7 +324,8 @@ public class PresenceEventStore implements AutoCloseable {
         for (int from = 0; from < distinct.size(); from += IDS_PER_QUERY) {
             List<Long> chunk = distinct.subList(from, Math.min(distinct.size(), from + IDS_PER_QUERY));
             String sql = "SELECT " + EVENT_COLUMNS + " FROM object_presence_event WHERE id IN (" + "?,".repeat(chunk.size() - 1) + "?)";
-            try (PreparedStatement ps = connection.get().prepareStatement(sql)) {
+            // Solo la lista de marcadores "?,?,?" depende del tamano del bloque; ningun valor entra al texto del SQL (los ids viajan como parametros).
+            try (PreparedStatement ps = connection.get().prepareStatement(sql)) { // NOSONAR java:S2077 - solo marcadores "?", sin datos de fuera
                 for (int i = 0; i < chunk.size(); i++) {
                     ps.setLong(i + 1, chunk.get(i));
                 }
@@ -341,6 +343,7 @@ public class PresenceEventStore implements AutoCloseable {
 
     private static final int IDS_PER_QUERY = 500;
 
+    /** Los ultimos eventos (registros y retiros), del mas nuevo al mas viejo: lo que muestra el reporte del panel. */
     public List<StoredEvent> findRecent(int limit) {
         String sql = "SELECT " + EVENT_COLUMNS + " FROM object_presence_event ORDER BY id DESC LIMIT ?";
         try (PreparedStatement ps = connection.get().prepareStatement(sql)) {
