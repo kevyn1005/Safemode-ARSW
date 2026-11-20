@@ -62,8 +62,11 @@ Esperar-Replicas
 
 # Estado inicial de la base (ver arriba): vaciar, reiniciar el gateway (su motor de alertas y sus caches parten de cero) y dejar N alertas pendientes
 $psql = @('exec', "$proyecto-postgres-1", 'psql', '-U', 'safemode', '-d', 'safemode', '-q', '-t', '-A')
+# el gateway se DETIENE antes de vaciar: el motor de alertas arranca leyendo los eventos desde el id 0 y, si se reinicia con eventos viejos a la vista,
+# recrea sus alertas (en la corrida "estres-2replicas-despues" aparecieron 1.418 alertas de mas por esa carrera)
+Compose stop realtime-gateway | Out-Null
 & docker @psql -c 'TRUNCATE alert, object_presence_event RESTART IDENTITY CASCADE' | Out-Null
-Compose restart realtime-gateway | Out-Null
+Compose start realtime-gateway | Out-Null
 Esperar-Replicas
 if ($AlertasPrevias -gt 0) {
     Write-Host "== Dejando $AlertasPrevias alertas pendientes como estado inicial (el motor de alertas las crea de verdad a partir de eventos)"
@@ -81,6 +84,9 @@ if ($AlertasPrevias -gt 0) {
 }
 $pendientes = (& docker @psql -c 'SELECT count(*) FROM alert WHERE NOT acknowledged')
 Write-Host "== La prueba empieza con $pendientes alertas pendientes en la base"
+if ([int]$pendientes -ne $AlertasPrevias) {
+    Write-Warning "Se pidieron $AlertasPrevias alertas pendientes y hay ${pendientes}: esta corrida NO es comparable con las que empezaron con $AlertasPrevias (ver docs/rendimiento/informe-k6.md, 6.3)."
+}
 
 # Sesion de prueba en la base DEL PROTOTIPO (la base guarda solo la huella SHA-256 del identificador)
 $bytes = New-Object byte[] 32; (New-Object System.Security.Cryptography.RNGCryptoServiceProvider).GetBytes($bytes)
