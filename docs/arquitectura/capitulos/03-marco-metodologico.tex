@@ -1,6 +1,6 @@
 \chapter{Marco metodológico}
 
-\section{Metodología}
+\section{Metodología}\label{sec:azure}
 El equipo (tres personas) trabajó con \textbf{Scrum adaptado}: un backlog de producto priorizado con MoSCoW, releases con un resultado de producto
 explícito, un incremento demostrable por sprint, criterios de aceptación en Gherkin y un registro escrito de las decisiones de arquitectura
 (ADR). Tres prácticas gobernaron el trabajo en la práctica:
@@ -14,9 +14,17 @@ explícito, un incremento demostrable por sprint, criterios de aceptación en Gh
   quedó versionado junto al código.
 \end{itemize}
 
-\textbf{Herramientas.} Repositorio y control de versiones en GitHub; integración y despliegue continuos con GitHub Actions
+\textbf{Herramientas.} Gestión del trabajo en \textbf{Azure DevOps} (proyecto \emph{SafeMode}: épicas, features, historias, diez sprints semanales);
+repositorio y control de versiones en GitHub; integración y despliegue continuos con GitHub Actions
 (\emph{reusable workflows}); calidad con SonarQube/SonarCloud; modelo de arquitectura con ArchiMate (Archi); documentos en Markdown y
 LaTeX; backlog, release plan y ADR versionados en \cod{docs/}.
+
+\textbf{Cómo se usó Azure DevOps, sin adornos.} Al inicio se creó la épica, sus cinco features, las historias HU-01 a HU-05 y los sprints 1 a 5 (del
+7 de septiembre al 16 de octubre); desde entonces el seguimiento diario se llevó en el repositorio (backlog, \emph{release plan} y commits). El 20 de
+noviembre de 2026 se completó Azure DevOps con lo ya hecho: se crearon los sprints 6 a 10, se importaron las historias del backlog (HU-05 a HU-38) y las
+del Release~2 con sus puntos, criterios de aceptación y el sprint donde cayó el trabajo, y se cerraron las que están hechas. Cada elemento lleva la
+etiqueta \cod{registrado-retroactivo} y cita la fecha real de su evidencia; por eso la fecha de cierre en Azure DevOps (20 de noviembre) no es la de la
+entrega, y el \emph{burndown} diario de los sprints anteriores no puede reconstruirse. Los guiones para repetirlo están en \cod{docs/azure-devops/}.
 
 \textbf{Roles observables en el repositorio} (según los commits): Hever Barrera, núcleo de detección, seguimiento y alertas, gateway,
 panel, persistencia y los atributos de calidad del Release~2; María Juliana Rodríguez, integración del inicio de sesión con Google,
@@ -56,8 +64,8 @@ funcionando, no por tareas técnicas:
 
 \begin{table}[H]
 \centering\small
-\caption{Plan de releases del producto (ocho sprints lógicos de la capacidad de producto; la Tabla~\ref{tab:sprints} los asigna a los
-sprints del curso).}\label{tab:releases}
+\caption{Plan de releases del producto (ocho sprints lógicos de la capacidad de producto, que no son los sprints de Azure DevOps; la
+Tabla~\ref{tab:sprints} asigna el trabajo a los sprints semanales de Azure DevOps).}\label{tab:releases}
 \begin{tabularx}{\textwidth}{lYY}
 \toprule
 \textbf{Release} & \textbf{Resultado de producto} & \textbf{Sprints (incremento)} \\

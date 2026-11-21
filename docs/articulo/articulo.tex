@@ -65,26 +65,31 @@ Ready} y \emph{Definition of Done} explícitas y un incremento demostrable por s
 (175 commits entre el 9 de septiembre y el 20 de noviembre de 2026) y \emph{evidencia antes que afirmación}. Las decisiones de arquitectura se registran
 como ADR \cite{adr}.
 
-\textbf{Herramientas.} GitHub (código, historial y backlog versionado), GitHub Actions con \emph{reusable workflows} (compilar, probar, medir cobertura, análisis de
-calidad y despliegue por SSH), Archi para ArchiMate \cite{archimate}, Docker Compose \cite{docker}, SonarQube \cite{sonar}, k6 \cite{k6} y Prometheus y
-Grafana \cite{prom}.
+\textbf{Herramientas.} Azure DevOps (épicas, features, historias y sprints), GitHub (código, historial y backlog versionado), GitHub Actions con \emph{reusable
+workflows} (compilar, probar, medir cobertura, análisis de calidad y despliegue por SSH), Archi para ArchiMate \cite{archimate}, Docker Compose \cite{docker},
+SonarQube \cite{sonar}, k6 \cite{k6} y Prometheus y Grafana \cite{prom}.
 
-\textbf{Release y sprints.} El plan agrupa los sprints por el resultado de producto de cada release (Tabla~\ref{tab:sprints}); las fechas son las de
-los commits que construyeron cada incremento.
+\textbf{Sprints.} El proyecto de Azure DevOps tiene diez sprints semanales (Tabla~\ref{tab:sprints}). Los sprints 1 a 5 y sus primeras historias existían desde el inicio;
+el resto se registró el 20 de noviembre de 2026 a partir del backlog y de Git, con la fecha real de cada evidencia en la descripción (etiqueta
+\texttt{registrado-retroactivo}). Por eso el seguimiento diario de los sprints anteriores consta en el repositorio y no como \emph{burndown}.
 
 \begin{table}[t]
-\centering\caption{Ciclo de sprints y principales hitos.}\label{tab:sprints}
+\centering\caption{Sprints de Azure DevOps (2026) y su incremento.}\label{tab:sprints}
 \footnotesize
-\begin{tabular}{@{}p{0.55cm}p{1.45cm}p{5.2cm}@{}}
+\begin{tabular}{@{}p{0.5cm}p{1.6cm}p{5.1cm}@{}}
 \toprule
-\textbf{Sprint} & \textbf{Fechas} & \textbf{Incremento demostrable} \\
+\textbf{Spr.} & \textbf{Fechas} & \textbf{Incremento demostrable} \\
 \midrule
-0--2 & 9--20 sep & Estructura, detección de personas y maletas, registro de objetos en reposo con foto \\
-3--5 & 20 sep--1 oct & Retiro, dueño probable y tipo de retiro; alertas con evidencia; panel en tiempo real y Docker \\
-6--7 & 10--11 oct & Ventana compartida, dos cámaras con zonas, reporte y «dueño que volvió» \\
-8 & 11--17 oct & Avisos de texto, inicio de sesión con Google y primer pipeline de CI \\
-9 & 28 oct--12 nov & Observabilidad (Prometheus, Grafana) y persistencia (PostgreSQL, MongoDB, Redis) \\
-10 & 13--22 nov & Despliegue en AWS; seguridad, disponibilidad, rendimiento y mantenibilidad medidos \\
+1 & 7--12 sep & Estructura y detección de personas y maletas \\
+2 & 21--25 sep & Objetos en reposo, retiro, dueño, alertas con evidencia y panel en tiempo real \\
+3 & 28 sep--2 oct & Back y front conectados con Docker \\
+4 & 5--9 oct & Sin commits \\
+5 & 12--16 oct & Dos cámaras, reporte, avisos, inicio de sesión con Google y CI \\
+6 & 19--23 oct & Ajuste de tiempos de captura \\
+7 & 26--30 oct & Observabilidad (Prometheus y Grafana) \\
+8 & 2--6 nov & Sonar; inicio de la persistencia \\
+9 & 9--13 nov & Persistencia completa y despliegue en AWS \\
+10 & 16--20 nov & Seguridad, disponibilidad, k6, mantenibilidad y documentos \\
 \bottomrule
 \end{tabular}
 \end{table}

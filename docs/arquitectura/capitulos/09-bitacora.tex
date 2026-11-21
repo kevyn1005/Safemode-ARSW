@@ -1,34 +1,38 @@
 \chapter{Bitácora de ceremonias}
 
 Esta bitácora se reconstruye a partir de lo \textbf{verificable}: el historial de Git (175 commits, del 9 de septiembre al 20 de noviembre de 2026),
-el release plan, el backlog y los ADR. Los sprints son \emph{lógicos}, definidos por la capacidad de producto que dejan funcionando; las
-fechas son las de los commits que construyeron cada incremento. Las actas de las reuniones (planning, review y retrospectiva) no se versionan en el
-repositorio: lo que cada ceremonia produjo y dejó escrito sí está, y es lo que se enlaza a continuación.
+el proyecto de Azure DevOps, el release plan, el backlog y los ADR. Los sprints son los \textbf{diez sprints semanales de Azure DevOps} (lunes a viernes,
+del 7 de septiembre al 20 de noviembre); el trabajo se asigna al sprint de la semana en que se hizo y, si cayó en fin de semana, al sprint de la semana
+siguiente. Las actas de las reuniones (planning, review y retrospectiva) no se versionan en el repositorio: lo que cada ceremonia produjo y dejó escrito
+sí está, y es lo que se enlaza a continuación.
 
 \section{Sprints, hitos y evidencia}
 \begin{table}[H]
-\centering\small
-\caption{Sprints del proyecto, del Sprint~0 al 10, con su incremento y la evidencia que lo respalda.}\label{tab:sprints}
-\begin{tabularx}{\textwidth}{llYY}
+\centering\footnotesize
+\caption{Sprints 1 a 10 de Azure DevOps, con su incremento y la evidencia que lo respalda (los sprints 4 y 6 casi no tuvieron trabajo).}\label{tab:sprints}
+\begin{tabularx}{\textwidth}{lp{2.1cm}YY}
 \toprule
 \textbf{Sprint} & \textbf{Fechas} & \textbf{Incremento demostrable} & \textbf{Evidencia} \\
 \midrule
-0 & 9--10 sep & Estructura del repositorio (reactor Maven) y primeras pruebas de captura de imagen & Commits «Estructura inicial» e «inicio e intentos de captura» \\
-\multicolumn{4}{l}{\textit{Release 1}} \\
-1 & 10--19 sep & Detección de personas y maletas en el video (HU-01, 02) & «Detección exitosa de maleta y persona»; \cod{ObjectDetectorNmsTest} \\
-2 & 19--20 sep & Registro de objetos en reposo (3~s quietos) con foto (HU-03, 04) & \cod{ObjectTrackerTest}; foto del frame en cada evento \\
-3 & 20--21 sep & Retiro, dueño probable y tipo de retiro (HU-05, 06, 07, 09) & \cod{RemovalVerificationTest}, \cod{PersonDescriberTest} \\
-4 & 21 sep & Alertas con evidencia y reglas de severidad (HU-13, 14, 18); descripción por IA opcional & \cod{AlertRulesTest}, \cod{AlertEngineTest} \\
-5 & 21 sep--1 oct & Panel en tiempo real con WebSocket y alarma sonora; Docker (HU-15, 16, 17, 36) & \cod{AlertGatewayTest}; prueba con cámara real; «Ya funciona el Docker» (1 oct) \\
-\multicolumn{4}{l}{\textit{Release 2}} \\
-6 & 10--11 oct & Ventana compartida desde el navegador; dos cámaras con zonas; mediciones de rendimiento (HU-21 a 27, 37) & \cod{BrowserFrameSourceTest}, \cod{MultiCameraTest}; ADR~0003 \\
-7 & 11 oct & Reporte en tabla y pista «dueño que volvió» (HU-12, 19, 38) & \cod{OwnerReturnTest}, \cod{ReportJsonTest} \\
-8 & 11--17 oct & Avisos de texto (navegador y Telegram) y \textbf{inicio de sesión con Google} (12 oct); pipeline de CI (13 oct) & Servicio de notificaciones; mensaje de prueba recibido en Telegram; ADR~0004 \\
-9 & 28 oct--12 nov & \textbf{Observabilidad} (Micrometer, Prometheus y Grafana, 28--29 oct) y \textbf{persistencia} (PostgreSQL, MongoDB y Redis; servicios de acceso y colaboración; 6--7 nov); tablero de Grafana del equipo & ADR~0005; evidencias numeradas 01 a 23; tablero exportado \\
-10 & 13--22 nov & \textbf{Despliegue en AWS} con Caddy y dominio (13 nov), despliegue por SSH (16 nov); \textbf{seguridad} ES-1 a ES-3 (19 nov); \textbf{disponibilidad y escalado} (19 nov); \textbf{rendimiento} con k6 y \textbf{mantenibilidad} con Sonar (19--20 nov); este documento y el artículo & ADR~0006; informes de \cod{docs/}; 479 pruebas Java y 144 de Node \\
+\multicolumn{4}{l}{\textit{Release 1 del curso (sprints 1 a 5)}} \\
+1 & 7--12 sep & Estructura del repositorio (reactor Maven) y detección de personas y maletas en el video (HU-01, 02) & «Estructura inicial»; «Detección exitosa de maleta y persona» (10 sep); \cod{ObjectDetectorNmsTest} \\
+2 & 21--25 sep (desde el 19) & Registro de objetos en reposo con foto, retiro, dueño probable y tipo de retiro; alertas con evidencia y reglas de severidad; descripción por IA opcional; panel en tiempo real con WebSocket y alarma sonora (HU-03 a 11, 13 a 18, 35) & \cod{ObjectTrackerTest}, \cod{RemovalVerificationTest}, \cod{PersonDescriberTest}, \cod{AlertRulesTest}, \cod{AlertGatewayTest}; prueba con cámara real (25 sep) \\
+3 & 28 sep--2 oct & Back y front conectados con Docker (HU-36) & Commit del 1 oct: «Se conectó Back y Front… Ya funciona» \\
+4 & 5--9 oct & Sin commits en esta semana & --- \\
+5 & 12--16 oct (desde el 10) & Ventana compartida desde el navegador; dos cámaras con zonas; reporte; «dueño que volvió»; avisos por navegador y Telegram; \textbf{inicio de sesión con Google} (12 oct); pipeline de CI (13 oct); mediciones de rendimiento (HU-12, 19, 21 a 27, 29, 30, 33, 37, 38) & \cod{BrowserFrameSourceTest}, \cod{MultiCameraTest}, \cod{OwnerReturnTest}, \cod{ReportJsonTest}; ADR~0003 y~0004; mensaje recibido en Telegram \\
+\multicolumn{4}{l}{\textit{Release 2 del curso (sprints 6 a 10)}} \\
+6 & 19--23 oct & Ajuste de los tiempos de captura de fotogramas (17 oct) & Commit «Arreglos tiempos de frames» \\
+7 & 26--30 oct & \textbf{Observabilidad}: Micrometer, métricas por severidad y latencia evento-alerta, Prometheus y Grafana (R2-01) & Commits del 28 y 29 oct \\
+8 & 2--6 nov & Análisis estático con Sonar; inicio de la \textbf{persistencia}: PostgreSQL, servicios de acceso y de colaboración (R2-03) & ADR~0005; commits del 6 nov \\
+9 & 9--13 nov & Persistencia completa (reconexión, historial del puesto, un solo Prometheus y Grafana), tablero de Grafana del equipo con k6 por \emph{remote write}, nuevo modelo de visión y \textbf{despliegue en AWS} con Caddy y dominio (13 nov) (R2-04 a 06) & Evidencias numeradas 01 a 23; \cod{docs/despliegue/} \\
+10 & 16--20 nov & Despliegue por SSH (16 nov); \textbf{seguridad} ES-1 a ES-3; \textbf{disponibilidad y escalado}; \textbf{rendimiento} con k6; \textbf{mantenibilidad} con Sonar; este documento y el artículo (HU-34, R2-02, 07 a 21) & ADR~0006; informes de \cod{docs/}; 479 pruebas Java y 144 de Node \\
 \bottomrule
 \end{tabularx}
 \end{table}
+
+\textbf{Evidencia en Azure DevOps.} Cada sprint tiene sus historias en \emph{Boards $\rightarrow$ Sprints}, con puntos, criterios de aceptación y la fecha real de
+su evidencia en la descripción. Los sprints 1 a 5 existían desde el inicio del proyecto con las historias HU-01 a HU-05; el resto se registró el 20 de
+noviembre de 2026 a partir del backlog y de Git, por eso los elementos llevan la etiqueta \cod{registrado-retroactivo} (véase la sección~\ref{sec:azure}).
 
 \section{Planning, Review y Retrospectivas}
 \begin{table}[H]
@@ -38,7 +42,7 @@ repositorio: lo que cada ceremonia produjo y dejó escrito sí está, y es lo qu
 \toprule
 \textbf{Ceremonia} & \textbf{Artefacto que produjo} & \textbf{Dónde} \\
 \midrule
-Planning (qué entra al sprint) & Backlog con 38 HU en Gherkin, DoR y DoD, MoSCoW y story map; release plan por resultado de producto & \cod{docs/backlog.md}, \cod{docs/release-plan.md} \\
+Planning (qué entra al sprint) & Azure DevOps (épicas, features, historias y sprints); backlog con 38 HU en Gherkin, DoR y DoD, MoSCoW y story map; release plan por resultado de producto & Azure DevOps, \cod{docs/backlog.md}, \cod{docs/release-plan.md}, \cod{docs/azure-devops/} \\
 Decisiones de arquitectura & Seis ADR con alternativas, consecuencias y evidencia & \cod{docs/adr/} \\
 Review (qué se demostró) & Verificación con cámara real y navegador; pruebas automáticas por incremento; guía y rúbrica de la sustentación & \cod{docs/sustentacion.md}; evidencias de \cod{docs/persistencia/} \\
 Retrospectiva (qué se corrigió) & Cierre del feedback de la revisión interna, con decisión, evidencia y estado por observación & \cod{docs/sustentacion.md}, sección 5 \\
