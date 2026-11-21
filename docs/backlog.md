@@ -6,7 +6,7 @@ que piden los lineamientos ARSW 2026-2. Todo lo marcado *Hecho* tiene evidencia 
 cita en cada HU; lo que falta está marcado *Pendiente* o *Parcial* con su motivo.
 
 > Los tamaños son **estimaciones relativas propuestas** (serie 1, 2, 3, 5, 8) para confirmar con el equipo; no son tiempos medidos.
-> Las pruebas automáticas al cierre de este documento: **301 de Java y 35 de Node, todas pasan**.
+> Las pruebas automáticas al cierre de este documento: **479 de Java y 144 de Node, todas pasan**.
 
 ## 1. Necesidad, personas y alcance
 
@@ -409,7 +409,7 @@ Then aparece una notificación con el texto "SafeMode: posible robo en CAM 1 a l
 ```
 Evidencia: 13 pruebas de Node con un navegador falso y verificación en el panel real. Límite: la pestaña del panel debe seguir abierta (Web Push queda para después).
 
-**HU-30** · Como **operador** quiero recibir un mensaje de Telegram con cada alerta alta o media, para enterarme aunque no esté frente al computador. *Parcial: los chats son una lista fija hasta que exista el login.*
+**HU-30** · Como **operador** quiero recibir un mensaje de Telegram con cada alerta alta o media, para enterarme aunque no esté frente al computador. *Parcial: los chats son una lista fija (variable de entorno); vincular el Telegram de cada usuario es la HU-32.*
 ```gherkin
 Given un bot de Telegram y mi chat configurados solo por variables de entorno
 When llega una alerta nueva de severidad alta o media
@@ -421,7 +421,7 @@ Componente: Notification Service (`NotificationService`, `TelegramChannel`). Evi
 
 **HU-31** · Como **operador** quiero recibir un correo con cada alerta alta o media, para tener otro canal de respaldo. *Pendiente: requiere una contraseña de aplicación de correo.* Mismo criterio que HU-30 con SMTP.
 
-**HU-32** · Como **operador** quiero elegir por qué canales me avisan, para no recibir lo que no uso. *Pendiente: depende del login (HU-33).*
+**HU-32** · Como **operador** quiero elegir por qué canales me avisan, para no recibir lo que no uso. *Pendiente: el login (HU-33) ya existe; faltan guardar las preferencias por usuario y el canal de correo.*
 ```gherkin
 Given un usuario con sesión que activó el canal Telegram y desactivó el correo
 When se genera una alerta de severidad alta
