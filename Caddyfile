@@ -3,12 +3,21 @@ safemode-arsw.duckdns.org {
 		reverse_proxy 127.0.0.1:8090
 	}
 	handle /frames {
+		# Solo con sesion de operador: el receptor de frames del tracker no autentica a nadie (solo mira el Origin de un navegador,
+		# que un cliente cualquiera puede omitir o falsificar). /auth/me del gateway responde 200 con sesion y 401 sin ella; la cookie
+		# viaja en el upgrade del WebSocket porque es el mismo dominio. Validacion: docs/seguridad/validaciones/frames-forward-auth
 		forward_auth 127.0.0.1:8080 {
 			uri /auth/me
 		}
 		reverse_proxy 127.0.0.1:8091
 	}
 	handle /grafana* {
+		# Solo con sesion de operador (mismo mecanismo que /frames). Se suma al usuario y clave de Grafana (ya sin acceso anonimo): su pantalla
+		# de inicio de sesion no debe estar al alcance de internet mientras la clave de administrador sea la de laboratorio, que aparece en el
+		# repositorio publico, si el .env del servidor no la cambio. Validacion: docs/seguridad/validaciones/frames-forward-auth (escenarios H a L)
+		forward_auth 127.0.0.1:8080 {
+			uri /auth/me
+		}
 		reverse_proxy 127.0.0.1:3000
 	}
 	handle {

@@ -9,10 +9,12 @@ import java.net.InetSocketAddress;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -48,6 +50,23 @@ public final class MiniHttpServer implements AutoCloseable {
 
     public record Response(int status, String contentType, byte[] body) {
 
+        // Un record compara sus campos con equals: en un arreglo eso es la identidad, no el contenido. Se compara y se imprime por contenido.
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof Response that && status == that.status && Objects.equals(contentType, that.contentType)
+                    && Arrays.equals(body, that.body);
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * Objects.hash(status, contentType) + Arrays.hashCode(body);
+        }
+
+        @Override
+        public String toString() {
+            return "Response[status=" + status + ", contentType=" + contentType + ", body=" + (body == null ? "null" : body.length + " bytes") + "]";
+        }
+
         public static Response json(int status, Object value) {
             return new Response(status, "application/json; charset=utf-8",
                     Json.GSON.toJson(value).getBytes(StandardCharsets.UTF_8));
@@ -58,7 +77,25 @@ public final class MiniHttpServer implements AutoCloseable {
         }
     }
 
-    private record Route(String method, String pattern, String[] segments, Handler handler) {}
+    /** Visible en el paquete (no publico) solo para poder probarlo: tiene un arreglo y compara por contenido. */
+    record Route(String method, String pattern, String[] segments, Handler handler) {
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof Route that && Objects.equals(method, that.method) && Objects.equals(pattern, that.pattern)
+                    && Arrays.equals(segments, that.segments) && Objects.equals(handler, that.handler);
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * Objects.hash(method, pattern, handler) + Arrays.hashCode(segments);
+        }
+
+        @Override
+        public String toString() {
+            return "Route[" + method + " " + pattern + "]";
+        }
+    }
 
     private static final int MAX_BODY_BYTES = 16 * 1024;
 

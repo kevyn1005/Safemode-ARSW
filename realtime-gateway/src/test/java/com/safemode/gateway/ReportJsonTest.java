@@ -30,6 +30,26 @@ class ReportJsonTest {
     }
 
     @Test
+    void elNombreDeCadaCamaraSeConsultaUnaVezPorReporteNoUnaPorFila() {
+        List<StoredEvent> events = new java.util.ArrayList<>();
+        for (int i = 0; i < 200; i++) {
+            events.add(registered(i, 1 + (i % 2)));
+        }
+        java.util.concurrent.atomic.AtomicInteger lookups = new java.util.concurrent.atomic.AtomicInteger();
+
+        JsonObject report = ReportJson.toJson(events, id -> {
+            lookups.incrementAndGet();
+            return "Camara " + id;
+        });
+
+        JsonArray rows = report.getAsJsonArray("events");
+        assertEquals(200, rows.size());
+        assertEquals(2, lookups.get(), "dos camaras distintas = dos consultas (antes eran 200, una por fila)");
+        assertEquals("Camara 1", rows.get(0).getAsJsonObject().get("cameraName").getAsString());
+        assertEquals("Camara 2", rows.get(1).getAsJsonObject().get("cameraName").getAsString());
+    }
+
+    @Test
     void unRegistroEnReposoNoGeneraAlertaYTraeLasFotosSoloPorNombre() {
         JsonObject row = ReportJson.row(registered(5, 1), id -> "CAM " + id);
 

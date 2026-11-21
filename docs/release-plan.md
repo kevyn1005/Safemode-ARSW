@@ -4,6 +4,8 @@ Plan de releases de 8 sprints de una semana, con **el estado real de cada uno**,
 sprint se describe por la **capacidad de producto** que deja funcionando, no por tareas técnicas; las HU salen del
 [backlog](backlog.md).
 
+> Los sprints de este plan son lógicos (S1 a S8) y **no coinciden con los diez sprints semanales de Azure DevOps** (del 7 de septiembre al 20 de noviembre): la asignación
+> del trabajo a esos sprints está en [`azure-devops/README.md`](azure-devops/README.md).
 > Los sprints son lógicos (semana 1 a 8). Las fechas de la columna *Evidencia* son las de los commits que construyeron cada
 > incremento: muestran **cuándo se hizo**, no semanas calendario exactas.
 
@@ -11,11 +13,11 @@ sprint se describe por la **capacidad de producto** que deja funcionando, no por
 
 | | |
 |---|---|
-| **Sprints con incremento demostrable** | 7 de 8 (el S8 está a la mitad) |
-| **HU** | 31 hechas · 1 parcial · 6 pendientes (de 38) |
-| **Pruebas automáticas** | 301 de Java y 35 de Node, todas pasan |
+| **Sprints con incremento demostrable** | 8 de 8 (S8 completo salvo el correo y las preferencias por usuario) |
+| **HU** | 33 hechas · 1 parcial · 4 pendientes (de 38; 128 de 145 puntos) |
+| **Pruebas automáticas** | 479 de Java (3 se omiten sin base de datos) y 144 de Node, todas pasan; cobertura 81,8 % del backend y 99,3 % del panel (`docs/mantenibilidad/`) |
 | **Latencia medida** (del evento al panel) | media 0,5 s · p95 0,9 s; peor caso extremo a extremo ≈ 3,5 s con 1 cámara (objetivo: < 5 s) |
-| **Pendiente** | correo, inicio de sesión con Google, preferencias por usuario, prueba con dos cámaras reales y retención de fotos |
+| **Pendiente** | correo, preferencias por usuario, prueba con dos cámaras reales y retención de fotos (el inicio de sesión con Google ya está: ES-1 a ES-3) |
 
 ## Releases y sprints
 
@@ -43,17 +45,16 @@ sprint se describe por la **capacidad de producto** que deja funcionando, no por
 |---|---|---|---|---|---|
 | **S6** | **Dos cámaras desde una ventana:** compartir la ventana, zonas dibujadas con prueba previa, un seguimiento por cámara, alertas con su cámara y nombres editables; mediciones de rendimiento | HU-21–HU-27, HU-37 · F5.1–F5.3, F8.2 | S5; el navegador comparte la ventana | `BrowserFrameSourceTest` (10), `MultiCameraTest` (10), 13 pruebas de Node; corrida de extremo a extremo con un mosaico real; mediciones del ADR 0003 (2026-10-10 y 2026-10-11) | Hecho (la prueba con 2 cámaras físicas está pendiente: HU-28) |
 | **S7** | **Reporte en tabla** de todo lo registrado y **pista «posible dueño que volvió»** (baja a media, no silencia); registro de decisiones | HU-12, HU-19, HU-38 · F2.4, F4.2, F8.3 | S6 | `OwnerReturnTest` (9), `ReportJsonTest`, 9 pruebas de Node del reporte; verificado con las fotos reales de las pruebas (2026-10-11) | Hecho |
-| **S8** | **Avisos de texto** por navegador, Telegram y correo, con **inicio de sesión con Google** | HU-29–HU-34 · F6.1–F6.4, F7.1 | S7; cuentas externas (bot de Telegram, proyecto de Google Cloud, contraseña de aplicación de correo) | 13 pruebas de Node del aviso del navegador; 31 pruebas del servicio de notificaciones; mensaje de prueba y alertas reales recibidos en Telegram (2026-10-11) | **Parcial:** navegador y Telegram hechos; correo, login y preferencias pendientes |
+| **S8** | **Avisos de texto** por navegador, Telegram y correo, con **inicio de sesión con Google** | HU-29–HU-34 · F6.1–F6.4, F7.1 | S7; cuentas externas (bot de Telegram, proyecto de Google Cloud, contraseña de aplicación de correo) | 13 pruebas de Node del aviso del navegador; 31 pruebas del servicio de notificaciones; mensaje de prueba y alertas reales recibidos en Telegram (2026-10-11) | **Casi completo:** navegador, Telegram (lista fija de chats) y login con Google hechos (ES-1 a ES-3, [`docs/seguridad/`](seguridad/escenarios-de-seguridad.md)); correo y preferencias por usuario pendientes |
 
 ## Qué falta y en qué orden
 
 | Orden | Incremento propuesto | HU | Depende de | Por qué en este orden |
 |---|---|---|---|---|
-| 1 | **Acceso con Google** y protección de toda la superficie (panel, WebSocket, reporte y botones del tracker) | HU-33, HU-34 | El proyecto de Google Cloud del equipo | Cierra la brecha de seguridad actual (hoy solo protege `localhost` más el control de `Origin` y `Host`) y desbloquea lo demás |
-| 2 | **Avisos por usuario:** correo y elegir canales; vincular el Telegram de cada usuario | HU-31, HU-32 | HU-33; una contraseña de aplicación de correo | Hoy los chats de Telegram son una lista fija |
-| 3 | **Validación con dos cámaras reales** y comparación de `yolov8s` frente a `yolov8m` | HU-28 | Una segunda cámara y el software que las muestre juntas | Es la prueba pendiente del S6; confirma el rendimiento y la calidad |
-| 4 | **Retención de fotos** | HU-20 | — | Cada foto pesa ≈ 3 MB |
-| 5 | **Pulido con datos reales:** calibrar los umbrales de ropa (60 y 80), ids duplicados al entrar, pasar los umbrales de fotogramas a segundos | — | Más corridas | Mejora la precisión sin cambiar el producto |
+| 1 | **Avisos por usuario:** correo y elegir canales; vincular el Telegram de cada usuario | HU-31, HU-32 | HU-33 (hecha); una contraseña de aplicación de correo | Hoy los chats de Telegram son una lista fija |
+| 2 | **Validación con dos cámaras reales** y comparación de `yolov8s` frente a `yolov8m` | HU-28 | Una segunda cámara y el software que las muestre juntas | Es la prueba pendiente del S6; confirma el rendimiento y la calidad |
+| 3 | **Retención de fotos** | HU-20 | — | Cada foto pesa ≈ 3 MB |
+| 4 | **Pulido con datos reales:** calibrar los umbrales de ropa (60 y 80), ids duplicados al entrar, pasar los umbrales de fotogramas a segundos | — | Más corridas | Mejora la precisión sin cambiar el producto |
 
 **Mejoras futuras (fuera de este plan):** reidentificar al dueño por apariencia (hoy solo se compara el color de la ropa), Web Push
 (avisos con la pestaña cerrada), filtro de avisos por cámara y por severidad por usuario.
@@ -67,14 +68,14 @@ sprint se describe por la **capacidad de producto** que deja funcionando, no por
 | Zonas mal puestas o ventana de cámaras minimizada o con otro tamaño | El sistema ve otra cosa | Prueba previa que bloquea si el tamaño cambió; límite documentado de que la ventana no puede minimizarse | Mitigado parcialmente (límite del sistema operativo) |
 | Privacidad | Datos de personas a terceros | No se guarda video; los avisos externos son solo texto; la descripción por IA externa es opcional y declarada | Controlado |
 | Dependencia de servicios externos (Telegram, NVIDIA, Google) | Un canal caído | Todo en segundo plano con reintentos limitados; nada retrasa la alerta; si falta la clave el canal se desactiva | Controlado |
-| Seguridad hasta que exista el login | Un tercero en la misma red | El gateway escucha solo en `localhost` y exige `Origin` y `Host`; el botón del tracker ejecuta un comando fijo | **Abierto** hasta HU-33 y HU-34 |
+| Acceso no autorizado a alertas o al tracker | Un tercero lee alertas o acciona el tracker | Inicio de sesión con Google y lista blanca de correos, sesión en cookie `HttpOnly`/`SameSite=Strict`, 401 sin sesión, `Origin` y `Host` en todo cambio de estado, `/frames` con `forward_auth` (`docs/seguridad/`) | Controlado; brechas declaradas: cookie sin `Secure` y sin registro de auditoría |
 | Calibración con pocas pruebas | Umbrales de color poco robustos | Registro de decisiones con las distancias medidas; más corridas | Abierto |
 | Disco | Las fotos llenan el disco | Retención de fotos (HU-20) | Abierto |
 
 ## Evidencia general
 
-- **Pruebas:** 301 de Java (visión 9, cámara 10, tracker 166, motor de alertas 19, gateway 97) y 35 de Node (zonas, reporte, avisos del
-  navegador). Cada commit se probó en su estado exacto.
+- **Pruebas:** 479 de Java (3 se omiten sin base de datos) y 144 de Node (panel: zonas, reporte, avisos, sesión); cobertura 81,8 % del backend y 99,3 % del
+  panel. Cada commit se probó en su estado exacto.
 - **Mediciones:** `DetectionBenchmark` y `AlertLatencyBenchmark`; resultados en el [ADR 0003](adr/0003-dos-camaras-zonas-y-reporte.md).
 - **Decisiones de arquitectura:** [ADR 0001](adr/0001-contenerizacion-servicios-captura-pantalla.md),
   [0002](adr/0002-docker-compose-gateway-y-base-de-datos.md), [0003](adr/0003-dos-camaras-zonas-y-reporte.md) y

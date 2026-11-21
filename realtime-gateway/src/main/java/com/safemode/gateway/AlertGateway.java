@@ -39,6 +39,11 @@ import java.util.concurrent.TimeUnit;
 public class AlertGateway extends WebSocketServer {
 
     private static final int RECENT_ALERTS_TRACKED = 50;
+    // Cuantas alertas recientes revisa el barrido que detecta las creadas por otra replica (debe ser menor que RECENT_ALERTS_TRACKED,
+    // para que una ya anunciada nunca salga del registro mientras todavia cae en la ventana del barrido y se vuelva a anunciar).
+    private static final int NEW_ALERT_SCAN = 20;
+    private static final long OTHER_REPLICAS_POLL_MS = 500;
+    private static final int CLOSE_POLICY_VIOLATION = 1008; // codigo estandar de cierre de WebSocket: "no cumple la politica"
 
     private final AlertEngine engine;
     private final AlertStore alerts;
@@ -88,12 +93,24 @@ public class AlertGateway extends WebSocketServer {
     public void startAndWait() throws InterruptedException {
         start();
         started.await();
+        seedAlreadyKnownAlerts();
         refresher = Executors.newSingleThreadScheduledExecutor(runnable -> {
             Thread thread = new Thread(runnable, "gateway-refresh");
             thread.setDaemon(true);
             return thread;
         });
-        refresher.scheduleWithFixedDelay(this::refreshRecent, 2, 2, TimeUnit.SECONDS);
+        // Con varias replicas detras de un balanceador, la alerta la inserta solo una (la base lo garantiza); las demas se
+        // enteran mirando la tabla y avisan a sus propios operadores. Con una sola replica este barrido no encuentra nada nuevo.
+        refresher.scheduleWithFixedDelay(this::announceAlertsFromOtherReplicas, OTHER_REPLICAS_POLL_MS, OTHER_REPLICAS_POLL_MS,
+                TimeUnit.MILLISECONDS);
+        refresher.scheduleWithFixedDelay(() -> {
+            try {
+                closeRevokedConnections(); // una excepcion aqui cancelaria todas las ejecuciones siguientes
+            } catch (RuntimeException e) {
+                System.err.println("[GATEWAY] No se pudieron revisar las sesiones de los sockets: " + e.getClass().getSimpleName());
+            }
+            refreshRecent();
+        }, 2, 2, TimeUnit.SECONDS);
     }
 
     /** Puerto en el que realmente escucha (util cuando se pidio el puerto 0). */
@@ -124,21 +141,73 @@ public class AlertGateway extends WebSocketServer {
             if (authService.userFor(cookie).isEmpty()) {
                 throw new InvalidDataException(401, "Sesion requerida");
             }
+            conn.setAttachment(cookie); // con que sesion se abrio: se vuelve a comprobar en cada mensaje y cada envio
         }
         return builder;
+    }
+
+    // Auditoria de seguridad (pista 2): la sesion solo se revisaba al abrir el socket, asi que cerrar sesion o vencer los 12 h
+    // no cortaba un socket ya abierto: seguia recibiendo alertas y podia marcarlas como revisadas.
+    private boolean stillAuthorized(WebSocket conn) {
+        AuthService authService = auth;
+        if (authService == null) {
+            return true; // servidor sin autenticacion (pruebas): no hay sesion que revisar
+        }
+        String cookie = conn.getAttachment();
+        return cookie != null && authService.userFor(cookie).isPresent();
+    }
+
+    private void closeUnauthorized(WebSocket conn) {
+        try {
+            conn.close(CLOSE_POLICY_VIOLATION, "Sesion terminada");
+        } catch (RuntimeException e) {
+            System.err.println("[GATEWAY] No se pudo cerrar un socket sin sesion: " + e.getClass().getSimpleName());
+        }
+    }
+
+    /** Cierra los sockets cuya sesion ya termino (cerro sesion o vencio), aunque no llegue ninguna alerta. */
+    void closeRevokedConnections() {
+        for (WebSocket conn : getConnections()) {
+            if (!stillAuthorized(conn)) {
+                closeUnauthorized(conn);
+            }
+        }
+    }
+
+    /** Como {@code broadcast}, pero solo a los sockets con sesion vigente; los demas se cierran en vez de recibir el mensaje. */
+    private void pushToAuthorized(String text) {
+        for (WebSocket conn : getConnections()) {
+            if (!stillAuthorized(conn)) {
+                closeUnauthorized(conn);
+                continue;
+            }
+            try {
+                conn.send(text);
+            } catch (RuntimeException e) {
+                // la conexion se cerro justo ahora: la libreria la saca de la lista
+            }
+        }
     }
 
     @Override
     public void onOpen(WebSocket conn, ClientHandshake handshake) {
         List<JsonObject> pending = new ArrayList<>();
-        for (Alert alert : alerts.listPending()) {
-            pending.add(AlertJson.toJson(alert, engine.evidenceOf(alert), engine::cameraName));
+        List<Alert> pendingAlerts = alerts.listPending();
+        // la evidencia de TODAS las pendientes en pocas consultas (antes: una por alerta) y cada nombre de camara una sola vez
+        java.util.Map<Long, com.safemode.presence.PresenceEventStore.StoredEvent> evidence = engine.evidenceOfAll(pendingAlerts);
+        java.util.function.IntFunction<String> names = AlertJson.memoize(engine::cameraName);
+        for (Alert alert : pendingAlerts) {
+            pending.add(AlertJson.toJson(alert, java.util.Optional.ofNullable(evidence.get(alert.eventId())), names));
         }
         conn.send(AlertJson.snapshot(pending, engine.cameraNames()).toString());
     }
 
     @Override
     public void onMessage(WebSocket conn, String message) {
+        if (!stillAuthorized(conn)) {
+            closeUnauthorized(conn); // sesion terminada: ni se lee el comando
+            return;
+        }
         try {
             JsonObject request = JsonParser.parseString(message).getAsJsonObject();
             if ("ack".equals(request.get("action").getAsString())) {
@@ -162,42 +231,106 @@ public class AlertGateway extends WebSocketServer {
         System.err.println("[GATEWAY] Error de WebSocket: " + ex.getMessage());
     }
 
+    /** Alerta nueva: la anuncia a los operadores de esta replica, salvo que ya lo haya hecho (la vea el motor o el barrido). */
     private void publishNew(Alert alert) {
-        broadcastAlert("alert", alert);
-        engine.evidenceOf(alert).ifPresent(e ->
-                deliveryLatency.record(Duration.between(e.occurredAt(), Instant.now())));
+        if (announce("alert", alert, true)) {
+            engine.evidenceOf(alert).ifPresent(e ->
+                    deliveryLatency.record(Duration.between(e.occurredAt(), Instant.now())));
+        }
     }
 
     private void broadcastAlert(String type, Alert alert) {
+        announce(type, alert, false);
+    }
+
+    /**
+     * Registra y empuja el JSON de la alerta. Con {@code onlyIfUnseen} no hace nada si esta replica ya la anuncio: el motor
+     * propio y el barrido de alertas de otras replicas pueden llegar a la misma alerta, y el operador debe recibirla una vez.
+     */
+    private boolean announce(String type, Alert alert, boolean onlyIfUnseen) {
+        if (onlyIfUnseen) {   // lo barato PRIMERO: el barrido revisa 20 alertas cada 0,5 s y casi todas ya se conocen (no hace falta construir su JSON)
+            synchronized (lastSent) {
+                if (lastSent.containsKey(alert.id())) {
+                    return false;
+                }
+            }
+        }
         JsonObject json = AlertJson.toJson(alert, engine.evidenceOf(alert), engine::cameraName);
         synchronized (lastSent) {
+            if (onlyIfUnseen && lastSent.containsKey(alert.id())) {
+                return false;
+            }
             lastSent.put(alert.id(), json.toString());
             if (lastSent.size() > RECENT_ALERTS_TRACKED) {
                 lastSent.remove(lastSent.keySet().iterator().next());
             }
         }
-        broadcast(AlertJson.envelope(type, json).toString());
+        pushToAuthorized(AlertJson.envelope(type, json).toString());
         wsSent.increment(getConnections().size());
+        return true;
+    }
+
+    /**
+     * Al arrancar, las alertas recientes que ya existen quedan como "ya conocidas": van en el snapshot de quien se conecta, no
+     * se reenvian como nuevas, y si luego cambian (llega la descripcion por IA, otro operador la revisa) se empuja un update.
+     */
+    private void seedAlreadyKnownAlerts() {
+        try {
+            List<Alert> recent = alerts.listRecent(RECENT_ALERTS_TRACKED);
+            java.util.Map<Long, com.safemode.presence.PresenceEventStore.StoredEvent> evidence = engine.evidenceOfAll(recent);
+            java.util.function.IntFunction<String> names = AlertJson.memoize(engine::cameraName);
+            for (int i = recent.size() - 1; i >= 0; i--) {   // de la mas vieja a la mas nueva, como si se hubieran anunciado en orden
+                Alert alert = recent.get(i);
+                String json = AlertJson.toJson(alert, java.util.Optional.ofNullable(evidence.get(alert.eventId())), names).toString();
+                synchronized (lastSent) {
+                    lastSent.putIfAbsent(alert.id(), json);
+                }
+            }
+        } catch (RuntimeException e) {
+            System.err.println("[GATEWAY] No se pudieron leer las alertas recientes al arrancar: " + e.getMessage());
+        }
+    }
+
+    /** Anuncia las alertas recientes de la base que esta replica todavia no conoce (las creo otra replica). */
+    void announceAlertsFromOtherReplicas() {
+        try {
+            List<Alert> newest = alerts.listRecent(NEW_ALERT_SCAN);
+            for (int i = newest.size() - 1; i >= 0; i--) {   // en orden de creacion
+                publishNew(newest.get(i));
+            }
+        } catch (RuntimeException e) {
+            System.err.println("[GATEWAY] No se pudo revisar si hay alertas de otras replicas: " + e.getMessage());
+        }
     }
 
     /** Reenvia las alertas recientes cuya evidencia cambio (por ejemplo cuando llega la descripcion por IA). */
     void refreshRecent() {
         try {
-            List<Long> ids;
+            java.util.Set<Long> tracked;
             synchronized (lastSent) {
-                ids = new ArrayList<>(lastSent.keySet());
+                tracked = new java.util.HashSet<>(lastSent.keySet());
             }
-            for (long id : ids) {
-                alerts.findById(id).ifPresent(alert -> {
-                    String current = AlertJson.toJson(alert, engine.evidenceOf(alert), engine::cameraName).toString();
-                    boolean changed;
-                    synchronized (lastSent) {
-                        changed = !current.equals(lastSent.get(id));
-                    }
-                    if (changed) {
-                        broadcastAlert("update", alert);
-                    }
-                });
+            if (tracked.isEmpty()) {
+                return;
+            }
+            // el estado actual de las alertas seguidas en UNA consulta (antes: una por alerta) y su evidencia en otra
+            List<Alert> current = new ArrayList<>();
+            for (Alert alert : alerts.listRecent(RECENT_ALERTS_TRACKED)) {
+                if (tracked.contains(alert.id())) {
+                    current.add(alert);
+                }
+            }
+            java.util.Map<Long, com.safemode.presence.PresenceEventStore.StoredEvent> evidence = engine.evidenceOfAll(current);
+            java.util.function.IntFunction<String> names = AlertJson.memoize(engine::cameraName);
+            for (Alert alert : current) {
+                String now = AlertJson.toJson(alert, java.util.Optional.ofNullable(evidence.get(alert.eventId())), names).toString();
+                boolean changed;
+                synchronized (lastSent) {
+                    changed = !now.equals(lastSent.get(alert.id()));
+                }
+                if (changed) {
+                    broadcastAlert("update", alert);
+                }
             }
         } catch (RuntimeException e) {
             System.err.println("[GATEWAY] No se pudieron refrescar las alertas: " + e.getMessage());
@@ -206,7 +339,7 @@ public class AlertGateway extends WebSocketServer {
 
     /** Avisa a todos los paneles de los nombres vigentes de las camaras (tras renombrar una). */
     public void broadcastCameras() {
-        broadcast(AlertJson.camerasMessage(engine.cameraNames()).toString());
+        pushToAuthorized(AlertJson.camerasMessage(engine.cameraNames()).toString());
         // las alertas ya enviadas llevan el nombre viejo: se reenvian para que el panel las muestre con el nuevo
         refreshRecent();
     }

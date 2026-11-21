@@ -1,0 +1,67 @@
+﻿Validacion del escalado horizontal del gateway - 2026-11-19 22:43:16
+commit base: 0c4df2c (con cambios sin commitear: 17 archivos)   Caddy: caddy:2.8-alpine   PostgreSQL: 16.6   Java: java version "26.0.1" 2026-04-21
+Arranque en frio de las dos replicas a la vez, antes de las pruebas: /safemode-escalado-realtime-gateway-1 reinicios=0; /safemode-escalado-realtime-gateway-2 reinicios=0
+Entorno: Docker Desktop en UN solo equipo (16 CPU logicas); las dos replicas comparten host: esto valida el COMPORTAMIENTO, no la separacion fisica.
+
+== 1. Reparto y sesiones compartidas (la cookie se creo UNA sola vez, en la base; las dos replicas la deben reconocer)
+   30 peticiones con sesion -> {replica-1=15, replica-2=15}
+  [OK]    1a. las 30 peticiones con sesion valida responden 200 sin importar la replica -> 30/30
+  [OK]    1b. el balanceador reparte entre las dos replicas -> {replica-1=15, replica-2=15}
+  [OK]    1c. sin cookie o con cookie inventada responde 401 (las dos replicas) -> 10/10
+
+== 2. Operadores conectados por el WebSocket del balanceador
+   sockets abiertos por replica (metrica safemode_ws_sessions): replica-1=3 replica-2=3
+  [OK]    2a. los 6 operadores se conectan y reciben su snapshot -> 6/6
+  [OK]    2b. los sockets quedan repartidos entre las dos replicas -> replica-1=3 replica-2=3
+
+== 3. Una alerta nueva llega a todos los operadores, de cualquier replica, una sola vez
+   latencia desde antes de lanzar el INSERT (incluye ~0,3 s del 'docker exec'): [op1=0.23 s, op2=0.42 s, op3=0.23 s, op4=0.42 s, op5=0.42 s, op6=0.23 s]
+  [OK]    3a. los 6 operadores reciben la alerta nueva -> alerta #1
+  [OK]    3b. cada operador la recibe exactamente una vez y es la misma alerta -> sin duplicados
+  [OK]    3c. llega a todos en menos de 5 s (el requisito del proyecto) -> el primero 0.23 s, el ultimo 0.42 s
+
+== 4. Cae la replica 1 de golpe (docker kill = SIGKILL, sin cierre ordenado)
+   replica 1 caida; operadores conectados a ella: 3
+   operadores desconectados por la caida: 3; el que mas tardo en volver: 2.07 s (incluye la espera de 2 s del panel)
+   la alerta creada durante la caida: 3 operadores la recibieron en vivo, 3 la vieron en el snapshot al reconectar
+  [OK]    4a. los operadores de la replica caida se reconectan solos por el balanceador -> 3 desconectados de 3; el mas lento tardo 2.07 s
+  [OK]    4b. la alerta creada durante la caida no se pierde: la ven los 6 operadores, ninguno la recibe duplicada -> en vivo 3, por snapshot 3
+   la replica se arranca a mano (con docker kill, Docker lo trata como una parada manual y NO la reinicia)
+  [OK]    4d. el balanceador reincorpora a la replica solo (vuelve a atender trafico) -> atiende de nuevo 8.25 s despues de la caida
+
+== 5. La replica 2 termina sola (SIGTERM interno) y Docker la reinicia (restart: unless-stopped)
+   replica 2 caida; operadores conectados a ella: 6
+   operadores desconectados por la caida: 6; el que mas tardo en volver: 2.06 s (incluye la espera de 2 s del panel)
+   la alerta creada durante la caida: 0 operadores la recibieron en vivo, 6 la vieron en el snapshot al reconectar
+  [OK]    5a. los operadores de la replica caida se reconectan solos por el balanceador -> 6 desconectados de 6; el mas lento tardo 2.06 s
+  [OK]    5b. la alerta creada durante la caida no se pierde: la ven los 6 operadores, ninguno la recibe duplicada -> en vivo 0, por snapshot 6
+  [OK]    5c. Docker reinicia la replica sin intervencion (restart: unless-stopped) -> reinicios 0 -> 1; en marcha 4.88 s tras la caida
+  [OK]    5d. el balanceador reincorpora a la replica solo (vuelve a atender trafico) -> atiende de nuevo 5.17 s despues de la caida
+
+== 6. Disponibilidad observada durante los dos fallos (trafico continuo de 4 usuarios, uno cada 50 ms)
+   555 peticiones, 555 respondieron 200, 0 fallaron -> 100.000 %
+   latencia p50 45 ms, p99 250 ms, la mas lenta 0.25 s
+  [OK]    6a. ninguna peticion HTTP fallo durante los dos fallos de replica -> 0 fallos de 555 (100.000 %)
+  [OK]    6b. la peticion mas lenta quedo por debajo del tiempo limite del cliente (3 s) -> la mas lenta 0.25 s
+
+== Resumen
+  OK      1a. las 30 peticiones con sesion valida responden 200 sin importar la replica
+  OK      1b. el balanceador reparte entre las dos replicas
+  OK      1c. sin cookie o con cookie inventada responde 401 (las dos replicas)
+  OK      2a. los 6 operadores se conectan y reciben su snapshot
+  OK      2b. los sockets quedan repartidos entre las dos replicas
+  OK      3a. los 6 operadores reciben la alerta nueva
+  OK      3b. cada operador la recibe exactamente una vez y es la misma alerta
+  OK      3c. llega a todos en menos de 5 s (el requisito del proyecto)
+  OK      4a. los operadores de la replica caida se reconectan solos por el balanceador
+  OK      4b. la alerta creada durante la caida no se pierde: la ven los 6 operadores, ninguno la recibe duplicada
+  OK      4d. el balanceador reincorpora a la replica solo (vuelve a atender trafico)
+  OK      5a. los operadores de la replica caida se reconectan solos por el balanceador
+  OK      5b. la alerta creada durante la caida no se pierde: la ven los 6 operadores, ninguno la recibe duplicada
+  OK      5c. Docker reinicia la replica sin intervencion (restart: unless-stopped)
+  OK      5d. el balanceador reincorpora a la replica solo (vuelve a atender trafico)
+  OK      6a. ninguna peticion HTTP fallo durante los dos fallos de replica
+  OK      6b. la peticion mas lenta quedo por debajo del tiempo limite del cliente (3 s)
+RESULTADO: OK (17/17)
+
+Lineas de error/aviso en los registros de las replicas durante la prueba: 0

@@ -1,0 +1,46 @@
+# Balanceador del prototipo de escalado (docker-compose.escalado.yml). Dos replicas del gateway; cada una atiende todo:
+#   :8080 = pagina del panel y API HTTP, :8090 = WebSocket de alertas (el gateway los sirve desde puertos distintos).
+{
+	auto_https off
+	admin off
+}
+
+(replicas) {
+	# Cada replica por el nombre que Compose da a su contenedor (proyecto safemode-escalado). Para una tercera, anadirla aqui.
+	reverse_proxy safemode-escalado-realtime-gateway-1:{args[0]} safemode-escalado-realtime-gateway-2:{args[0]} {
+		# Sin afinidad de sesion: las sesiones viven en la base, cualquier replica sirve a cualquier operador.
+		lb_policy round_robin
+
+		# Vigilancia activa: /ready del gateway (puerto 9464) responde 200 solo si la replica llega a la base de datos.
+		health_uri /ready
+		health_port 9464
+		health_interval 2s
+		health_timeout 1s
+		health_status 2xx
+
+		# Vigilancia pasiva: una replica que falla al conectar sale de la rotacion al primer fallo y se vuelve a probar a los 5 s.
+		# (No usar unhealthy_request_count: cuenta las peticiones SIMULTANEAS y cada WebSocket abierto cuenta como una.)
+		fail_duration 5s
+		max_fails 1
+
+		# Una replica caida no contesta ni rechaza (su red desaparece): se la descarta al segundo en vez de esperar el tiempo por defecto.
+		transport http {
+			dial_timeout 1s
+		}
+
+		# Si la replica elegida no contesta, se reintenta en la otra durante 5 s antes de dar error al cliente.
+		lb_try_duration 5s
+		lb_try_interval 200ms
+
+		# Para las pruebas: que replica atendio la peticion
+		header_down X-Served-By {http.reverse_proxy.upstream.hostport}
+	}
+}
+
+:8080 {
+	import replicas 8080
+}
+
+:8090 {
+	import replicas 8090
+}

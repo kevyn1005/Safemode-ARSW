@@ -20,6 +20,21 @@ final class AlertJson {
 
     private AlertJson() {}
 
+    /**
+     * Recuerda el resultado de {@code lookup} dentro de UNA operacion (un reporte, un snapshot, una pasada de refresco). Sin esto el nombre de la
+     * camara se pedia a la base una vez por fila: /report hacia ~200 consultas por peticion, todas por la misma conexion, y con 20 operadores su
+     * P95 era de casi 2 s. No es seguro entre hilos a proposito: cada operacion crea la suya.
+     */
+    static IntFunction<String> memoize(IntFunction<String> lookup) {
+        Map<Integer, String> seen = new java.util.HashMap<>();
+        return id -> {
+            if (!seen.containsKey(id)) {
+                seen.put(id, lookup.apply(id));
+            }
+            return seen.get(id);
+        };
+    }
+
     static JsonObject toJson(Alert alert, Optional<StoredEvent> evidence) {
         return toJson(alert, evidence, id -> "CAM " + id);
     }

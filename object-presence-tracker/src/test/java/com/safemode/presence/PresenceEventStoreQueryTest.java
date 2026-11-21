@@ -137,6 +137,35 @@ class PresenceEventStoreQueryTest {
     }
 
     @Test
+    void findByIdsTraeVariosEventosYOmiteLosQueNoExisten() {
+        try (PresenceEventStore store = newStore()) {
+            Instant now = Instant.now();
+            long first = store.recordRegistered(1, "backpack", 10, 20, 30, 40, now, "a.png", null);
+            long second = store.recordRemoved(1, "handbag", 10, 20, 30, 40, now, false, "b.png", null,
+                    new RemovalInfo("BY_OWNER", 1L, null, null));
+
+            java.util.Map<Long, StoredEvent> found = store.findByIds(List.of(first, second, 99999L, first));
+
+            assertEquals(java.util.Set.of(first, second), found.keySet(), "el inexistente no aparece y el repetido se cuenta una vez");
+            assertEquals("backpack", found.get(first).className());
+            assertEquals("handbag", found.get(second).className());
+            assertEquals(store.findById(second).orElseThrow(), found.get(second), "es el mismo evento que devuelve findById");
+            assertTrue(store.findByIds(List.of()).isEmpty());
+        }
+    }
+
+    @Test
+    void findByIdsPartePedidosGrandesEnBloquesSinPerderNingunEvento() {
+        try (PresenceEventStore store = newStore()) {
+            List<Long> ids = new java.util.ArrayList<>();
+            for (int i = 0; i < 1100; i++) {   // mas de dos bloques de 500
+                ids.add(store.recordRegistered(i, "backpack", 1, 2, 3, 4, Instant.now(), null, null));
+            }
+            assertEquals(1100, store.findByIds(ids).size());
+        }
+    }
+
+    @Test
     void maxEventIdEsCeroSinEventosYSeReiniciaAlVaciar() {
         try (PresenceEventStore store = newStore()) {
             assertEquals(0, store.maxEventId());

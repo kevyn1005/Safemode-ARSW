@@ -44,6 +44,23 @@ class OperatorIdTest {
     }
 
     @Test
+    void recortaLosSeparadoresSoloDondeCorresponde() {
+        assertEquals("a", AccessRepository.operatorIdFor("__a--@x.com", 1), "guiones bajos al principio y guiones al final se quitan");
+        assertEquals("a_", AccessRepository.operatorIdFor("a_@x.com", 1), "un guion bajo al final se conserva");
+        assertEquals("a---b", AccessRepository.operatorIdFor("a---b@x.com", 1), "los guiones del medio no se tocan");
+        assertEquals("a-b", AccessRepository.operatorIdFor("a..b@x.com", 1), "lo que no es letra ni digito se vuelve un guion");
+        assertEquals("operador", AccessRepository.operatorIdFor("-_-@x.com", 1));
+    }
+
+    @Test
+    void unaRachaLargaDeGuionesNoCuestaTiempoNiDejaGuionesAlFinal() {
+        assertEquals("a", AccessRepository.operatorIdFor("a" + "-".repeat(100) + "b@x.com", 1), "se acorta a 30 y se quitan los guiones que quedan al final");
+        long inicio = System.nanoTime();
+        AccessRepository.operatorIdFor("a" + "-".repeat(200_000) + "b@x.com", 1);
+        assertTrue((System.nanoTime() - inicio) / 1_000_000 < 2_000, "una racha enorme de guiones debe resolverse en tiempo lineal");
+    }
+
+    @Test
     void elIdSeAcortaA30Caracteres() {
         assertEquals(30, AccessRepository.operatorIdFor("a".repeat(80) + "@x.com", 1).length());
     }

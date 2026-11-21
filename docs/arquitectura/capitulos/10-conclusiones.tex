@@ -1,0 +1,73 @@
+\chapter{Conclusiones y recomendaciones}
+
+\section{Logros}
+\begin{itemize}
+  \item \textbf{La promesa de valor funciona de punta a punta}: del retiro de un objeto al aviso en el panel en un promedio de 0,5~s (P95 de
+  0,9~s) frente a la meta de 5~s, con evidencia (fotos, fecha, hora y cámara), para una o dos cámaras, con detección local y sin guardar video.
+  \item \textbf{Se pasó de un prototipo local a un sistema desplegado, seguro y observable}: inicio de sesión con Google que protege toda la
+  superficie, tres escenarios de seguridad aprobados con validación ejecutable, un despliegue en AWS detrás de TLS y un tablero con reglas de alerta.
+  \item \textbf{Cada atributo de calidad se midió y se corrigió con base en la medición}: el cuello de botella real del gateway (consultas
+  repetidas por una conexión única) se encontró con k6, se corrigió y la mejora se midió (de 34--48 a 570--678 solicitudes/s; de 25 a 217
+  solicitudes/s de promedio en el pico).
+  \item \textbf{Calidad automatizada}: pipeline con \emph{reusable workflows}, 479 pruebas Java y 144 de Node, cobertura 81,8\,\% y 99,3\,\%,
+  y las tres calificaciones de Sonar en A con el control de calidad en verde.
+  \item \textbf{Consistencia entre código, diagramas y documentos}: 13 vistas ArchiMate verificadas contra el código y informes reproducibles
+  por atributo.
+\end{itemize}
+
+\section{Impacto arquitectónico del diseño}
+Tres decisiones moldearon el sistema y explican la mayoría de sus resultados. (1) \textbf{El gateway sin estado}: al sacar de la memoria las
+sesiones y las alertas pendientes (a la base compartida), la capa que escala por operadores se volvió replicable sin tocar su lógica
+(ADR~0006) y toleró la caída de una réplica sin fallos medidos. (2) \textbf{Cada motor de datos por lo que garantiza} (ADR~0005): lo que debe
+ser siempre correcto (permisos, eventos, alertas) en PostgreSQL con restricciones; la configuración compartida como un documento versionado
+en MongoDB; lo efímero en Redis, y la caché que muestra pero no autoriza. (3) \textbf{Interfaces en los puntos de variación}: fuente de
+fotogramas, almacén de sesiones, verificador de tokens y canal de avisos permitieron cambiar una implementación sin reescribir al cliente.
+
+\section{Riesgos y limitaciones}
+\begin{table}[H]
+\centering\small
+\caption{Riesgos y limitaciones conocidos al cierre del Release 2.}\label{tab:riesgos}
+\begin{tabularx}{\textwidth}{lYl}
+\toprule
+\textbf{Riesgo o límite} & \textbf{Efecto y mitigación} & \textbf{Estado} \\
+\midrule
+Despliegue público de un solo servidor & Si cae, cae todo; el diseño distribuido está calculado (99,5\,\% $\rightarrow$ 99,9375\,\%) y el prototipo de dos réplicas validado & Abierto \\
+Entrega de alertas con muchos operadores & Con 100 operadores o más la entrega pasa de 5~s aunque HTTP esté sano; se recomienda acotar el \emph{snapshot} y usar un pool de conexiones & Abierto \\
+Tracker como punto único de detección & Reinicio automático; ningún SLA de la nube lo cubre (corre por cámara, en el borde) & Abierto \\
+Falsa alarma del dueño que sale y vuelve & Baja a «posible dueño que volvió» (media), sin silenciar; un ladrón vestido parecido saldría en media & Mitigado, residual declarado \\
+Resultados de rendimiento de un solo equipo & El generador comparte CPU con el sistema; cifras relativas (antes/después), no la capacidad de la EC2 & Declarado \\
+Seguridad: cookie sin \cod{Secure}, credenciales de laboratorio, sin auditoría de acciones & Brechas del documento de escenarios & Abierto \\
+Privacidad con IA externa & El recorte con la cara sale a un tercero; opcional y declarado; decisión del equipo & Controlado \\
+Pruebas contra las bases reales fuera del pipeline & Los adaptadores a PostgreSQL, MongoDB y Redis solo se prueban con el stack levantado & Abierto \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Mejora continua}
+En orden de efecto esperado: (1) \textbf{pool de conexiones} y una conexión aparte para el motor de alertas, y \textbf{acotar el snapshot}
+(las últimas \emph{N} pendientes) y paginar o comprimir \cod{/report}; (2) \textbf{desplegar el diseño distribuido} (balanceador y base
+administrada en dos zonas) y repetir las pruebas con el generador en otra máquina; (3) \textbf{completar los pendientes del producto}: aviso por
+correo, preferencias por usuario, retención de fotos y la prueba con dos cámaras reales; (4) cerrar las brechas de seguridad (cookie \cod{Secure},
+auditoría, verificar el token con las claves públicas de Google y \cod{nonce}); (5) correr las pruebas contra las bases reales en el pipeline con
+contenedores de servicio y la corrida en SonarCloud.
+
+\section{Resultados de rendimiento, disponibilidad y observabilidad}
+\begin{table}[H]
+\centering\small
+\caption{Resumen de resultados medidos.}\label{tab:resumen}
+\begin{tabularx}{\textwidth}{lY}
+\toprule
+\textbf{Atributo} & \textbf{Resultado} \\
+\midrule
+Tiempo real & Evento $\rightarrow$ panel: media 0,5~s, P95 0,9~s (meta: $<$ 5~s) \\
+Rendimiento (carga, 20 operadores) & P95 de 726~ms a \textbf{48~ms}; 9 de 9 umbrales; 48 req/s (2\,882 TPM) \\
+Rendimiento (pico, 20 $\rightarrow$ 300) & 25 $\rightarrow$ \textbf{217} req/s; P95 de 10,3~s a \textbf{0,6~s}; recuperación en segundos \\
+Rendimiento (estrés, hasta 600) & Meseta de 34--48 a \textbf{570--678} req/s; límite actual: la entrega de alertas ($>$ 5~s desde 100 operadores) \\
+Disponibilidad (prototipo) & 0 de 555 peticiones fallidas al matar una réplica; reconexión $\leq$ 2,1~s; réplica de vuelta en $\approx$ 5~s \\
+Disponibilidad (cálculo) & 99,5\,\% hoy $\rightarrow$ 99,9375\,\% con el diseño distribuido (de 3,6~h a 27~min de caída al mes) \\
+Seguridad & 3 escenarios aprobados; 35 pruebas (ES-1), pruebas de ES-2 y 12 de 12 comprobaciones (ES-3) \\
+Mantenibilidad & Cobertura 81,8\,\% (backend) y 99,3\,\% (panel); Sonar A, A, A y control de calidad verde \\
+Observabilidad & 8 reglas de alerta; se dispararon las de latencia y entrega; k6 y gateway en el mismo tablero \\
+\bottomrule
+\end{tabularx}
+\end{table}

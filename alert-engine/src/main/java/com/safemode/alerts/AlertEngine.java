@@ -83,6 +83,11 @@ public class AlertEngine implements AutoCloseable {
         return events.findById(alert.eventId());
     }
 
+    /** La evidencia de varias alertas en pocas consultas (no una por alerta): id del evento -> evento. */
+    public java.util.Map<Long, StoredEvent> evidenceOfAll(java.util.Collection<Alert> alerts) {
+        return events.findByIds(alerts.stream().map(Alert::eventId).toList());
+    }
+
     /** Los ultimos eventos de presencia (registros y retiros), del mas nuevo al mas viejo: el reporte del panel. */
     public List<StoredEvent> recentEvents(int limit) {
         return events.findRecent(limit);

@@ -1809,6 +1809,7 @@
 <script src="report.js"></script>
 <script src="browser-notifications.js"></script>
 <script src="puesto-sync.js"></script>
+<script src="realtime-session.js"></script>
 <!-- ============ Lógica JavaScript de Interacción y WebSockets ============ -->
 <script>
   (function () {
@@ -2362,6 +2363,16 @@
       render();
       window.dispatchEvent(new Event('safemode:logout'));
     }
+    // La sesion termino por su cuenta (vencio a las 12 h o se reinicio el gateway): como un logout, pero el servidor ya la olvido.
+    function sessionExpired() {
+      state.operator = null;
+      state.alerts = [];
+      if (ws) ws.close();
+      render();
+      window.dispatchEvent(new Event('safemode:logout'));
+      openLogin();
+      showLoginError('Tu sesión venció. Inicia sesión de nuevo.');
+    }
     $('authBtn').addEventListener('click', function () { if (state.operator) logout(); else openLogin(); });
     $('lockedLogin').addEventListener('click', openLogin);
     $('loginClose').addEventListener('click', function () { loginDialog.close(); });
@@ -2378,12 +2389,13 @@
        ========================================================= */
 
     var ws = null;
-    var WS_URL = new URLSearchParams(location.search).get('ws') ||
-            ((location.protocol === 'https:' ? 'wss://' : 'ws://') + (location.hostname || 'localhost') + (location.protocol === 'https:' ? '/ws' : ':8090'));
+    // Siempre el gateway que entrego esta pagina: ningun parametro de la URL (antes ?ws=) puede cambiar el destino. Por HTTPS va por /ws
+    // (proxy Caddy del despliegue en AWS) y por HTTP al puerto 8090; ver realtime-session.js
+    var WS_URL = RealtimeSession.socketUrl(location);
 
     function fmtTime(iso) {
       var d = new Date(iso);
-      if (isNaN(d)) return String(iso || '');
+      if (Number.isNaN(d.getTime())) return String(iso || '');
       return pad(d.getDate()) + '-' + pad(d.getMonth() + 1) + '-' + d.getFullYear() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
     }
     function aiPending(photo, desc, ai, createdAt) {
@@ -2424,7 +2436,16 @@
         } else { return; }
         render();
       };
-      ws.onclose = function () { setConn(false); ws = null; if (state.operator) setTimeout(connect, 2000); };
+      ws.onclose = function () {
+        setConn(false); ws = null;
+        if (!state.operator) return;
+        // El gateway cierra el socket cuando la sesion termina y rechaza los intentos nuevos: antes de reintentar se pregunta si
+        // la sesion sigue viva; si no, se pide iniciar sesion en vez de reintentar para siempre sin decir nada.
+        RealtimeSession.decideAfterClose(function (u, o) { return fetch(u, o); }).then(function (what) {
+          if (!state.operator) return;   // el operador cerro sesion mientras tanto
+          if (what === 'expired') sessionExpired(); else setTimeout(connect, RealtimeSession.RETRY_MS);
+        });
+      };
       ws.onerror = function () { ws.close(); };
     }
         if (DEMO) {

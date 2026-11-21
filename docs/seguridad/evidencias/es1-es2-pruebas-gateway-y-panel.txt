@@ -1,0 +1,15 @@
+﻿Evidencia de pruebas de seguridad (ES-1 y ES-2) - 2026-11-19 04:22:12
+commit base: 4848d3e   JDK: java version "26.0.1" 2026-04-21
+comando: mvn -o -pl realtime-gateway -am test -Dtest=DashboardHttpServerAuthTest,AuthServiceTest,PuestoRoutesTest,DashboardHttpServerTest,AlertGatewayTest,AuditLeadWebSocketSessionTest,AuditLeadHttpDispatcherTest -Dsurefire.failIfNoSpecifiedTests=false
+
+AlertGatewayTest                   pruebas  11  fallas 0  errores 0  omitidas 0
+AuditLeadHttpDispatcherTest        pruebas   5  fallas 0  errores 0  omitidas 0
+AuditLeadWebSocketSessionTest      pruebas   8  fallas 0  errores 0  omitidas 0
+AuthServiceTest                    pruebas   5  fallas 0  errores 0  omitidas 0
+DashboardHttpServerAuthTest        pruebas  10  fallas 0  errores 0  omitidas 0
+DashboardHttpServerTest            pruebas  34  fallas 0  errores 0  omitidas 0
+PuestoRoutesTest                   pruebas  12  fallas 0  errores 0  omitidas 0
+
+TOTAL Java: Tests run: 85, Failures: 0, Errors: 0, Skipped: 0
+resultado Maven: BUILD SUCCESS
+panel (Node, realtime-session.test.js): tests 6 | pass 6 | fail 0

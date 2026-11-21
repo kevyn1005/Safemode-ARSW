@@ -24,8 +24,9 @@ final class ReportJson {
 
     static JsonObject toJson(List<StoredEvent> events, IntFunction<String> cameraName) {
         JsonArray rows = new JsonArray();
+        IntFunction<String> names = AlertJson.memoize(cameraName);   // una consulta por camara, no una por fila
         for (StoredEvent event : events) {
-            rows.add(row(event, cameraName));
+            rows.add(row(event, names));
         }
         JsonObject report = new JsonObject();
         report.add("events", rows);

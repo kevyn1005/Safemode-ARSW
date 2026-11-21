@@ -1,0 +1,67 @@
+\chapter{Seguridad del sistema}\label{chap:seguridad}
+
+\section{Autenticación y autorización}
+\textbf{Autenticación.} El operador entra con su cuenta de Google (OpenID Connect). El navegador entrega el ID token; el servidor lo verifica
+preguntándole a Google (endpoint \cod{tokeninfo}) y comprueba emisor, audiencia (el ID de cliente del proyecto), vigencia y correo verificado.
+Nunca se guardan contraseñas: las maneja Google.
+
+\textbf{Autorización.} Solo entra quien está en la lista blanca de correos (\cod{SAFEMODE_ALLOWED_EMAILS}); una cuenta válida pero ajena recibe
+403 y ninguna cookie. Los roles (administrador, operador, lector) y el permiso de configurar viven en el servicio de acceso (PostgreSQL, con
+auditoría de concesiones y revocaciones); toda escritura del puesto pregunta a esa autoridad en el momento y, si no responde, se deniega.
+
+\textbf{Sesión.} Un identificador aleatorio de 256 bits va en una cookie \cod{HttpOnly} y \cod{SameSite=Strict} de 12~h; el servidor
+conserva solo su huella SHA-256 (memoria o base), de modo que ni un volcado de la base permite reutilizarla, y es opaca: no hay token firmado
+que robar tras cerrar sesión. La sesión protege toda la superficie: página, fotos, reporte, botones del tracker y el WebSocket, que además se
+cierra (código 1008) cuando su sesión termina.
+
+\section{Cifrado}
+El tráfico del despliegue público va cifrado con TLS: Caddy obtiene y renueva el certificado de Let's Encrypt y es la única entrada
+(el resto de los servicios se publican solo en \cod{127.0.0.1}). Las contraseñas y las claves no se guardan en el repositorio. Del cifrado en
+reposo: las fotos y las bases residen en volúmenes del servidor sin cifrado propio de la aplicación. \textbf{Brecha declarada:} la cookie
+de sesión no lleva el atributo \cod{Secure}.
+
+\section{Buenas prácticas}
+\begin{itemize}
+  \item \textbf{Secretos solo en variables de entorno}: ID de cliente de Google, lista de correos, token del bot de Telegram, clave de NVIDIA,
+  claves internas; el repositorio trae solo \cod{.env.example}. Los registros y los mensajes de error no llevan las claves.
+  \item \textbf{Fallar cerrado}: sin base de datos no hay sesión; sin autoridad no se guarda; un valor desconocido de la configuración impide arrancar.
+  \item \textbf{Validar toda entrada}: identificadores acotados, cuerpos limitados, rutas de fotos solo por nombre dentro de su carpeta, \cod{Origin} y
+  \cod{Host} exigidos a toda petición que cambia estado (CSRF y DNS \emph{rebinding}).
+  \item \textbf{Privacidad por diseño}: no se guarda video; los avisos externos son solo texto, sin fotos ni datos de personas; la descripción por IA
+  externa es opcional y está declarada.
+  \item \textbf{Revisión de seguridad} del código del gateway y del panel (solo lectura, perfil rápido): cinco pistas, cuatro reproducidas con
+  pruebas y corregidas; la quinta sigue abierta y solo importa en un equipo compartido.
+\end{itemize}
+
+\section{Evidencias de los tres escenarios aprobados}
+Los tres escenarios de seguridad fueron presentados al docente y \textbf{aprobados}. Cada uno trae un comando que comprueba su medida
+(\cod{docs/seguridad/escenarios-de-seguridad.md}).
+
+\begin{table}[H]
+\centering\small
+\caption{Escenarios de seguridad ES-1 a ES-3.}\label{tab:es}
+\begin{tabularx}{\textwidth}{lYYY}
+\toprule
+ & \textbf{ES-1 Autenticación y autorización} & \textbf{ES-2 Ataques web y ciclo de la sesión} & \textbf{ES-3 Integridad de \cod{/frames}} \\
+\midrule
+\textbf{Estímulo} & Persona sin cuenta o con una cuenta válida pero no autorizada intenta abrir panel, fotos, WebSocket o configuración &
+Página hostil abierta, enlace con \cod{?ws=}, conexión retenida o sesión que ya terminó &
+Atacante sin cuenta envía imágenes falsas al canal de frames \\
+\textbf{Tácticas} & Identificar, autenticar y autorizar actores; limitar acceso & Limitar acceso y exposición; revocar acceso; limitar el efecto de conexiones retenidas & Autenticar y limitar acceso en el proxy (\cod{forward_auth}) \\
+\textbf{Medida} & 100\,\% de rutas protegidas $\rightarrow$ 401 sin sesión; fuera de la lista $\rightarrow$ 403 sin cookie; 0 fotos sin sesión &
+0 cambios desde un origen ajeno; con una conexión retenida otro cliente se atiende en 5 a 288~ms; tras cerrar sesión, 0 alertas al socket abierto &
+100\,\% de conexiones sin sesión $\rightarrow$ 401; 0 frames de no autenticados llegan al detector \\
+\textbf{Evidencia} & 4 clases de prueba, 35 pruebas JUnit & 4 clases de prueba JUnit y pruebas del panel; verificación manual en Chrome & Script reproducible con Caddy y el receptor reales: 12 de 12 comprobaciones \\
+\textbf{Estado} & Implementado & Implementado & Implementado; falta redesplegar \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\textbf{Hallazgo que motivó ES-3.} El receptor de frames solo rechaza un \cod{Origin} \emph{presente} y distinto: un cliente que no lo manda, o
+lo falsifica, inyectaba imágenes, y el despliegue público publicaba \cod{/frames} sin autenticación. La corrección está en el proxy (Caddy
+pregunta al gateway antes de reenviar), y la misma regla protege Grafana, que ya no admite acceso anónimo.
+
+\textbf{Brechas conocidas} (declaradas en el documento de escenarios): la cookie sin \cod{Secure}; las credenciales de laboratorio de los
+archivos Compose, que deben sustituirse en el entorno desplegado; la ausencia de un registro de auditoría de quién reconoce una alerta o inicia
+la vigilancia; y la verificación del token por \cod{tokeninfo} en lugar de con las claves públicas de Google (mejora conocida, junto con el
+\cod{nonce}). La revisión de seguridad no es un análisis exhaustivo y su cobertura parcial está declarada.

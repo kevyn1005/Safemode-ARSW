@@ -44,3 +44,20 @@ ESTUDIAR.md
 
 # Respaldos que crea Archi al guardar
 *.archimate.bak
+
+# Cobertura y dependencias del panel (pruebas con c8/jsdom)
+security-dashboard/coverage/
+
+# LaTeX (docs/arquitectura y docs/articulo): solo se versionan los .tex, las figuras y el PDF
+docs/*/_vista/
+docs/*/*.aux
+docs/*/*.toc
+docs/*/*.lof
+docs/*/*.lot
+docs/*/*.out
+docs/*/*.fls
+docs/*/*.fdb_latexmk
+docs/*/*.synctex.gz
+docs/*/compilacion.txt
+docs/*/*.bbl
+docs/*/*.blg

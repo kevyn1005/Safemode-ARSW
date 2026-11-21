@@ -2,14 +2,21 @@ package com.safemode.gateway;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import io.micrometer.core.instrument.Timer;
 
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.time.Duration;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.nio.charset.StandardCharsets;
@@ -32,7 +39,19 @@ import java.util.Optional;
  */
 public class DashboardHttpServer {
 
+    // Auditoria de seguridad (pista 3): el HttpServer del JDK, sin executor, atiende TODO en un unico hilo y, por defecto, sin
+    // limites de tiempo; una conexion a medias, una descarga que nadie lee o una verificacion lenta de Google congelaban el
+    // panel entero. Ahora cada peticion corre en un pool y el JDK corta las que tardan demasiado (en segundos). Los limites
+    // son propiedades del sistema del propio JDK (se pueden cambiar con -D) y solo se leen al crear el PRIMER HttpServer de
+    // la JVM; GatewayRunner crea este antes que el de metricas.
+    private static final int WORKER_THREADS = 32;
+    static {
+        System.getProperties().putIfAbsent("sun.net.httpserver.maxReqTime", "30");   // recibir una peticion completa
+        System.getProperties().putIfAbsent("sun.net.httpserver.maxRspTime", "60");   // entregar una respuesta completa
+    }
+
     private final HttpServer server;
+    private final ExecutorService workers;
     private static final int MAX_BODY_BYTES = 2048;
     private static final int MAX_PUESTO_BODY_BYTES = 8192; // un puesto con 8 camaras y sus zonas pesa menos de 1 KB
     private static final int HISTORY_DEFAULT_LIMIT = 20;
@@ -71,6 +90,13 @@ public class DashboardHttpServer {
         this.dashboardDir = dashboardDir.toAbsolutePath().normalize();
         this.photosDir = photosDir.toAbsolutePath().normalize();
         this.server = HttpServer.create(new InetSocketAddress(host, port), 0);
+        AtomicInteger threadNumber = new AtomicInteger();
+        this.workers = Executors.newFixedThreadPool(WORKER_THREADS, runnable -> {
+            Thread thread = new Thread(runnable, "dashboard-http-" + threadNumber.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        });
+        server.setExecutor(workers);
         server.createContext("/", this::handle);
     }
 
@@ -112,9 +138,63 @@ public class DashboardHttpServer {
 
     public void stop() {
         server.stop(0);
+        workers.shutdownNow();
     }
 
+    /** Mide cada peticion (cuantas, cuanto tardan, con que resultado) y deja el trabajo de siempre en {@link #handleRequest}. */
     private void handle(HttpExchange exchange) throws IOException {
+        long started = System.nanoTime();
+        String route = routeLabel(exchange.getRequestURI().getPath());
+        try {
+            handleRequest(exchange);
+        } finally {
+            recordRequest(route, exchange.getResponseCode(), System.nanoTime() - started);
+        }
+    }
+
+    // Un temporizador por (ruta, clase de resultado); los intervalos del histograma son los de un panel interactivo.
+    private final ConcurrentHashMap<String, Timer> requestTimers = new ConcurrentHashMap<>();
+
+    private void recordRequest(String route, int status, long nanos) {
+        String statusClass = status < 100 ? "5xx" : (status / 100) + "xx";   // sin respuesta enviada = fallo del servidor
+        requestTimers.computeIfAbsent(route + '|' + statusClass, key -> Timer.builder("safemode.http.request")
+                .description("Peticiones HTTP del panel: duracion por ruta y clase de resultado")
+                .tags("route", route, "status", statusClass)
+                .serviceLevelObjectives(Duration.ofMillis(50), Duration.ofMillis(100), Duration.ofMillis(250), Duration.ofMillis(500),
+                        Duration.ofSeconds(1), Duration.ofMillis(2500), Duration.ofSeconds(5))
+                .register(Observability.REGISTRY)).record(nanos, TimeUnit.NANOSECONDS);
+    }
+
+    /**
+     * Etiqueta de la ruta para las metricas. Pocas variantes a proposito: una ruta cualquiera (un escaner probando direcciones) cae
+     * en {@code estatico_otro} y no crea series nuevas en Prometheus.
+     */
+    static String routeLabel(String path) {
+        if (path.startsWith("/auth/")) {
+            return "auth";
+        }
+        if (path.startsWith("/tracker/")) {
+            return "tracker";
+        }
+        if (path.equals("/cameras") || path.startsWith("/cameras/")) {
+            return "cameras";
+        }
+        if (path.equals("/report")) {
+            return "report";
+        }
+        if (path.startsWith(AlertJson.PHOTO_PREFIX)) {
+            return "foto";
+        }
+        if (isPuestoPath(path)) {
+            return "puesto";
+        }
+        if (path.equals("/") || path.equals("/index.html")) {
+            return "pagina";
+        }
+        return "estatico_otro";
+    }
+
+    private void handleRequest(HttpExchange exchange) throws IOException {
         try {
             String path = exchange.getRequestURI().getPath();
             if (auth != null && path.startsWith("/auth/")) {
@@ -150,7 +230,7 @@ public class DashboardHttpServer {
                 serveFile(exchange, dashboardDir, "index.html");
             } else if (path.equals("/camera-share.js") || path.equals("/tracker-control.js")
                     || path.equals("/camera-zones.js") || path.equals("/camera-names.js") || path.equals("/report.js")
-                    || path.equals("/browser-notifications.js") || path.equals("/puesto-sync.js")
+                    || path.equals("/browser-notifications.js") || path.equals("/puesto-sync.js") || path.equals("/realtime-session.js")
                     || path.equals("/mosaico-prueba.html")) {
                 serveFile(exchange, dashboardDir, path.substring(1));
             } else if (path.startsWith(AlertJson.PHOTO_PREFIX)) {

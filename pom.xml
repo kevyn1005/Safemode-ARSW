@@ -21,6 +21,8 @@
             **/AlertLatencyBenchmark.java,
             **/DetectionBenchmark.java,
             **/GatewayRunner.java,
+            **/AccessServiceMain.java,
+            **/CollaborationMain.java,
             **/ObjectPresenceTrackerTest.java,
             **/FrameCapturerTest.java,
             **/ScreenCaptureTest.java,
@@ -52,6 +54,8 @@
                         <exclude>**/AlertLatencyBenchmark*.class</exclude>
                         <exclude>**/DetectionBenchmark*.class</exclude>
                         <exclude>**/GatewayRunner*.class</exclude>
+                        <exclude>**/AccessServiceMain*.class</exclude>
+                        <exclude>**/CollaborationMain*.class</exclude>
                         <exclude>**/ObjectPresenceTrackerTest*.class</exclude>
                         <exclude>**/FrameCapturerTest*.class</exclude>
                         <exclude>**/ScreenCaptureTest*.class</exclude>

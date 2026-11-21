@@ -1,0 +1,107 @@
+\chapter{Bitácora de ceremonias}
+
+Esta bitácora se reconstruye a partir de lo \textbf{verificable}: el historial de Git (175 commits, del 9 de septiembre al 20 de noviembre de 2026),
+el proyecto de Azure DevOps, el release plan, el backlog y los ADR. Los sprints son los \textbf{diez sprints semanales de Azure DevOps} (lunes a viernes,
+del 7 de septiembre al 20 de noviembre); el trabajo se asigna al sprint de la semana en que se hizo y, si cayó en fin de semana, al sprint de la semana
+siguiente. Las actas de las reuniones (planning, review y retrospectiva) no se versionan en el repositorio: lo que cada ceremonia produjo y dejó escrito
+sí está, y es lo que se enlaza a continuación.
+
+\section{Sprints, hitos y evidencia}
+\begin{table}[H]
+\centering\footnotesize
+\caption{Sprints 1 a 10 de Azure DevOps, con su incremento y la evidencia que lo respalda (los sprints 4 y 6 casi no tuvieron trabajo).}\label{tab:sprints}
+\begin{tabularx}{\textwidth}{lp{2.1cm}YY}
+\toprule
+\textbf{Sprint} & \textbf{Fechas} & \textbf{Incremento demostrable} & \textbf{Evidencia} \\
+\midrule
+\multicolumn{4}{l}{\textit{Release 1 del curso (sprints 1 a 5)}} \\
+1 & 7--12 sep & Estructura del repositorio (reactor Maven) y detección de personas y maletas en el video (HU-01, 02) & «Estructura inicial»; «Detección exitosa de maleta y persona» (10 sep); \cod{ObjectDetectorNmsTest} \\
+2 & 21--25 sep (desde el 19) & Registro de objetos en reposo con foto, retiro, dueño probable y tipo de retiro; alertas con evidencia y reglas de severidad; descripción por IA opcional; panel en tiempo real con WebSocket y alarma sonora (HU-03 a 11, 13 a 18, 35) & \cod{ObjectTrackerTest}, \cod{RemovalVerificationTest}, \cod{PersonDescriberTest}, \cod{AlertRulesTest}, \cod{AlertGatewayTest}; prueba con cámara real (25 sep) \\
+3 & 28 sep--2 oct & Back y front conectados con Docker (HU-36) & Commit del 1 oct: «Se conectó Back y Front… Ya funciona» \\
+4 & 5--9 oct & Sin commits en esta semana & --- \\
+5 & 12--16 oct (desde el 10) & Ventana compartida desde el navegador; dos cámaras con zonas; reporte; «dueño que volvió»; avisos por navegador y Telegram; \textbf{inicio de sesión con Google} (12 oct); pipeline de CI (13 oct); mediciones de rendimiento (HU-12, 19, 21 a 27, 29, 30, 33, 37, 38) & \cod{BrowserFrameSourceTest}, \cod{MultiCameraTest}, \cod{OwnerReturnTest}, \cod{ReportJsonTest}; ADR~0003 y~0004; mensaje recibido en Telegram \\
+\multicolumn{4}{l}{\textit{Release 2 del curso (sprints 6 a 10)}} \\
+6 & 19--23 oct & Ajuste de los tiempos de captura de fotogramas (17 oct) & Commit «Arreglos tiempos de frames» \\
+7 & 26--30 oct & \textbf{Observabilidad}: Micrometer, métricas por severidad y latencia evento-alerta, Prometheus y Grafana (R2-01) & Commits del 28 y 29 oct \\
+8 & 2--6 nov & Análisis estático con Sonar; inicio de la \textbf{persistencia}: PostgreSQL, servicios de acceso y de colaboración (R2-03) & ADR~0005; commits del 6 nov \\
+9 & 9--13 nov & Persistencia completa (reconexión, historial del puesto, un solo Prometheus y Grafana), tablero de Grafana del equipo con k6 por \emph{remote write}, nuevo modelo de visión y \textbf{despliegue en AWS} con Caddy y dominio (13 nov) (R2-04 a 06) & Evidencias numeradas 01 a 23; \cod{docs/despliegue/} \\
+10 & 16--20 nov & Despliegue por SSH (16 nov); \textbf{seguridad} ES-1 a ES-3; \textbf{disponibilidad y escalado}; \textbf{rendimiento} con k6; \textbf{mantenibilidad} con Sonar; este documento y el artículo (HU-34, R2-02, 07 a 21) & ADR~0006; informes de \cod{docs/}; 479 pruebas Java y 144 de Node \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\textbf{Evidencia en Azure DevOps.} Cada sprint tiene sus historias en \emph{Boards $\rightarrow$ Sprints}, con puntos, criterios de aceptación y la fecha real de
+su evidencia en la descripción. Los sprints 1 a 5 existían desde el inicio del proyecto con las historias HU-01 a HU-05; el resto se registró el 20 de
+noviembre de 2026 a partir del backlog y de Git, por eso los elementos llevan la etiqueta \cod{registrado-retroactivo} (véase la sección~\ref{sec:azure}).
+
+\section{Planning, Review y Retrospectivas}
+\begin{table}[H]
+\centering\small
+\caption{Lo que cada ceremonia dejó escrito en el repositorio.}\label{tab:ceremonias}
+\begin{tabularx}{\textwidth}{lYY}
+\toprule
+\textbf{Ceremonia} & \textbf{Artefacto que produjo} & \textbf{Dónde} \\
+\midrule
+Planning (qué entra al sprint) & Azure DevOps (épicas, features, historias y sprints); backlog con 38 HU en Gherkin, DoR y DoD, MoSCoW y story map; release plan por resultado de producto & Azure DevOps, \cod{docs/backlog.md}, \cod{docs/release-plan.md}, \cod{docs/azure-devops/} \\
+Decisiones de arquitectura & Seis ADR con alternativas, consecuencias y evidencia & \cod{docs/adr/} \\
+Review (qué se demostró) & Verificación con cámara real y navegador; pruebas automáticas por incremento; guía y rúbrica de la sustentación & \cod{docs/sustentacion.md}; evidencias de \cod{docs/persistencia/} \\
+Retrospectiva (qué se corrigió) & Cierre del feedback de la revisión interna, con decisión, evidencia y estado por observación & \cod{docs/sustentacion.md}, sección 5 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Lecciones aprendidas}
+Cada una salió de un hecho del proyecto, no de una recomendación general:
+
+\begin{enumerate}
+  \item \textbf{Medir antes de suponer.} «Menos de 5 segundos» nunca se había medido: \cod{AlertLatencyBenchmark} dio media 0,5~s y P95 0,9~s. Y las
+  pruebas de k6 mostraron que la CPU no era el límite: era una conexión única con consultas repetidas (de 34--48 a 570--678 req/s al corregirla).
+  \item \textbf{El análisis estático y las pruebas encuentran lo que el ojo no ve.} Medir la cobertura del panel destapó dos defectos reales;
+  Sonar encontró registros con arreglos que comparaban identidad. Y un arreglo sin prueba hizo fallar el control de calidad (el código nuevo cuenta).
+  \item \textbf{Los servicios externos mueren.} El modelo de visión de NVIDIA dejó de existir (HTTP 410) y la descripción del dueño salió vacía hasta
+  cambiarlo; por eso todo canal externo es opcional, en segundo plano y no frena la alerta.
+  \item \textbf{La caché puede mostrar, no autorizar.} El laboratorio de consistencia lo probó: con el permiso cacheado, una edición pasaba aunque la
+  autoridad estuviera caída; ahora se rechaza con 503.
+  \item \textbf{Declarar los límites sube la credibilidad.} El despliegue es de un solo servidor; la prueba con dos cámaras reales y el correo siguen
+  pendientes; los resultados de rendimiento son de un equipo con el generador incluido. Todo está dicho en el texto.
+  \item \textbf{El entorno también falla.} Windows suspendió el equipo en pleno estrés y dos corridas quedaron inválidas; el script ahora pide no
+  suspender y avisa si la prueba tardó de más.
+  \item \textbf{Los diagramas se verifican contra el código.} Las vistas del diseño inicial mostraban componentes que nunca existieron (un bus de
+  eventos, una base de alertas separada); se rehicieron desde el código.
+\end{enumerate}
+
+\section{Contribuciones individuales}\label{sec:contribuciones}
+La Tabla~\ref{tab:contribuciones} se obtiene de \cod{git log} y es verificable; el número de commits no mide el esfuerzo, y el trabajo de
+revisión, pruebas con cámara real y decisiones no siempre deja commits.
+
+\begin{table}[H]
+\centering\small
+\caption{Contribuciones por persona (commits y áreas, de git log).}\label{tab:contribuciones}
+\begin{tabularx}{\textwidth}{lrY}
+\toprule
+\textbf{Integrante} & \textbf{Commits} & \textbf{Áreas principales} \\
+\midrule
+Hever Barrera Batero & 130 & Núcleo de detección, seguimiento y alertas; gateway y panel; persistencia y servicios de acceso y colaboración; seguridad, disponibilidad, rendimiento y mantenibilidad del Release~2; ADR y este documento \\
+María Juliana Rodríguez Caicedo & 29 & Inicio de sesión con Google; pipeline de CI/CD y despliegue por SSH; calidad con Sonar y JaCoCo; despliegue en AWS (Caddy, HTTPS, dominio, reinicio automático); protección de Grafana; pruebas de calidad \\
+Kevyn Daniel Forero Gonzalez & 16 & Estructura inicial del repositorio; integración de back y front con Docker; instrumentación con Micrometer y métricas de alertas; Prometheus, Grafana y los tableros \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Uso de inteligencia artificial}
+\begin{table}[H]
+\centering\small
+\caption{Declaración de uso de IA (descripción, no conversaciones completas ni información confidencial).}\label{tab:ia}
+\begin{tabularx}{\textwidth}{lYY}
+\toprule
+\textbf{Herramienta} & \textbf{Para qué se usó} & \textbf{Cómo se validó} \\
+\midrule
+YOLOv8 (local) & Detectar personas y objetos y estimar la pose del dueño (parte del producto) & Pruebas automáticas, calibración con fotos reales, pruebas con cámara \\
+Modelo de visión de NVIDIA (servicio externo, opcional) & Describir al dueño y a quien retira el objeto (parte del producto) & Pruebas contra un servidor falso; el recorte con la cara sale a un tercero, por eso es opcional y declarado \\
+Claude Code (asistente de desarrollo, Anthropic) & Apoyo en análisis, código, pruebas, scripts de k6, workflows de CI, informes, diagramas y documentación (ADR, backlog, este documento) & El equipo revisó el código, ejecutó las pruebas (479 de Java y 144 de Node), midió con k6 y Sonar, probó con cámara real y decidió; la responsabilidad del resultado es del equipo \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Ningún secreto, credencial ni dato sensible se incluyó en las instrucciones a la IA ni en el repositorio; las claves van solo en variables de
+entorno. Los integrantes deben poder explicar y defender el código y las decisiones, incluidos los asistidos por IA.

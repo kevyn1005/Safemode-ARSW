@@ -38,6 +38,28 @@ class ObservabilityTest {
     }
 
     @Test
+    void conLaConfiguracionPorDefectoLasMetricasSoloEscuchanEnLoopback() throws Exception {
+        // sin variables, GatewayRunner usa estas direcciones: el listener NO debe quedar abierto a la red
+        HttpServer byDefault = Observability.start(GatewayRunner.metricsHost(null, GatewayRunner.bindHost(null)), 0, ready::get);
+        try {
+            assertTrue(byDefault.getAddress().getAddress().isLoopbackAddress(), "escucha en " + byDefault.getAddress());
+        } finally {
+            byDefault.stop(0);
+        }
+    }
+
+    @Test
+    void conSAFEMODE_METRICS_HOSTExplicitoSePuedeAbrirATodasLasInterfaces() throws Exception {
+        // el caso de un Prometheus en Docker sobre Linux que lee el gateway del host: se pide a proposito
+        HttpServer opened = Observability.start(GatewayRunner.metricsHost("0.0.0.0", "localhost"), 0, ready::get);
+        try {
+            assertTrue(opened.getAddress().getAddress().isAnyLocalAddress(), "escucha en " + opened.getAddress());
+        } finally {
+            opened.stop(0);
+        }
+    }
+
+    @Test
     void metricsExponeFormatoPrometheus() throws Exception {
         HttpResponse<String> response = get("/metrics");
         assertEquals(200, response.statusCode());
