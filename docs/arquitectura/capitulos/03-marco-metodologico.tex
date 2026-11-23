@@ -1,0 +1,83 @@
+\chapter{Marco metodológico}
+
+\section{Metodología}\label{sec:azure}
+El equipo (tres personas) trabajó con \textbf{Scrum adaptado}: un backlog de producto priorizado con MoSCoW, releases con un resultado de producto
+explícito, un incremento demostrable por sprint, criterios de aceptación en Gherkin y un registro escrito de las decisiones de arquitectura
+(ADR). Tres prácticas gobernaron el trabajo en la práctica:
+
+\begin{itemize}
+  \item \textbf{Lo que ya funciona no se rompe.} Cada cambio mantiene en verde todas las pruebas anteriores; se prefiere extender con
+  parámetros opcionales antes que reescribir un comportamiento probado.
+  \item \textbf{Un commit por tema, probado en su estado exacto.} El historial de Git (175 commits entre el 9 de septiembre y el 20 de
+  noviembre de 2026) es verificable y cuenta la secuencia de decisiones.
+  \item \textbf{Evidencia antes que afirmación.} Cada atributo se midió con una herramienta (JUnit, k6, Prometheus, Sonar) y el resultado
+  quedó versionado junto al código.
+\end{itemize}
+
+\textbf{Herramientas.} Gestión del trabajo en \textbf{Azure DevOps} (proyecto \emph{SafeMode}: épicas, features, historias, diez sprints semanales);
+repositorio y control de versiones en GitHub; integración y despliegue continuos con GitHub Actions
+(\emph{reusable workflows}); calidad con SonarQube/SonarCloud; modelo de arquitectura con ArchiMate (Archi); documentos en Markdown y
+LaTeX; backlog, release plan y ADR versionados en \cod{docs/}.
+
+\textbf{Cómo se usó Azure DevOps, sin adornos.} Al inicio se creó la épica, sus cinco features, las historias HU-01 a HU-05 y los sprints 1 a 5 (del
+7 de septiembre al 16 de octubre); desde entonces el seguimiento diario se llevó en el repositorio (backlog, \emph{release plan} y commits). El 20 de
+noviembre de 2026 se completó Azure DevOps con lo ya hecho: se crearon los sprints 6 a 10, se importaron las historias del backlog (HU-05 a HU-38) y las
+del Release~2 con sus puntos, criterios de aceptación y el sprint donde cayó el trabajo, y se cerraron las que están hechas. Cada elemento lleva la
+etiqueta \cod{registrado-retroactivo} y cita la fecha real de su evidencia; por eso la fecha de cierre en Azure DevOps (20 de noviembre) no es la de la
+entrega, y el \emph{burndown} diario de los sprints anteriores no puede reconstruirse. Los guiones para repetirlo están en \cod{docs/azure-devops/}.
+
+\textbf{Roles observables en el repositorio} (según los commits): Hever Barrera, núcleo de detección, seguimiento y alertas, gateway,
+panel, persistencia y los atributos de calidad del Release~2; María Juliana Rodríguez, integración del inicio de sesión con Google,
+pipeline de CI/CD, calidad estática y despliegue en AWS; Kevyn Forero, estructura inicial, integración de back y front con Docker e
+instrumentación de observabilidad (Micrometer, Prometheus y Grafana). La sección~\ref{sec:contribuciones} detalla las contribuciones.
+
+\section{Criterios DoR y DoD}
+\begin{table}[H]
+\centering\small
+\caption{Definition of Ready y Definition of Done del proyecto (docs/backlog.md, sección 3).}\label{tab:dordod}
+\begin{tabularx}{\textwidth}{YY}
+\toprule
+\textbf{DoR: una HU entra a desarrollo cuando\ldots} & \textbf{DoD: una HU está terminada cuando\ldots} \\
+\midrule
+Tiene el formato «Como \ldots quiero \ldots para \ldots» (no es una tarea técnica) &
+El código está integrado y compila \\
+Tiene al menos un criterio de aceptación en Gherkin con datos concretos &
+Sus pruebas automáticas pasan y todas las anteriores siguen pasando \\
+Sus dependencias están identificadas (otra HU, cuenta externa, permiso) &
+Si toca la interfaz, se verificó en un navegador real \\
+Su tamaño es de 8 puntos o menos (si no, se divide) &
+Las claves y contraseñas están solo en variables de entorno, nunca en el código, los registros ni el repositorio \\
+Si toca datos de personas, se revisó la privacidad (qué sale a terceros) &
+Hay evidencia (prueba, medición o demostración) y la documentación (ADR o README) está al día; se entrega en un commit por tema \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Planificación y estimación}
+\textbf{Estimación.} Las historias se estiman en puntos con la escala 1, 2, 3, 5 y 8 (una historia de más de 8 se divide). El backlog
+tiene \textbf{38 historias y 145 puntos}; al cierre del Release~2 hay \textbf{33 hechas (128 puntos, el 88\,\%)}, una parcial (HU-30,
+Telegram con lista fija de chats) y cuatro pendientes (HU-20, 28, 31 y 32; 12 puntos). De las 19 historias \emph{Must}, 18 están hechas;
+la pendiente es probar con dos cámaras físicas reales (HU-28), que depende de una segunda cámara.
+
+\textbf{Releases por resultado de producto.} El plan (\cod{docs/release-plan.md}) agrupa los sprints por la capacidad que dejan
+funcionando, no por tareas técnicas:
+
+\begin{table}[H]
+\centering\small
+\caption{Plan de releases del producto (ocho sprints lógicos de la capacidad de producto, que no son los sprints de Azure DevOps; la
+Tabla~\ref{tab:sprints} asigna el trabajo a los sprints semanales de Azure DevOps).}\label{tab:releases}
+\begin{tabularx}{\textwidth}{lYY}
+\toprule
+\textbf{Release} & \textbf{Resultado de producto} & \textbf{Sprints (incremento)} \\
+\midrule
+R1 «Ver» & El sistema distingue personas y maletas y sabe cuáles se dejaron en reposo & S1 detección; S2 registro de objetos en reposo con foto \\
+R2 «Alertar» & Que el personal de seguridad se entere en menos de 5~s de que alguien se llevó un objeto, con evidencia & S3 retiro y dueño; S4 alerta con evidencia; S5 panel en tiempo real y Docker \\
+R3 «Operar y avisar» & Usar las cámaras existentes (hasta 2), reducir falsas alarmas y avisar fuera del panel & S6 dos cámaras; S7 reporte y «dueño que volvió»; S8 avisos y acceso con Google \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\textbf{Riesgos gestionados.} El plan mantiene una tabla de riesgos con su mitigación y su estado. Los más relevantes: la falsa alarma cuando
+el dueño sale de cuadro y vuelve (mitigada: baja a «posible dueño que volvió», media, sin silenciar, con riesgo residual declarado); el
+rendimiento con dos cámaras (mitigado: un modelo más liviano con los hilos repartidos); y la privacidad (controlada: no se guarda video y los
+avisos externos son solo texto).

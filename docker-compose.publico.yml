@@ -1,0 +1,49 @@
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    network_mode: host
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+    restart: unless-stopped
+
+  realtime-gateway:
+    environment:
+      SAFEMODE_PUBLIC_HOST: safemode-arsw.duckdns.org
+
+  tracker:
+    environment:
+      SAFEMODE_PUBLIC_HOST: safemode-arsw.duckdns.org
+
+  grafana:
+    restart: unless-stopped
+    environment:
+      GF_SERVER_ROOT_URL: https://safemode-arsw.duckdns.org/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+
+  postgres:
+    restart: unless-stopped
+
+  mongo:
+    restart: unless-stopped
+
+  redis:
+    restart: unless-stopped
+
+  console:
+    restart: unless-stopped
+
+  blackbox:
+    restart: unless-stopped
+
+  prometheus:
+    restart: unless-stopped
+
+  # prueba de carga en bucle: 100 s de prueba y 10 min de descanso, para que el tablero tenga siempre datos de k6
+  k6:
+    entrypoint: ["sh", "-c", "while true; do k6 run -o experimental-prometheus-rw /scripts/workload.js || true; sleep 600; done"]
+    command: []
+    restart: unless-stopped
+
+volumes:
+  caddydata:

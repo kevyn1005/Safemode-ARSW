@@ -1,0 +1,38 @@
+# Prometheus del PROTOTIPO DE ESCALADO (docker-compose.escalado.yml + performance/): recoge /metrics de CADA replica del gateway.
+# Aparte de persistencia/monitoring/prometheus.yml (el del stack normal) porque aqui hay dos replicas: con una lista fija el nombre
+# "realtime-gateway" se resolveria a una u otra al azar en cada lectura; con descubrimiento por DNS cada replica es su propio destino.
+# Los nombres de los jobs son los que usan los paneles del tablero de Juli (observability/dashboards/dashboard-safemode-v2.json).
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+rule_files:
+  - /etc/prometheus/reglas-alertas.yml
+
+scrape_configs:
+  - job_name: gateway
+    dns_sd_configs:
+      - names: ['realtime-gateway']
+        type: A
+        port: 9464
+        refresh_interval: 5s
+
+  # Sonda funcional: blackbox pide /ready (200 solo si el gateway llega a su base de datos). Se sondea cada replica por separado.
+  - job_name: ready-probe
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    dns_sd_configs:
+      - names: ['realtime-gateway']
+        type: A
+        port: 9464
+        refresh_interval: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        replacement: 'http://${1}/ready'
+        regex: '(.*)'
+        target_label: __param_target
+      - source_labels: [__address__]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115

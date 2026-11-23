@@ -1,0 +1,1 @@
+{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"safemode_dependency_up","dependency":"redis","instance":"collaboration-service:8110","job":"collaboration","service":"collaboration"},"value":[1794027359.452,"0"]}]}}

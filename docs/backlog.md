@@ -6,7 +6,7 @@ que piden los lineamientos ARSW 2026-2. Todo lo marcado *Hecho* tiene evidencia 
 cita en cada HU; lo que falta está marcado *Pendiente* o *Parcial* con su motivo.
 
 > Los tamaños son **estimaciones relativas propuestas** (serie 1, 2, 3, 5, 8) para confirmar con el equipo; no son tiempos medidos.
-> Las pruebas automáticas al cierre de este documento: **301 de Java y 35 de Node, todas pasan**.
+> Las pruebas automáticas al cierre de este documento: **479 de Java y 144 de Node, todas pasan**.
 
 ## 1. Necesidad, personas y alcance
 
@@ -71,16 +71,17 @@ Prioridad **MoSCoW**. Estado: *Hecho*, *Parcial*, *Pendiente*. Release y sprint 
 | HU-31 | F6.3 Correo | Recibir un correo con cada alerta alta o media | Could | 3 | R3 · S8 | Pendiente |
 | HU-32 | F6.4 Preferencias | Elegir por qué canales quiero que me avisen | Could | 3 | R3 · S8 | Pendiente |
 | | **E7 · Acceso y seguridad** | | | | | |
-| HU-33 | F7.1 Login | Entrar con Google solo si mi correo está autorizado | Must | 8 | R3 · S8 | Pendiente |
-| HU-34 | F7.1 | Proteger el panel, el WebSocket y los botones con la sesión | Must | 5 | R3 · S8 | Pendiente |
+| HU-33 | F7.1 Login | Entrar con Google solo si mi correo está autorizado | Must | 8 | R3 · S8 | Hecho |
+| HU-34 | F7.1 | Proteger el panel, el WebSocket y los botones con la sesión | Must | 5 | R3 · S8 | Hecho |
 | HU-35 | F7.2 Protección actual | Que solo el panel propio lea las alertas y accione el tracker | Must | 3 | R2 · S5 | Hecho |
 | | **E8 · Operación y calidad** | | | | | |
 | HU-36 | F8.1 Despliegue | Levantar el gateway y la base con Docker | Should | 3 | R2 · S5 | Hecho |
 | HU-37 | F8.2 Medición | Conocer el rendimiento y la latencia reales | Should | 3 | R3 · S6 | Hecho |
 | HU-38 | F8.3 Observabilidad | Entender por qué el sistema tomó una decisión | Should | 2 | R3 · S7 | Hecho |
 
-**Cuenta:** 38 HU · 31 hechas · 1 parcial · 6 pendientes. Por prioridad: de las 19 *Must*, 16 están hechas y 3 pendientes (HU-28, HU-33 y
-HU-34).
+**Cuenta:** 38 HU · 33 hechas · 1 parcial · 4 pendientes (128 de 145 puntos). Por prioridad: de las 19 *Must*, 18 están hechas y 1 pendiente (HU-28).
+HU-33 y HU-34 (inicio de sesión con Google y protección de toda la superficie) se completaron después de escribir esta tabla: ver los escenarios
+ES-1 a ES-3 en `docs/seguridad/`.
 
 ## 3. Definition of Ready y Definition of Done
 
@@ -408,7 +409,7 @@ Then aparece una notificación con el texto "SafeMode: posible robo en CAM 1 a l
 ```
 Evidencia: 13 pruebas de Node con un navegador falso y verificación en el panel real. Límite: la pestaña del panel debe seguir abierta (Web Push queda para después).
 
-**HU-30** · Como **operador** quiero recibir un mensaje de Telegram con cada alerta alta o media, para enterarme aunque no esté frente al computador. *Parcial: los chats son una lista fija hasta que exista el login.*
+**HU-30** · Como **operador** quiero recibir un mensaje de Telegram con cada alerta alta o media, para enterarme aunque no esté frente al computador. *Parcial: los chats son una lista fija (variable de entorno); vincular el Telegram de cada usuario es la HU-32.*
 ```gherkin
 Given un bot de Telegram y mi chat configurados solo por variables de entorno
 When llega una alerta nueva de severidad alta o media
@@ -420,7 +421,7 @@ Componente: Notification Service (`NotificationService`, `TelegramChannel`). Evi
 
 **HU-31** · Como **operador** quiero recibir un correo con cada alerta alta o media, para tener otro canal de respaldo. *Pendiente: requiere una contraseña de aplicación de correo.* Mismo criterio que HU-30 con SMTP.
 
-**HU-32** · Como **operador** quiero elegir por qué canales me avisan, para no recibir lo que no uso. *Pendiente: depende del login (HU-33).*
+**HU-32** · Como **operador** quiero elegir por qué canales me avisan, para no recibir lo que no uso. *Pendiente: el login (HU-33) ya existe; faltan guardar las preferencias por usuario y el canal de correo.*
 ```gherkin
 Given un usuario con sesión que activó el canal Telegram y desactivó el correo
 When se genera una alerta de severidad alta

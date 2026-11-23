@@ -1,0 +1,38 @@
+# Workflow REUTILIZABLE: pruebas del panel (JavaScript) con cobertura. El panel no tiene build (paginas estaticas); Node solo se usa para
+# probar. Antes el pipeline ejecutaba `npm test --if-present`, que no hacia nada porque package.json no definia el script.
+name: reusable-frontend
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Version de Node (jsdom 31 exige 22.22+ o 24.15+)
+        type: string
+        default: "24"
+
+jobs:
+  frontend:
+    name: Frontend (pruebas y cobertura)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: security-dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: security-dashboard/package-lock.json
+      - name: Instalar dependencias de prueba
+        run: npm ci
+      # c8 --all cuenta tambien los archivos que ninguna prueba carga: la cobertura no se infla ocultando lo que no se prueba
+      - name: Pruebas con cobertura
+        run: npm run test:coverage
+      - name: Guardar la cobertura para el analisis de calidad
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-cobertura
+          path: security-dashboard/coverage/lcov.info
+          retention-days: 7
+          if-no-files-found: error

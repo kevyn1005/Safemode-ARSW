@@ -1,0 +1,57 @@
+# Matriz de decisiones · ARSW-EQP-01 · Safemode
+
+Integrantes: Hever Barrera Batero, María Juliana Rodríguez Caicedo, Kevyn Daniel Forero Gonzalez
+Proyecto: **Safemode-ARSW** (vigilancia de objetos dejados sin atención) · Decisión completa: [ADR 0005](../adr/0005-persistencia-consistencia-observabilidad.md)
+
+> **De dónde partimos.** Hasta ahora **todo** vivía en una sola base H2 (eventos, alertas y nombres de cámaras), no había datos
+> temporales, los permisos no existían (el inicio de sesión es el [ADR 0004](../adr/0004-login-google-y-notificaciones.md),
+> pendiente) y las zonas de las cámaras vivían en el `localStorage` de **cada navegador**. La matriz decide qué dato va en qué motor
+> según **qué se le hace**, **qué debe ser atómico**, **cuánto atraso tolera** y **cuánto debe vivir**.
+
+## Los seis datos del laboratorio, aplicados a Safemode
+
+| Dato | Motor elegido | Consulta principal | Qué debe ser atómico | Atraso tolerable | Retención / TTL | Consecuencia de perderlo | Alternativa y costo |
+|---|---|---|---|---|---|---|---|
+| **Membresías y permisos** (quién es operador de qué puesto y con qué rol) | **PostgreSQL** (`operator`, `puesto`, `membership`, `permission_audit`) | `SELECT role, can_configure FROM membership WHERE puesto_id=? AND operator_id=?` (clave primaria) | Conceder o revocar un permiso **y** dejar su auditoría: una transacción. Las relaciones deben ser válidas: una membresía solo existe si existen el operador y el puesto (PK + FK + `CHECK` de rol + `ROLLBACK`) | **Ninguno para escribir.** Para decidir si se puede guardar siempre se pregunta aquí | Mientras exista el operador. Sin TTL | Se podría configurar un puesto con permisos equivocados, o no saber quién puede hacerlo. Si no se puede consultar, se responde **503** y no se guarda | **Lista fija de correos en una variable de entorno** (lo que prevé hoy el login con Google): no tiene claves foráneas ni auditoría y revocar a alguien exige reiniciar. **Solo Redis:** rápido, pero se pierde si Redis se reinicia (sin disco en esta configuración) y sin FK. **MongoDB:** tampoco tiene FK; las relaciones se validarían en código |
+| **Contenido: configuración del puesto** (título, cámaras con su zona dibujada) | **MongoDB** (documento `puesto-1`: `title`, `cameras[]`, `preferences`, `version`) | `find({_id})` para leer; `findOneAndUpdate({_id, version}, {$set…, $inc version})` para guardar | Comparar la versión, cambiar el contenido y **subir la versión en una sola operación sobre un documento**. Es lo que evita la edición perdida (200 y 409) | Para **leer**, unos segundos. Para **guardar**, ninguno: con versión vieja se rechaza (409) | Permanente. Sin TTL | Se pierde la configuración que el administrador dibujó (zonas, HU-24). Hoy ese trabajo ni siquiera se comparte entre navegadores | **PostgreSQL con JSONB:** `UPDATE … WHERE id=? AND version=?` también es atómico, deja todo en un motor y permite validar el permiso y guardar **en la misma transacción** (cierra la ventana de revocación). Costo: modelar el documento y migrar el acceso a datos. Se descartó por tiempo, pero **es viable** |
+| **Preferencias del puesto** (severidad mínima que avisa, canales, días que se guardan las fotos) | **MongoDB, embebidas** en el documento del puesto (`preferences`) | Se leen junto con el puesto, en la misma consulta | Cambian junto con el documento: con su misma versión | Unos segundos (se aplican en la siguiente alerta) | Permanente. Sin TTL | Se pierde cómo quiere avisar el puesto; molesta, pero no se pierde trabajo de vigilancia | **Colección o tabla aparte.** *Gana:* se puede cambiar sin competir con la configuración de las cámaras. *Cuesta:* una consulta más y sin atomicidad con el puesto. **Embeber gana** una lectura y atomicidad; **cuesta** que cualquier cambio de preferencias sube la versión y puede dar un 409 a quien solo editaba una zona, y que el documento crece. (Las preferencias **personales** de cada operador, HU-32, sí irían en una colección propia: otro dueño, no compiten con el puesto) |
+| **Historial creciente** (revisiones de la configuración y quién la cambió) — *implementado en el proyecto* | **MongoDB, colección separada** `puesto_history`: un documento por cambio | `find({puesto_id, version < cursor}).sort({version:-1}).limit(20)`: paginación por cursor, 1 a 50 por página | Anotar la entrada **después** del cambio del puesto (no comparten transacción simple): si falla, el cambio ya quedó y se pierde una entrada (hueco en las versiones); índice **único** `{puesto_id, version}` | Segundos o minutos: es consulta de revisión, no de edición | **90 días** (`HISTORY_RETENTION_DAYS`) con índice TTL sobre `at` | No se podría auditar quién cambió qué; el puesto actual sigue funcionando (el cambio no depende de la entrada) | **Embeber la lista en el documento:** descartado, crece sin límite (MongoDB limita un documento a 16 MB), cada lectura trae todo y cada edición reescribe un documento cada vez mayor. **Tabla `puesto_revisions` en PostgreSQL** con paginación por clave. Detalle en el ADR |
+| **Presencia** (qué operadores tienen el panel abierto) | **Redis** (`presence:{puesto}:{operador}`) | `SCAN presence:puesto-1:*` (una clave por operador) | Guardar el valor **y** los 20 s de vida en la misma escritura: `SET … EX 20` | **Hasta 20 s**: es lo que tarda en desaparecer alguien que cerró el panel | **TTL de 20 s**, se renueva con cada heartbeat | Por unos segundos se vería «nadie conectado». Se corrige solo con el siguiente heartbeat. **No afecta** ni la configuración ni las alertas | **MongoDB o PostgreSQL** con una hora de «último visto»: escriben en disco y se pierde menos, pero hacen muchas escrituras pequeñas y hay que programar la limpieza. El índice TTL de MongoDB borra con retraso (revisa cada ~60 s): peor que los 20 s pedidos |
+| **Caché de permisos** (para pintar el panel) | **Redis** (`permission:{puesto}:{operador}`) | `GET permission:puesto-1:luis` | Guardar el valor con su vencimiento en una escritura: `SET … EX 60` | **Hasta 60 s, solo para mostrar.** Para guardar **no se tolera ningún atraso**: no se usa | **TTL de 60 s** | Si se pierde, solo se vuelve a preguntar a Gestión (más lento). **Peligro:** si autorizara escrituras, se podría configurar con un permiso ya revocado (es lo que pasaba en la base) | **Quitar Redis** y preguntar siempre a PostgreSQL. *Gana:* menos piezas, nunca un dato viejo. *Cuesta:* una consulta a Gestión cada vez que se abre el panel. Como las escrituras ya no usan la caché, **es el dato más fácil de eliminar** |
+
+## Los datos que Safemode ya tenía (y por qué cambian de base)
+
+| Dato | Motor elegido | Consulta principal | Qué debe ser atómico | Atraso tolerable | Retención | Consecuencia de perderlo | Alternativa y costo |
+|---|---|---|---|---|---|---|---|
+| **Eventos de presencia** (`object_presence_event`: objeto registrado en reposo / retirado, dueño, quién lo retiró) | **PostgreSQL** (antes H2) | `WHERE event_type='REMOVED' AND id > ?` (el motor de alertas, cada 1 s) y `ORDER BY id DESC LIMIT n` (reporte) | Una fila por evento; la descripción por IA se completa después con `UPDATE … WHERE id=?` | ≈ 1 s (el motor revisa cada segundo) | Definir política (HU-20 pendiente): las fotos pesan ≈ 3 MB | Se pierde la evidencia y el origen de las alertas | **MongoDB** (un documento por evento): los eventos son tabulares, de columnas fijas, y se consultan por rango de `id` y orden, no por estructura variable; no ganaría nada. **Seguir en H2:** archivo embebido, pensado para pruebas, un solo proceso escritor «real», sin copias de seguridad ni usuarios. El compose ya necesitaba un servidor TCP aparte (ADR 0002) |
+| **Alertas** (`alert`) | **PostgreSQL** (antes H2) | `WHERE acknowledged = FALSE ORDER BY id DESC`; `findById` | `UNIQUE (event_id, event_occurred_at)`: **cada evento genera una sola alerta** aunque el motor reprocese (HU-14) | Ninguno para crearla; la marca de «revisada» se difunde en ≈ 2 s | Mientras se necesite el historial de alertas | Se pierde el centro de alertas | **MongoDB:** una alerta es un registro con estado y se protege con una restricción de unicidad, que PostgreSQL da declarativamente. **Seguir en H2:** mismo motivo que arriba |
+| **Fotos de evidencia** (PNG) | **Sistema de archivos / volumen**, la base guarda solo la ruta | Se sirven por nombre de archivo (`/photo/<archivo>`) | Que la ruta guardada corresponda a un archivo real (hoy lo garantiza el tracker al escribir) | Ninguno | Política de retención (HU-20 pendiente) | Se pierde la prueba visual; la alerta queda sin foto | **Guardarlas en la base** (BYTEA / GridFS): ≈ 3 MB por foto inflaría la base y sus copias de seguridad. **Almacenamiento de objetos** (S3): correcto para la nube (vista To-Be), fuera del alcance de esta práctica |
+| **Nombres de cámaras** (`camera`) | **PostgreSQL** (antes H2) | `SELECT id, name FROM camera` | Cambiar el nombre es una fila; el «insertar o cambiar» es una sola instrucción (`ON CONFLICT … DO UPDATE`) | Segundos | Permanente | Las alertas dirían «CAM 1» en vez del nombre que puso el administrador (HU-26) | **Dentro del documento del puesto (MongoDB):** se consideró, pero duplicaría el nombre que ya usan los eventos y el reporte (dos fuentes de verdad sin una transacción que las una). Se dejó donde ya estaba |
+
+## ¿Es apropiada la distribución?
+
+**Sí, y cada motor se usa por lo que mejor garantiza:**
+
+- **PostgreSQL para lo que debe ser correcto siempre:** permisos, eventos y alertas. Las garantías las da el motor y no hay que
+  programarlas: la clave primaria rechaza una membresía repetida, la clave foránea rechaza un operador que no existe, el `CHECK`
+  rechaza un rol inventado, el `UNIQUE` impide una segunda alerta del mismo evento y el `ROLLBACK` deshace un cambio a medias
+  (ver `persistencia/db/evidence.sql`).
+- **MongoDB para la configuración del puesto:** es **un documento** que se lee y se guarda completo, y la consulta principal es por su
+  identificador. Una operación sobre un solo documento es atómica, y por eso `findOneAndUpdate` con la versión **en el filtro**
+  resuelve la edición perdida sin transacciones entre tablas.
+- **Redis para lo que debe desaparecer solo:** presencia (TTL 20 s) y caché de permisos (TTL 60 s). Si se pierde, el costo es mínimo.
+
+**Lo que cambia respecto de «todo en H2»:** lo que ya existía pasa a PostgreSQL (mismo esquema, mismo código; solo cambia la URL
+`SAFEMODE_DB_URL`) y se **suman** los datos que antes no tenían dónde vivir: configuración compartida, permisos y datos efímeros.
+H2 sigue siendo el valor por defecto: sin la variable todo funciona como antes.
+
+**La decisión que más importa:** la caché de permisos **puede mostrar** una pantalla, pero **no puede autorizar** una escritura. La
+decisión de escribir se toma con PostgreSQL a través de Gestión de acceso. Por eso, si Gestión no responde, se prefiere **rechazar
+(503)** a dejar pasar a alguien con un permiso que no se pudo verificar.
+
+**Lo que no resolvimos:** Gestión (PostgreSQL) y Colaboración (MongoDB) no comparten transacción. Entre validar el permiso y guardar hay
+una ventana pequeña donde alguien puede quedar revocado. Está explicado en el ADR con alternativas de diseño.
+
+**Si pudiéramos cambiar más:** **PostgreSQL con JSONB** para el documento del puesto. Permitiría validar el permiso y guardar la
+configuración en una sola transacción y cerrar esa ventana. No se hizo porque la práctica no exige migrar de motor y el documento
+(con zonas y preferencias anidadas) ya encaja bien en MongoDB.

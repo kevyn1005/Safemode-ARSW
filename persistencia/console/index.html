@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Safemode · Consola de persistencia</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="brand">SAFEMODE · ARSW</div>
+  <span>Laboratorio de persistencia y consistencia</span>
+</header>
+<main>
+  <div class="intro">
+    <p class="eyebrow">PERSISTENCIA · CONSISTENCIA · OBSERVABILIDAD</p>
+    <h1>Un puesto de vigilancia.<br>Tres decisiones.</h1>
+    <p>Dos operadores configuran el mismo puesto. Edite desde dos pestañas, revoque un permiso y observe qué ocurre cuando Redis deja de responder.</p>
+  </div>
+
+  <div class="grid">
+    <section>
+      <div class="row"><h2>Configuración del puesto</h2><span class="badge" id="version">Sin cargar</span></div>
+      <label>Actuar como
+        <select id="operator">
+          <option value="ana">Ana (administradora)</option>
+          <option value="luis">Luis (operador)</option>
+          <option value="marta">Marta (solo ve)</option>
+        </select>
+      </label>
+      <label>Título del puesto
+        <input id="title" maxlength="80" placeholder="Cargue el puesto para editar">
+      </label>
+      <label>Severidad mínima que avisa
+        <select id="minSeverity">
+          <option value="LOW">LOW · todas</option>
+          <option value="MEDIUM">MEDIUM · media y alta</option>
+          <option value="HIGH">HIGH · solo alta</option>
+        </select>
+      </label>
+      <div class="actions">
+        <button id="load">Cargar versión</button>
+        <button id="save">Guardar cambio</button>
+      </div>
+      <p class="hint">Cambiar de operador no recarga la versión. Cada pestaña conserva la versión que leyó; un conflicto (409) debe pedirle recargar.</p>
+
+      <h3>Presencia temporal</h3>
+      <div class="actions">
+        <button class="secondary" id="touch">Registrar presencia</button>
+        <button class="secondary" id="presence">Consultar presencia</button>
+      </div>
+      <p class="hint">Sin renovación automática. Compruebe qué ocurre 20 segundos después del último registro.</p>
+    </section>
+
+    <section>
+      <h2>Permisos y evidencia</h2>
+      <button class="secondary" id="permission">Consultar permiso en caché</button>
+      <p class="hint">Este dato puede quedar desactualizado hasta 60 s. La decisión real de escritura se toma en el servidor.</p>
+      <details>
+        <summary>Administración del escenario</summary>
+        <label>Clave del laboratorio<input type="password" id="key" value="lab-admin"></label>
+        <div class="actions">
+          <button class="secondary" id="revoke">Revocar a Luis</button>
+          <button class="secondary" id="grant">Habilitar a Luis</button>
+          <button class="secondary" id="reset">Reiniciar datos</button>
+        </div>
+      </details>
+      <h3>Última respuesta</h3>
+      <p id="status" role="status">Listo para iniciar.</p>
+      <pre id="response">Cargue el puesto.</pre>
+    </section>
+  </div>
+
+  <section class="guide">
+    <h2>La pregunta de arquitectura</h2>
+    <div class="three">
+      <div><strong>01 · Integridad</strong><p>¿Qué cambia como una unidad? ¿Cómo detecta una versión obsoleta?</p></div>
+      <div><strong>02 · Vigencia</strong><p>¿Un permiso guardado en caché sigue siendo válido después de revocarlo?</p></div>
+      <div><strong>03 · Degradación</strong><p>¿La caída de la presencia debería impedir configurar el puesto?</p></div>
+    </div>
+  </section>
+  <footer>Entorno didáctico con identidades simuladas (sin autenticación de producción: el inicio de sesión es el ADR 0004). Grafana en el puerto 3000 y Prometheus en el 9090.</footer>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

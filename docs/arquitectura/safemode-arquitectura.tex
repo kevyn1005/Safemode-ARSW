@@ -1,0 +1,113 @@
+% Documento de arquitectura de SafeMode (ARSW 2026-2, Release 2, entrega final).
+% Compilar: docs/arquitectura/compilar.ps1 (usa Docker con TeX Live; no hace falta instalar LaTeX).
+\documentclass[11pt,a4paper]{report}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[spanish,es-tabla]{babel}
+\usepackage{amsmath}
+\usepackage[a4paper,top=2.4cm,bottom=2.4cm,left=2.5cm,right=2.5cm]{geometry}
+\usepackage{graphicx,booktabs,longtable,array,tabularx,xcolor,listings,enumitem,fancyhdr,caption,float,pdflscape,microtype}
+\usepackage[colorlinks=true,linkcolor=azul,urlcolor=azul,citecolor=azul]{hyperref}
+\usepackage{xurl}
+
+\DeclareUnicodeCharacter{2248}{\ensuremath{\approx}}
+\DeclareUnicodeCharacter{2265}{\ensuremath{\geq}}
+\DeclareUnicodeCharacter{2264}{\ensuremath{\leq}}
+\DeclareUnicodeCharacter{2192}{\ensuremath{\rightarrow}}
+\DeclareUnicodeCharacter{2260}{\ensuremath{\neq}}
+\DeclareUnicodeCharacter{00B7}{\textperiodcentered}
+
+\definecolor{azul}{RGB}{16,64,128}
+\definecolor{gris}{RGB}{90,90,90}
+\definecolor{fondocodigo}{RGB}{245,245,245}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.55em}
+\setlength{\emergencystretch}{3em}
+\renewcommand{\arraystretch}{1.2}
+\setlist{itemsep=0.15em,topsep=0.3em}
+
+\setlength{\headheight}{14pt}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{gris}SafeMode \textperiodcentered{} Documento de arquitectura}
+\fancyhead[R]{\small\color{gris}\leftmark}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\small\thepage}\renewcommand{\headrulewidth}{0pt}}
+
+\lstdefinestyle{codigo}{basicstyle=\ttfamily\footnotesize,backgroundcolor=\color{fondocodigo},breaklines=true,breakatwhitespace=false,
+  frame=single,rulecolor=\color{gris},columns=fullflexible,keepspaces=true,showstringspaces=false,upquote=true,
+  literate={á}{{\'a}}1 {é}{{\'e}}1 {í}{{\'i}}1 {ó}{{\'o}}1 {ú}{{\'u}}1 {ñ}{{\~n}}1 {Á}{{\'A}}1 {É}{{\'E}}1 {Í}{{\'I}}1 {Ó}{{\'O}}1 {Ú}{{\'U}}1 {¿}{{?`}}1 {¡}{{!`}}1}
+\lstset{style=codigo}
+
+% Codigo en linea (sin caracteres especiales dentro) y columnas que ajustan el texto
+\urlstyle{tt}
+\newcommand{\cod}[1]{{\path{#1}}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcommand{\pct}[1]{#1\,\%}
+
+% Una vista ArchiMate en pagina horizontal (la figura ocupa toda la pagina para que se lea)
+\newcommand{\vista}[3]{%
+  \begin{landscape}\thispagestyle{plain}\centering
+  \includegraphics[width=\linewidth,height=0.78\textheight,keepaspectratio]{figuras/#1}\par\medskip
+  \captionof{figure}{#2}\label{#3}
+  \end{landscape}}
+
+\input{version.tex}
+
+\title{SafeMode}
+\author{}
+\date{}
+
+\begin{document}
+
+% ------------------------------------------------------------------------------------------------------------------------------------
+\begin{titlepage}
+  \centering
+  {\large Escuela Colombiana de Ingeniería Julio Garavito\par}
+  {\large Arquitecturas de Software (ARSW) \textperiodcentered{} 2026-2\par}
+  \vspace{2.2cm}
+  {\Huge\bfseries\color{azul} SafeMode\par}
+  \vspace{0.4cm}
+  {\Large Documento de arquitectura\par}
+  {\large Release 2 \textperiodcentered{} entrega final\par}
+  \vspace{1.6cm}
+  {\large Sistema de alertas en tiempo real para objetos retirados sin autorización\par}
+  \vspace{2.4cm}
+  \begin{tabular}{c}
+    \textbf{Equipo ARSW-EQP-01}\\[0.5em]
+    Hever Barrera Batero\\
+    María Juliana Rodríguez Caicedo\\
+    Kevyn Daniel Forero Gonzalez
+  \end{tabular}
+  \vfill
+  {\normalsize 22 de noviembre de 2026\par}
+  {\small Versión del código descrita: commit \texttt{\versionrepo}\par}
+  {\small Repositorio: \url{https://github.com/kevyn1005/Safemode-ARSW}\par}
+\end{titlepage}
+
+\pagenumbering{roman}
+\tableofcontents
+\clearpage
+\listoffigures
+\clearpage
+\listoftables
+\clearpage
+\pagenumbering{arabic}
+
+\input{capitulos/01-introduccion}
+\input{capitulos/02-vision-general}
+\input{capitulos/03-marco-metodologico}
+\input{capitulos/04-atributos-de-calidad}
+\input{capitulos/05-vista-de-arquitectura}
+\input{capitulos/06-diagramas}
+\input{capitulos/07-detalles-tecnologicos}
+\input{capitulos/08-seguridad}
+\input{capitulos/09-bitacora}
+\input{capitulos/10-conclusiones}
+\input{capitulos/11-anexos}
+
+\end{document}

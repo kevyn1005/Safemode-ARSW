@@ -1,3 +1,8 @@
+# Nombre FIJO del proyecto: separa Safemode de cualquier otro stack de Docker (p. ej. el laboratorio, 'arsw-persistencia') y no
+# depende del nombre de la carpeta donde se clone el repo (en un servidor de despliegue puede ser otra). Es el mismo nombre que ya
+# tenian los volumenes e imagenes (safemode-arsw_*), asi que no se pierde ningun dato.
+name: safemode-arsw
+
 services:
   camera-feed-service:
     build:

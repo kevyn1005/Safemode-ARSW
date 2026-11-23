@@ -1,0 +1,53 @@
+Evidencia 23 · El tablero SafeMode de Juli carga con Grafana 13.3.1 (12 de noviembre de 2026, UTC-5)
+==================================================================================================
+
+Archivo probado, SIN modificar: observability/dashboards/dashboard-safemode-v2.json (subido por Juli, commit e80a90a)
+  apiVersion dashboard.grafana.app/v2beta1 · uid safemode-observabilidad · titulo "ARSW SafeMode Observabilidad"
+
+1) Por que se subio Grafana (prueba aislada, contenedor desechable en el puerto 3999 con los MISMOS montajes de
+   docker-compose.persistencia.yml; se borra al terminar)
+
+   grafana/grafana:11.5.1  (version que tenia el compose)   GET /api/search?type=dash-db
+       ARSW | ARSW-EQP-01 · Persistencia (Safemode) | arsw-eqp-01-persistencia
+       ARSW | SAFEMODE · Punto de partida | safemode-base
+       -> NO aparece el tablero de Juli (la carpeta SafeMode queda vacia)
+
+   grafana/grafana:13.3.1  (lo que resuelve "latest" hoy)
+       SafeMode | ARSW SafeMode Observabilidad | safemode-observabilidad
+       ARSW | ARSW-EQP-01 · Persistencia (Safemode) | arsw-eqp-01-persistencia
+       ARSW | SAFEMODE · Punto de partida | safemode-base
+       -> cargan los tres; los dos tableros del laboratorio (JSON clasico) siguen funcionando
+
+   Decision: docker-compose.persistencia.yml fija grafana/grafana:13.3.1 (version exacta, no "latest").
+
+2) El stack real de Safemode (proyecto safemode-arsw) con esa imagen
+   docker compose -f docker-compose.yml -f docker-compose.persistencia.yml up -d --build --wait --wait-timeout 300 ...
+   -> los 11 contenedores "Healthy"
+
+   GET :3000/api/health            {"database":"ok","version":"13.3.1", ...}
+   GET :3000/api/search            los mismos tres tableros de arriba
+   GET :3000/api/datasources       Prometheus | uid prometheus | http://prometheus:9090
+   Prometheus /api/v1/targets      access up · collaboration up · gateway up · ready-probe up
+   POST :9090/api/v1/write (vacio) HTTP 400  (el endpoint existe: --web.enable-remote-write-receiver; sin la opcion seria 404)
+
+3) El tablero visto por la API nueva de Grafana
+   GET /apis/dashboard.grafana.app/v2beta1/namespaces/default/dashboards/safemode-observabilidad
+     paneles: 24 · consultas: 26 · datasources referenciados: {"name":"prometheus"}  (= uid del datasource aprovisionado)
+
+4) Las consultas de los paneles, a traves del datasource de Grafana (GET /api/datasources/proxy/uid/prometheus/api/v1/query)
+     k6_vus                                         success · 1 serie
+     rate(k6_http_reqs_total[1m])                   success · 3 series
+     k6_http_req_duration_p95                       success · 3 series
+     probe_success{job="ready-probe"}               success · 1 serie
+     sum(jvm_memory_used_bytes{job="gateway"})      success · 1 serie
+
+   Directamente en Prometheus, tras la carga de k6 (evidencia 22):
+     k6_http_reqs_total 1984 · k6_http_req_duration_p95 0,0026 s · k6_http_req_failed_rate 0
+     up{job="gateway"} 1 · probe_success{job="ready-probe"} 1 · process_cpu_usage{job="gateway"} 0,0005
+     sum(jvm_memory_used_bytes{job="gateway"}) 57 058 888 bytes
+     safemode_ws_sessions 0 · safemode_alerts_total 0 (nadie conectado ni retiros: el P95 de latencia de alertas da NaN, como se documento)
+
+Lo que NO se comprobo
+  - Que los paneles se dibujen en un navegador (solo se comprobo del lado del servidor: tablero leido por Grafana, datasource
+    resuelto y consultas con datos). Hay que abrir http://localhost:3000 (carpeta SafeMode) y mirarlos.
+  - Paneles de alertas y WebSocket con datos reales de vigilancia: requieren el tracker con camara (esta corrida no tuvo alertas).

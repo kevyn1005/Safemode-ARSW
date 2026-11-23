@@ -1,0 +1,29 @@
+{
+  "tipo": "estres",
+  "etiqueta": "2replicas",
+  "duracion_s": 480,
+  "solicitudes_http": 18349,
+  "TPS_solicitudes": 38.23,
+  "TPM_solicitudes": 2293.8,
+  "alertas_entregadas": 5967,
+  "TPS_alertas_entregadas": 12.43,
+  "TPM_alertas_entregadas": 745.9,
+  "error_rate": 0,
+  "http_p95_ms": 15703.9,
+  "http_p99_ms": 25246.9,
+  "entrega_p95_ms": 9747.7,
+  "entrega_p99_ms": 18291.6,
+  "vus_max": 1200,
+  "ws_errores": 11836,
+  "umbrales": {
+    "http_req_failed": {
+      "rate<0.05": true
+    },
+    "http_req_duration": {
+      "p(95)<2000": false
+    },
+    "alerta_entrega_ms": {
+      "p(95)<5000": false
+    }
+  }
+}

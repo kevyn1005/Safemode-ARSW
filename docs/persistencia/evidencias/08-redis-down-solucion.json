@@ -1,0 +1,17 @@
+{
+  "mode": "redis-down",
+  "utc": "2026-11-07T04:55:53.630169+00:00",
+  "results": [
+    {
+      "test": "degradacion_redis",
+      "passed": true,
+      "evidence": {
+        "edit_status": 200,
+        "edit_ms": 71,
+        "presence_status": 200,
+        "presence_ms": 19,
+        "presence": "{\"available\":false,\"operator\":\"ana\",\"puesto\":\"puesto-1\"}"
+      }
+    }
+  ]
+}

@@ -60,3 +60,25 @@ Ver [ADR 0001](../adr/0001-contenerizacion-servicios-captura-pantalla.md) para c
 captura, [ADR 0002](../adr/0002-docker-compose-gateway-y-base-de-datos.md) para la base de datos compartida y el
 gateway, [ADR 0003](../adr/0003-dos-camaras-zonas-y-reporte.md) para las dos cámaras y el reporte y
 [ADR 0004](../adr/0004-login-google-y-notificaciones.md) para los avisos y el login.
+
+## Persistencia y consistencia (ADR 0005, opcional)
+
+Con `docker-compose.persistencia.yml` el compose suma tres motores y dos servicios; **sin ese archivo todo sigue como arriba (H2)**.
+
+```mermaid
+flowchart LR
+    GW["realtime-gateway<br/>(motor de alertas)"] -- "eventos y alertas<br/>UNIQUE por evento" --> PG[("PostgreSQL")]
+    TR["tracker (computador)"] -- "jdbc:postgresql://localhost:5433" --> PG
+    CS["collaboration-service<br/>configuración del puesto, presencia, caché"] --> MG[("MongoDB<br/>documento + versión")]
+    CS --> RD[("Redis<br/>presencia 20 s · caché 60 s")]
+    CS -- "¿puede escribir AHORA?<br/>fail-closed" --> AS["access-service<br/>autoridad de permisos"]
+    AS --> PG
+    PM["Prometheus"] -- "/metrics" --> CS
+    PM -- "/metrics" --> AS
+    GF["Grafana"] --> PM
+```
+
+- **PostgreSQL** guarda lo que debe ser correcto siempre: eventos, alertas (una por evento) y permisos. **MongoDB** guarda la
+  configuración compartida del puesto como un documento con versión (evita la edición perdida). **Redis** guarda solo lo efímero:
+  presencia y caché de permisos para pintar el panel, nunca para autorizar una escritura.
+- El panel y el WebSocket no cambian. Matriz, decisiones y evidencias: [docs/persistencia](../persistencia/README.md).

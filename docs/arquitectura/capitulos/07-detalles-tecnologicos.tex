@@ -1,0 +1,82 @@
+\chapter{Detalles tecnológicos}
+
+\section{Lenguajes y frameworks}
+\begin{table}[H]
+\centering\small
+\caption{Tecnologías por capa (versiones tomadas de los pom.xml y de los archivos Compose).}\label{tab:tec}
+\begin{tabularx}{\textwidth}{lYY}
+\toprule
+\textbf{Capa} & \textbf{Tecnología} & \textbf{Para qué} \\
+\midrule
+Backend & Java 17 (Temurin), Maven (reactor de 8 módulos) & Detección, seguimiento, alertas, gateway y servicios de apoyo \\
+Visión & YOLOv8 exportado a ONNX; ONNX Runtime 1.18.0 & Detectar personas y maletas; estimar la pose del dueño (YOLOv8-pose) \\
+Tiempo real & Java-WebSocket 1.5.6; servidor HTTP del JDK con pool de 32 hilos & Empujar alertas; servir panel, fotos y API \\
+Datos & H2 2.2.224 (por defecto); PostgreSQL 16.6 (JDBC 42.7.4, HikariCP en el servicio de acceso); MongoDB 7.0.16 (controlador 5.2.1); Redis 7.4.2 (Jedis 5.2.0) & Eventos y alertas; permisos; configuración compartida y su historial; presencia y caché \\
+Serialización & Gson 2.11.0 & Mensajes JSON del WebSocket y de la API \\
+Panel & HTML, CSS y JavaScript sin \emph{build}; pruebas con Node, jsdom y c8 & Tablero de alertas en vivo, compartir ventana, zonas, reporte \\
+Métricas & Micrometer 1.13.6 (registro de Prometheus) & Tráfico, latencia, entrega de alertas y dependencias \\
+Pruebas & JUnit 5.10.2; JaCoCo 0.8.14; k6 0.57.0 & Unitarias y de integración; cobertura; carga, estrés y pico \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Infraestructura y servicios}
+\begin{itemize}
+  \item \textbf{Nube:} una instancia EC2 de AWS (AWS Academy Learner Lab); el dominio es \cod{safemode-arsw.duckdns.org} (DuckDNS) y el certificado
+  TLS lo obtiene y renueva Caddy con Let's Encrypt.
+  \item \textbf{Proxy:} Caddy 2.8 como única entrada pública: \cod{/ws} al WebSocket, \cod{/frames} y \cod{/grafana} detrás de \cod{forward_auth}
+  contra \cod{/auth/me}, y el resto al panel.
+  \item \textbf{Servicios de terceros:} Google Identity Services (OpenID Connect), la API de bots de Telegram y, de forma opcional, el modelo de
+  visión de NVIDIA (el modelo por defecto es un Nemotron sin razonamiento, tras retirarse el anterior).
+  \item \textbf{Almacenamiento de evidencia:} fotos PNG en un volumen; la base guarda solo la ruta.
+\end{itemize}
+
+\section{DevOps y CI/CD}
+El pipeline (\cod{.github/workflows/pipeline.yml}) corre en cada \cod{push} y se compone de \emph{reusable workflows}:
+
+\begin{table}[H]
+\centering\small
+\caption{Etapas del pipeline.}\label{tab:pipeline}
+\begin{tabularx}{\textwidth}{lYY}
+\toprule
+\textbf{Etapa} & \textbf{Workflow} & \textbf{Qué hace} \\
+\midrule
+Backend & \cod{reusable-backend.yml} & Java 17, \cod{mvn -B verify}: compila, prueba y mide la cobertura con JaCoCo; sube los informes \\
+Frontend & \cod{reusable-frontend.yml} & Node 24, \cod{npm ci}, pruebas del panel con cobertura (c8, \cod{--all}); sube \cod{lcov.info} \\
+Quality & \cod{reusable-sonar.yml} & Descarga ambos informes y analiza con SonarCloud; falla si el control de calidad no pasa \\
+Deploy & job \cod{deploy} & Despliegue por SSH a la EC2 en \cod{develop} y \cod{main}, con una comprobación posterior de que el panel responde \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+La etapa de calidad se omite con un aviso (sin romper) mientras el equipo no configure el token y las variables de SonarCloud; con todo
+configurado, falla si el control no pasa y, como el despliegue depende de ella, un cambio que no cumple no llega al servidor.
+
+\section{Docker y Docker Compose}
+Cada módulo tiene su \cod{Dockerfile}; los archivos Compose se combinan por capas (\cod{-f} varias veces) en lugar de duplicarse:
+
+\begin{table}[H]
+\centering\small
+\caption{Archivos Compose y su papel.}\label{tab:compose}
+\begin{tabularx}{\textwidth}{lY}
+\toprule
+\textbf{Archivo} & \textbf{Papel} \\
+\midrule
+\cod{docker-compose.yml} & Base: captura de imagen, visión, base H2 en modo servidor y gateway; proyecto \cod{safemode-arsw} \\
+\cod{docker-compose.persistencia.yml} & PostgreSQL, MongoDB, Redis, servicios de acceso y colaboración, Prometheus, Grafana, sonda \cod{/ready} y k6 \\
+\cod{docker-compose.tracker.yml} & El tracker en un contenedor (despliegue público) \\
+\cod{docker-compose.publico.yml} & Caddy como entrada pública y reinicio automático de los servicios \\
+\cod{docker-compose.escalado.yml} & Prototipo de escalado: balanceador Caddy y réplicas del gateway (proyecto \cod{safemode-escalado}, aparte del normal) \\
+\cod{docker-compose.sonar.yml} & SonarQube local para ver las calificaciones antes del pipeline \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Prometheus, Grafana y k6}
+Prometheus (5~s de \emph{scrape} y de evaluación de reglas) descubre cada réplica del gateway por DNS y también recoge los servicios de acceso
+y colaboración y la sonda \cod{/ready}; Grafana muestra el tablero del equipo y los de persistencia (13.3.1, porque el formato v2 del tablero no
+carga en la 11.5); y k6 corre en un contenedor y envía sus métricas a Prometheus por \emph{remote write}. Los scripts de k6
+(\cod{performance/k6/safemode.js}), el ejecutor que levanta el prototipo y deja la base en un estado conocido
+(\cod{performance/ejecutar.ps1}), el generador de gráficas (\cod{performance/graficar.py}) y las reglas de alerta quedan versionados y son
+reproducibles. Las gráficas calculan la latencia del cliente por ventana a partir de los contadores de k6 (porque k6 exporta sus percentiles
+acumulados) y se verificaron contra el resumen de k6: misma media, mismas solicitudes, mismas alertas y mismos errores.

@@ -1,0 +1,17 @@
+# CollaborationClient REAL contra collaboration-service, MongoDB, Redis y PostgreSQL reales (jshell dentro de la red de Docker)
+# 2026-11-07 09:43:08 (UTC-5). Nota: el servicio valida el cuerpo ANTES de consultar el permiso (un cuerpo invalido da 400 aunque el operador no pueda escribir).
+
+1) leer el puesto                          -> 200 {"id":"puesto-1","title":"Puesto principal","cameras":[{"id":1,"zone":{"x":0.05,"y":0.1,"w":0.6,"h":0.7}},{"id":2,"zone":null}],"version":3,"updatedBy":"ana","updatedAt":"2026-11-07T14:42:53.877833338Z"}
+2) permiso de ana (admin del lab)         -> 200 {"operator":"ana","puesto":"puesto-1","canConfigure":true,"source":"cache","note":"Solo para mostrar la pantalla: puede estar desactualizado hasta 60 s. La escritura se decide en el servidor."}
+3) permiso de marta (viewer)              -> 200 {"operator":"marta","puesto":"puesto-1","canConfigure":false,"source":"cache","note":"Solo para mostrar la pantalla: puede estar desactualizado hasta 60 s. La escritura se decide en el servidor."}
+4) permiso de alguien que no existe       -> 200 {"operator":"nadie","puesto":"puesto-1","canConfigure":false,"source":"cache","note":"Solo para mostrar la pantalla: puede estar desactualizado hasta 60 s. La escritura se decide en el servidor."}
+5) ana guarda las 2 zonas (version 3)    -> 200 {"id":"puesto-1","title":"Puesto principal","cameras":[{"id":1,"zone":{"x":0.1,"y":0.1,"w":0.3,"h":0.8}},{"id":2,"zone":{"x":0.6,"y":0.1,"w":0.3,"h":0.8}}],"version":4,"updatedBy":"ana","updatedAt":"2026-11-07T14:43:19.908592628Z"}
+6) luis guarda con la MISMA version vieja  -> 409 {"error":"La version cambio: otra edicion se guardo antes. Recargue y vuelva a intentar","expectedVersion":3,"currentVersion":4}
+7) marta (solo lectura) intenta guardar   -> 403 {"error":"El operador no tiene permiso para configurar este puesto"}
+8) campo desconocido en el cuerpo         -> 400 {"error":"Campo desconocido: operator"}
+9) zona fuera de 0..1                     -> 400 {"error":"zone.x debe estar entre 0 y 1"}
+10) ana late (presencia)                  -> 200 {"available":true,"operator":"ana","puesto":"puesto-1"}
+11) luis late (presencia)                 -> 200 {"available":true,"operator":"luis","puesto":"puesto-1"}
+12) quien esta en linea                   -> 200 {"available":true,"operators":["ana","luis"]}
+13) identidad con forma de inyeccion      -> 403 {"error":"Operador no valido"}
+14) se restaura el puesto                 -> 200 {"id":"puesto-1","title":"Puesto principal","cameras":[{"id":1,"zone":{"x":0.05,"y":0.1,"w":0.6,"h":0.7}},{"id":2,"zone":null}],"version":5,"updatedBy":"ana","updatedAt":"2026-11-07T14:43:22.005401172Z"}

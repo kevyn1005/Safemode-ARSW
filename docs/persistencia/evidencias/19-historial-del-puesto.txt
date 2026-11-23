@@ -1,0 +1,65 @@
+# Historial de cambios del puesto (coleccion puesto_history) contra MongoDB real · 2026-11-07 09:54:05 (UTC-5)
+
+## Indices de la coleccion
+{"name":"_id_","key":{"_id":1},"unique":false}
+{"name":"puesto_version_unique","key":{"puesto_id":1,"version":-1},"unique":true}
+{"name":"at_ttl","key":{"at":1},"unique":false,"expireAfterSeconds":7776000}
+
+## Escenario (collaboration-service, sin pasar por el gateway)
+0) estado inicial: version 5 | historial: (200, [], 'nextBefore=None')
+
+--- cinco cambios de ana (titulo, zonas, preferencias, titulo, zonas) ---
+  PUT ['title'] -> 200 v 6
+  PUT ['cameras'] -> 200 v 7
+  PUT ['preferences'] -> 200 v 8
+  PUT ['title', 'preferences'] -> 200 v 9
+  PUT ['cameras'] -> 200 v 10
+
+1) historial completo, mas nuevo primero: (200, [(10, 'ana', ['cameras']), (9, 'ana', ['title', 'preferences']), (8, 'ana', ['preferences']), (7, 'ana', ['cameras']), (6, 'ana', ['title'])], 'nextBefore=None')
+2) primera pagina (limit=2)        : (200, [(10, 'ana', ['cameras']), (9, 'ana', ['title', 'preferences'])], 'nextBefore=9')
+   >>> llega un cambio NUEVO entre paginas:  200
+3) segunda pagina (before=9,limit=2): (200, [(8, 'ana', ['preferences']), (7, 'ana', ['cameras'])], 'nextBefore=7')  <- sin repetir ni saltar aunque llego otro cambio
+4) tercera pagina (before=7,limit=2): (200, [(6, 'ana', ['title'])], 'nextBefore=None')
+
+--- lo que NO debe dejar entrada ---
+5) 409 (version vieja)             -> 409
+6) 403 (marta, solo lectura)       -> 403
+7) 400 (campo desconocido)         -> 400
+   entradas antes/despues: 6 / 6 -> igual: True
+
+--- consulta invalida (todas 400) ---
+   ?limit=0     -> 400
+   ?limit=51    -> 400
+   ?limit=abc   -> 400
+   ?before=0    -> 400
+   ?before=abc  -> 400
+   ?before=1e3  -> 400
+   ?limit=5;x   -> 400
+   limit=50 (maximo)  -> 200 | un puesto distinto: 200
+
+8) la forma de una entrada: {"version": 11, "title": "Puesto principal C", "changed": ["title"], "by": "ana", "at": "2026-11-07T14:54:11.139Z"}
+
+## Metrica de entradas (/metrics de collaboration-service: safemode_history_writes_total)
+safemode_history_writes_total:
+   safemode_history_writes_total{result="error",service="collaboration"} 0.0
+   safemode_history_writes_total{result="ok",service="collaboration"} 6.0
+
+## El indice unico {puesto_id, version} impide dos entradas de la misma version
+insertar la version 11 otra vez -> error 11000 undefined
+
+## Si falla la escritura del historial, el cambio NO se pierde (se escribe DESPUES del cambio)
+(se rompe a proposito la coleccion con un validador imposible)
+collMod -> ok: 1
+version antes del cambio: 11 | ultimas entradas: [(11, 'ana', ['title']), (10, 'ana', ['cameras']), (9, 'ana', ['title', 'preferences'])]
+PUT con el historial FALLANDO -> 200 | version 12 | titulo: Cambio con el historial roto
+el puesto SI quedo guardado    -> version 12 | titulo: Cambio con el historial roto
+ultimas entradas (falta la v12: queda un hueco, no se perdio el cambio): [(11, 'ana', ['title']), (10, 'ana', ['cameras']), (9, 'ana', ['title', 'preferences'])]
+safemode_history_writes_total:
+   safemode_history_writes_total{result="error",service="collaboration"} 1.0
+   safemode_history_writes_total{result="ok",service="collaboration"} 6.0
+se restaura la coleccion -> ok: 1
+
+## Reinicio del escenario: la version vuelve a 1 y el historial se borra (si no, chocaria con el indice unico)
+POST /api/lab/reset -> 200
+puesto tras el reinicio: version 1
+historial tras el reinicio: [] (vacio: el escenario vuelve a la version 1)

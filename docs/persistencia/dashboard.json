@@ -1,0 +1,257 @@
+{
+  "id": null,
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Solo prueba que Prometheus pudo leer /metrics. NO prueba que el servicio pueda hacer su trabajo (ver 'Dependencias').",
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "targets": [
+        {
+          "expr": "up{job=~\"access|collaboration\"}",
+          "legendFormat": "{{job}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Servicios observables · 1 = scrape exitoso",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "sum by (service) (rate(safemode_http_requests_total[1m]))",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Solicitudes por segundo",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Estimado con las cubetas del histograma del backend (no incluye red ni Nginx). El P95 de k6 mide desde el cliente: no tiene por que coincidir.",
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 9
+      },
+      "id": 3,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, service) (rate(safemode_http_duration_seconds_bucket[1m])))",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ],
+      "title": "P95 por servicio (s)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Solo 5xx. Un 403 o un 409 son rechazos correctos, no fallas, y NO aparecen aqui.",
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 9
+      },
+      "id": 4,
+      "targets": [
+        {
+          "expr": "sum by (service) (rate(safemode_http_requests_total{status=~\"5..\"}[1m]))",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Errores técnicos (5xx por segundo)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Sondeo de conectividad cada 3 s. Con Redis detenido baja a 0 aunque el servicio siga con up=1 y respondiendo 200.",
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 17
+      },
+      "id": 5,
+      "targets": [
+        {
+          "expr": "safemode_dependency_up",
+          "legendFormat": "{{service}} → {{dependency}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Dependencias (1 = responde, 0 = caída)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Solo cuenta consultas de permiso de la pantalla; excluye errores de Redis. NO dice que una escritura fue autorizada.",
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 17
+      },
+      "id": 6,
+      "targets": [
+        {
+          "expr": "sum(rate(safemode_cache_total{result=\"hit\"}[1m])) / clamp_min(sum(rate(safemode_cache_total{result=~\"hit|miss\"}[1m])), 0.000001)",
+          "legendFormat": "aciertos / (aciertos + fallos)",
+          "refId": "A"
+        }
+      ],
+      "title": "Aciertos de caché (0 a 1)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Ediciones rechazadas por version obsoleta. Subir significa que la proteccion funciona (antes se perdian en silencio).",
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 25
+      },
+      "id": 7,
+      "targets": [
+        {
+          "expr": "sum(rate(safemode_conflicts_total[1m]))",
+          "legendFormat": "conflictos 409",
+          "refId": "A"
+        }
+      ],
+      "title": "Conflictos de edición (por segundo)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Operaciones que respondieron 200 pero sin registrar presencia porque Redis no respondio.",
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 25
+      },
+      "id": 8,
+      "targets": [
+        {
+          "expr": "sum(rate(safemode_degraded_total{feature=\"presence\"}[1m]))",
+          "legendFormat": "presencia sin Redis",
+          "refId": "A"
+        }
+      ],
+      "title": "Presencia degradada (por segundo)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": [
+    "ARSW",
+    "laboratorio",
+    "safemode",
+    "persistencia"
+  ],
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "title": "ARSW-EQP-01 · Persistencia (Safemode)",
+  "uid": "arsw-eqp-01-persistencia",
+  "version": 1
+}

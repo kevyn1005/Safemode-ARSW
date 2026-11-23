@@ -1,0 +1,4 @@
+# P95 del backend estimado por Prometheus con las cubetas del histograma, en la ventana de cada carga k6
+# (k6 mide desde el cliente, incluye Nginx y la red: ver 05 y 10)
+k6 base: ventana 23:52:55 -> 23:54:40 (UTC-5) | P95 backend (cubetas) = 9.3 ms | peticiones = 5523 | 5xx = 0
+k6 solucion: ventana 23:56:53 -> 23:58:38 (UTC-5) | P95 backend (cubetas) = 9.2 ms | peticiones = 5519 | 5xx = 0

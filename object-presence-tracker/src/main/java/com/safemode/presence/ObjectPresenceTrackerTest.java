@@ -235,7 +235,7 @@ public class ObjectPresenceTrackerTest {
     private static FrameSource openFrameSource(boolean forceBrowser) throws Exception {
         if (forceBrowser || "browser".equalsIgnoreCase(System.getenv("SAFEMODE_FRAME_SOURCE"))) {
             BrowserFrameSource source = new BrowserFrameSource("localhost", BROWSER_FRAMES_PORT,
-                    Set.of("http://localhost:8080", "http://127.0.0.1:8080"));
+                    frameOrigins(System.getenv("SAFEMODE_PUBLIC_HOST")));
             source.startAndWait();
             System.out.println("Fuente de frames: ventana compartida desde el navegador (ws://localhost:" + BROWSER_FRAMES_PORT
                     + "). Abre http://localhost:8080 y pulsa \"Compartir ventana de la camara\".");
@@ -275,5 +275,14 @@ public class ObjectPresenceTrackerTest {
             }
         }
         System.out.println("Fotos de la corrida anterior borradas: " + deleted);
+    }
+
+    /** Paginas autorizadas a mandar frames: el panel local y, si hay dominio publico (SAFEMODE_PUBLIC_HOST), ese dominio por HTTPS. */
+    static Set<String> frameOrigins(String publicHost) {
+        Set<String> origins = new java.util.HashSet<>(Set.of("http://localhost:8080", "http://127.0.0.1:8080"));
+        if (publicHost != null && !publicHost.isBlank()) {
+            origins.add("https://" + publicHost.trim());
+        }
+        return origins;
     }
 }

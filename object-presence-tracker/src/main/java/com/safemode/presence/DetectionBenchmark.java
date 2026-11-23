@@ -97,6 +97,9 @@ public class DetectionBenchmark {
             try {
                 start.await();
                 out.addAll(time(detector, scenes, frames));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
@@ -131,8 +134,7 @@ public class DetectionBenchmark {
         List<BufferedImage> scenes = new ArrayList<>();
         if (Files.isDirectory(dir)) {
             try (var files = Files.list(dir)) {
-                for (Path file : files.filter(f -> f.getFileName().toString().matches(".*_(REGISTERED_AT_REST|REMOVED)_.*\\.png"))
-                        .sorted().toList()) {
+                for (Path file : files.filter(DetectionBenchmark::isSceneFrame).sorted().toList()) {
                     BufferedImage image = ImageIO.read(file.toFile());
                     if (image != null) {
                         scenes.add(image);
@@ -144,5 +146,11 @@ public class DetectionBenchmark {
             throw new IllegalStateException("No hay fotos de escena en " + dir + ": corre antes el tracker una vez.");
         }
         return scenes;
+
+
+    }
+    private static boolean isSceneFrame(Path file) {
+        String name = file.getFileName().toString();
+        return name.endsWith(".png") && (name.contains("_REGISTERED_AT_REST_") || name.contains("_REMOVED_"));
     }
 }

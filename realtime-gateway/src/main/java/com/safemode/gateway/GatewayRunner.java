@@ -22,6 +22,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 // Variables de entorno (todas opcionales):
 //   SAFEMODE_DB_URL     URL JDBC de la base (por defecto el archivo local del tracker; en Docker, el servicio h2-db)
 //   SAFEMODE_BIND_HOST  direccion donde escuchar (por defecto localhost; en Docker, 0.0.0.0 para que llegue el puerto publicado)
+//   SAFEMODE_METRICS_HOST  direccion de /metrics y /ready, puerto 9464 (por defecto la misma de SAFEMODE_BIND_HOST). Con Docker Desktop
+//                       (Windows/Mac) el Prometheus de docker-compose.observability.yml alcanza el gateway del computador por
+//                       host.docker.internal aunque escuche solo en localhost; en Linux (el contenedor llega por la IP del puente) hace
+//                       falta 0.0.0.0, que deja el puerto abierto a la red de la maquina
 // Boton "Iniciar vigilancia" del panel: lanza el tracker como proceso hijo (ver TrackerProcess). Solo se ofrece si el
 // gateway escucha unicamente en esta maquina (no en un contenedor ni abierto a la red) y se corre desde la raiz del repo.
 public class GatewayRunner {
@@ -38,11 +42,18 @@ public class GatewayRunner {
             throw new IllegalStateException("Faltan SAFEMODE_GOOGLE_CLIENT_ID y/o SAFEMODE_ALLOWED_EMAILS: "
                     + "el panel solo permite iniciar sesion con Google (ver ADR 0004)");
         }
-        AuthService auth = AuthService.google(googleClientId.trim(), allowedEmails);
-        try (PresenceEventStore events = PresenceEventStore.fromEnvironment(DB_PATH);
+        SessionStore sessionStore = sessionStoreFor(System.getenv("SAFEMODE_SESSION_STORE"), DB_PATH);
+        AuthService auth = AuthService.google(googleClientId.trim(), allowedEmails, sessionStore);
+        try (SessionStore sessions = sessionStore;
+             PresenceEventStore events = PresenceEventStore.fromEnvironment(DB_PATH);
              AlertStore alerts = AlertStore.fromEnvironment(DB_PATH);
              AlertEngine engine = new AlertEngine(events, alerts)) {
-            Set<String> panelOrigins = Set.of("http://localhost:" + HTTP_PORT, "http://127.0.0.1:" + HTTP_PORT);
+            Set<String> panelOrigins = new java.util.HashSet<>(Set.of("http://localhost:" + HTTP_PORT, "http://127.0.0.1:" + HTTP_PORT));
+            String publicHost = System.getenv("SAFEMODE_PUBLIC_HOST");
+            if (publicHost != null && !publicHost.isBlank()) {
+                panelOrigins.add("https://" + publicHost.trim());
+                panelOrigins.add("http://" + publicHost.trim());
+            }
             AlertGateway gateway = new AlertGateway(engine, alerts, bindHost, WS_PORT, panelOrigins).withAuth(auth);
             // Avisos de las alertas nuevas altas y medias por Telegram (clave y chats solo por variables de entorno; ver ADR 0004)
             NotificationService notifications = NotificationService.fromEnvironment(System.getenv(),
@@ -80,6 +91,7 @@ public class GatewayRunner {
                         }
                     })
                     .withAuth(auth);
+            enablePuesto(http, allowedEmails);
             gateway.startAndWait();
             http.start();
             Timer alertLatency = Timer.builder("safemode.alert.latency")
@@ -90,23 +102,35 @@ public class GatewayRunner {
             for (com.safemode.alerts.Severity sev : com.safemode.alerts.Severity.values()) {
                 Observability.REGISTRY.counter("safemode.alerts", "severity", sev.name());
             }
+            for (com.safemode.alerts.AlertType t : com.safemode.alerts.AlertType.values()) {
+                Observability.REGISTRY.counter("safemode.alerts.by_type", "type", t.name());
+            }
             engine.addListener(alert -> {
                 Observability.REGISTRY.counter("safemode.alerts", "severity", String.valueOf(alert.severity())).increment();
+                Observability.REGISTRY.counter("safemode.alerts.by_type", "type", String.valueOf(alert.type())).increment();   // NUEVO
                 engine.evidenceOf(alert).ifPresent(event ->
                         alertLatency.record(Duration.between(event.occurredAt(), Instant.now())));
             });
             engine.start(Duration.ofMillis(250));
-            String metricsHost = System.getenv().getOrDefault("SAFEMODE_METRICS_HOST", "0.0.0.0");
-            HttpServer observability = Observability.start(metricsHost, 9464, () -> {
+            String metricsHost = metricsHost(System.getenv("SAFEMODE_METRICS_HOST"), bindHost);
+            // La misma comprobacion sirve a /ready (sonda funcional) y al gauge safemode_dependency_up{dependency="database"}.
+            // Con almacenes que se reconectan solos, vuelve a dar true en cuanto la base (H2 o PostgreSQL) se recupera.
+            java.util.function.BooleanSupplier databaseUp = () -> {
                 try {
                     engine.recentEvents(1);
                     return true;
                 } catch (Exception e) {
-                    System.err.println("[READY] fallo la consulta a H2: " + e + " | causa: " + e.getCause());
+                    System.err.println("[READY] fallo la consulta a la base de datos: " + e + " | causa: " + e.getCause());
                     return false;
                 }
-            });
-            System.out.println("Inicio de sesion con Google: " + allowedEmails.size() + " correo(s) autorizado(s)");
+            };
+            HttpServer observability = Observability.start(metricsHost, 9464, databaseUp);
+            Observability.watchDependency("database", databaseUp, Duration.ofSeconds(5));
+            System.out.println("Metricas y /ready en " + metricsHost + ":9464" + (loopbackOnly(metricsHost)
+                    ? " (solo esta maquina; si un Prometheus en Linux/Docker no las alcanza, define SAFEMODE_METRICS_HOST=0.0.0.0)"
+                    : ""));
+            System.out.println("Inicio de sesion con Google: " + allowedEmails.size() + " correo(s) autorizado(s); sesiones "
+                    + (sessionStore instanceof JdbcSessionStore ? "en la base de datos (compartidas entre replicas)" : "en memoria de este proceso"));
             System.out.println(seconds > 0 ? "Escuchando durante " + seconds + " s..." : "Escuchando hasta que lo detengan...");
             // Parada unica: al terminar el tiempo, o con docker stop (SIGTERM), que dispara el hook de cierre
             AtomicBoolean stopped = new AtomicBoolean();
@@ -134,9 +158,66 @@ public class GatewayRunner {
         }
     }
 
+    /**
+     * Configuracion compartida del puesto y presencia (MongoDB y Redis, ADR 0005): solo si estan las tres variables
+     * SAFEMODE_COLLAB_URL, SAFEMODE_ACCESS_URL y SAFEMODE_ACCESS_KEY; sin ellas el panel funciona exactamente como antes.
+     * SAFEMODE_ADMIN_EMAILS (opcional) son los correos que pueden configurar el puesto la primera vez; SAFEMODE_PUESTO_ID
+     * (opcional, por defecto puesto-1) el puesto que se comparte. Las claves solo por variable de entorno, nunca en el codigo.
+     */
+    private static void enablePuesto(DashboardHttpServer http, Set<String> allowedEmails) {
+        String collaborationUrl = System.getenv("SAFEMODE_COLLAB_URL");
+        String accessUrl = System.getenv("SAFEMODE_ACCESS_URL");
+        String accessKey = System.getenv("SAFEMODE_ACCESS_KEY");
+        if (isBlank(collaborationUrl) || isBlank(accessUrl) || isBlank(accessKey)) {
+            System.out.println("Configuracion compartida del puesto: desactivada (define SAFEMODE_COLLAB_URL, SAFEMODE_ACCESS_URL y SAFEMODE_ACCESS_KEY)");
+            return;
+        }
+        String puestoId = isBlank(System.getenv("SAFEMODE_PUESTO_ID")) ? "puesto-1" : System.getenv("SAFEMODE_PUESTO_ID").trim();
+        Set<String> admins = AuthService.parseEmails(System.getenv("SAFEMODE_ADMIN_EMAILS"));
+        http.withPuesto(new CollaborationClient(collaborationUrl, puestoId),
+                new AccessDirectory(accessUrl, accessKey.trim(), puestoId, allowedEmails, admins));
+        System.out.println("Configuracion compartida del puesto '" + puestoId + "': activa (" + admins.size()
+                + " correo(s) pueden configurarla al inicio; los demas autorizados solo la ven)");
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
     /** El boton solo se ofrece con el gateway escuchando unicamente en esta maquina. */
     static boolean trackerButtonAllowed(String bindHost) {
-        return bindHost.equals("localhost") || bindHost.equals("127.0.0.1");
+        return loopbackOnly(bindHost);
+    }
+
+    /** Cierto si la direccion solo es alcanzable desde esta maquina. */
+    static boolean loopbackOnly(String host) {
+        return host.equals("localhost") || host.equals("127.0.0.1");
+    }
+
+    /**
+     * Direccion de /metrics y /ready (puerto 9464): la de SAFEMODE_METRICS_HOST o, si no esta definida, LA MISMA del panel
+     * (SAFEMODE_BIND_HOST). Antes el valor por defecto era 0.0.0.0: con el gateway corriendo en el computador, cualquier equipo de
+     * la red podia leer las metricas (alertas por tipo y severidad, operadores conectados, estado de la base) sin cuenta alguna
+     * (auditoria de seguridad, pista 1). En Docker no cambia nada: la imagen fija SAFEMODE_BIND_HOST=0.0.0.0 y el puerto 9464 no
+     * se publica, solo lo alcanzan Prometheus y la sonda por la red del compose.
+     */
+    /**
+     * Donde guardar las sesiones: nada o {@code memory} = en memoria de este proceso (lo de siempre); {@code database} = en la base
+     * compartida, necesario si hay varias replicas del gateway detras de un balanceador. Un valor desconocido falla al arrancar:
+     * quien cree tener sesiones compartidas por un error de escritura se enteraria con operadores que se desconectan.
+     */
+    static SessionStore sessionStoreFor(String mode, String defaultDbPath) {
+        if (mode == null || mode.isBlank() || mode.trim().equalsIgnoreCase("memory")) {
+            return new SessionStore.InMemory();
+        }
+        if (mode.trim().equalsIgnoreCase("database")) {
+            return JdbcSessionStore.fromEnvironment(defaultDbPath);
+        }
+        throw new IllegalStateException("SAFEMODE_SESSION_STORE debe ser 'memory' o 'database', no '" + mode.trim() + "'");
+    }
+
+    static String metricsHost(String envValue, String bindHost) {
+        return envValue == null || envValue.isBlank() ? bindHost : envValue.trim();
     }
 
     /** Tracker con la fuente "ventana compartida desde el navegador", sin limite de tiempo y parada ordenada por entrada estandar. */

@@ -33,21 +33,21 @@ public final class TelegramChannel implements NotificationChannel {
     private static final Pattern CHAT_ID = Pattern.compile("-?[0-9]{1,18}");
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
 
-    private final String token;
+    private final String botToken;
     private final List<String> chatIds;
     private final URI apiBase;
     private final HttpClient http;
 
-    public TelegramChannel(String token, List<String> chatIds) {
-        this(token, chatIds, DEFAULT_API);
+    public TelegramChannel(String botToken, List<String> chatIds) {
+        this(botToken, chatIds, DEFAULT_API);
     }
 
     /** Con otra direccion de la API (las pruebas usan un servidor falso local). */
-    TelegramChannel(String token, List<String> chatIds, URI apiBase) {
-        if (token == null || !TOKEN.matcher(token).matches()) {
+    TelegramChannel(String botToken, List<String> chatIds, URI apiBase) {
+        if (botToken == null || !TOKEN.matcher(botToken).matches()) {
             throw new IllegalArgumentException("La clave del bot de Telegram no tiene el formato esperado");
         }
-        this.token = token;
+        this.botToken = botToken;
         this.chatIds = List.copyOf(chatIds);
         this.apiBase = apiBase;
         this.http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).connectTimeout(TIMEOUT).build();
@@ -115,7 +115,7 @@ public final class TelegramChannel implements NotificationChannel {
         body.addProperty("chat_id", Long.parseLong(chatId));
         body.addProperty("text", text);
         body.addProperty("disable_web_page_preview", true);
-        HttpRequest request = HttpRequest.newBuilder(URI.create(apiBase + "/bot" + token + "/sendMessage"))
+        HttpRequest request = HttpRequest.newBuilder(URI.create(apiBase + "/bot" + botToken + "/sendMessage"))
                 .timeout(TIMEOUT)
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString(), StandardCharsets.UTF_8))

@@ -1,0 +1,35 @@
+# Prometheus recoge /metrics de cada servicio cada 5 s (ADR 0005). El nombre del job es el que usan los paneles de Grafana.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: access
+    static_configs:
+      - targets: ['access-service:8100']
+
+  - job_name: collaboration
+    static_configs:
+      - targets: ['collaboration-service:8110']
+
+  # El gateway del producto (rama de observabilidad de Kevyn): metricas Micrometer en el puerto 9464
+  # (safemode_alerts_total por severidad, safemode_alert_latency_seconds, safemode_dependency_up{dependency="database"} y JVM).
+  - job_name: gateway
+    static_configs:
+      - targets: ['realtime-gateway:9464']
+
+  # Sonda funcional: blackbox pide /ready al gateway y probe_success = 1 solo si este pudo consultar su base de datos.
+  # Distinta de "up" (que solo dice que /metrics se pudo leer): un gateway vivo con la base caida tiene up = 1 y probe_success = 0.
+  - job_name: ready-probe
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets: ['http://realtime-gateway:9464/ready']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115

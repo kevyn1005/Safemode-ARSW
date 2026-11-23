@@ -1,0 +1,24 @@
+# Hallazgo: la "degradacion lenta" de un contenedor detenido es DNS, no un timeout de Redis ni de HTTP
+# Medido el 2026-11-06 (UTC-5) en Docker Desktop 29.6.1 / Compose v5.2.0, desde el contenedor collaboration-service,
+# con el contenedor "redis" DETENIDO:  getent hosts redis   (rc=2 = no resuelve)
+
+## Antes (resolv.conf por defecto de Docker: nameserver 127.0.0.11, options ndots:0)
+rc=2 8008 ms     (primera llamada)
+rc=2 3974 ms
+rc=2 3962 ms
+
+## Despues (docker-compose.persistencia.yml: dns_opt ["timeout:1", "attempts:1"] -> options timeout:1 attempts:1 ndots:0)
+rc=2 1014 ms
+rc=2 1018 ms
+rc=2 1024 ms
+
+## Efecto sobre el experimento de Redis detenido
+- PRIMERA corrida, modo base, sin acotar el DNS (previas/12b-baseline-redis-down-sin-dns_opt.json): la edicion respondio 200 pero tardo 4021 ms
+  (la lectura de la cache esperaba la resolucion del nombre); la presencia respondio 503 en 4 ms (el nombre ya estaba en la cache negativa de la JVM, 10 s).
+- PRIMERA corrida, con dns_opt, modo solucion, Gestion detenida: 503 en 2011 ms, y el primer guardado tras restaurar Gestion dio 503 (cache negativa de 10 s de la JVM).
+- CORRIDA FINAL (dns_opt + ventana de fallo rapido de 2 s + cache negativa de 1 s): ver 08-redis-down-solucion.json (edicion 200, presencia 200 available:false,
+  decenas de ms), 09-authority-down-solucion.json (503 en 11 ms) y 09c-guardar-tras-restaurar.txt (el primer guardado tras restaurar Gestion da 200).
+
+## Causa
+El DNS embebido de Docker reenvia al resolvedor externo (192.168.65.7 en Docker Desktop) el nombre que ya no existe en la red, y este tarda ~4 s
+en contestar. Los timeouts de Jedis (300 ms) y de HttpClient (500 ms) actuan DESPUES de resolver el nombre, asi que no lo acotan.

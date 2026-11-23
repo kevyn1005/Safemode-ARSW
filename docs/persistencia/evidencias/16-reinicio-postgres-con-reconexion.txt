@@ -1,0 +1,46 @@
+# Reinicio de PostgreSQL CON reconexion automatica de los almacenes · 2026-11-07 08:55:42 (UTC-5)
+
+## 0. Antes: el flujo evento -> alerta funciona
+gateway iniciado: 2026-11-07T13:54:25.06482269Z
+INSERT 0 1
+ id | event_id |   alert_type   | severity 
+----+----------+----------------+----------
+  6 |        1 | POSSIBLE_THEFT | HIGH
+(1 row)
+
+safemode_dependency_up{service=gateway}: realtime-gateway:9464=1
+probe_success (sonda /ready):           http://realtime-gateway:9464/ready=1
+
+## 1. PostgreSQL detenido (08:55:47)
+08:56:02  safemode_dependency_up{service=gateway}: realtime-gateway:9464=0
+08:56:02  probe_success (sonda /ready):           http://realtime-gateway:9464/ready=0
+up{job=gateway} (Prometheus aun lee /metrics): realtime-gateway:9464=1
+
+## 2. PostgreSQL restaurado (08:56:03)
+PostgreSQL acepta conexiones tras ~1 s
+safemode_dependency_up{service=gateway} volvio a 1 tras 8 s (Prometheus lee cada 5 s)
+
+## 3. El gateway (motor de alertas) despues del reinicio, SIN reiniciarlo: un retiro sospechoso nuevo, hay alerta?
+INSERT 0 1
+alerta nueva creada ~0 s despues del INSERT
+ id | event_id |   alert_type   | severity 
+----+----------+----------------+----------
+  7 |        2 | POSSIBLE_THEFT | HIGH
+  6 |        1 | POSSIBLE_THEFT | HIGH
+(2 rows)
+
+probe_success (sonda /ready): http://realtime-gateway:9464/ready=1
+gateway iniciado: 2026-11-07T13:54:25.06482269Z   <- misma hora que en el paso 0: NO se reinicio
+
+## logs del gateway (solo las lineas de la base)
+[BD] Se perdio la conexion con la base de datos; se intentara reconectar sola
+[ALERTAS] No se pudieron procesar los eventos: No se pudo leer object_presence_event
+[ALERTAS] No se pudieron procesar los eventos: No se pudo leer object_presence_event
+[BD] Se perdio la conexion con la base de datos; se intentara reconectar sola
+[READY] fallo la consulta a la base de datos: java.lang.IllegalStateException: No se pudo leer object_presence_event | causa: org.postgresql.util.PSQLException: The connection attempt failed.
+[READY] fallo la consulta a la base de datos: java.lang.IllegalStateException: No se pudo leer object_presence_event | causa: org.postgresql.util.PSQLException: The connection attempt failed.
+[BD] Reconectado a la base de datos
+[BD] Reconectado a la base de datos
+
+## Conclusion
+- El gateway pierde la base, lo dice (dependency_up=0, probe_success=0) y vuelve a leer SOLO cuando PostgreSQL regresa: ya no hay que reiniciarlo.

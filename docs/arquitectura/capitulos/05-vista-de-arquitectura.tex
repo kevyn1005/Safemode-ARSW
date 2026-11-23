@@ -1,0 +1,74 @@
+\chapter{Vista de arquitectura}
+
+\section{Estilo arquitectónico}
+SafeMode combina cuatro estilos, cada uno aplicado donde resuelve un problema concreto (los diagramas de los capítulos siguientes lo muestran):
+
+\begin{description}[leftmargin=1.2em,style=nextline]
+  \item[Tuberías y filtros (\emph{pipes and filters}) en el procesamiento de imagen.] El fotograma recorre etapas que no conocen a la
+  siguiente: fuente de fotogramas $\rightarrow$ detector YOLOv8 $\rightarrow$ seguimiento de objetos y personas $\rightarrow$ almacén de
+  eventos. Cada etapa se puede probar y reemplazar por separado (por ejemplo, la fuente de imagen por captura de pantalla o por la ventana
+  compartida desde el navegador implementan la misma interfaz \cod{FrameSource}).
+  \item[Orientado a eventos con difusión (\emph{publish/subscribe}) para las alertas.] El motor de alertas lee los retiros nuevos y avisa a
+  los oyentes registrados (\cod{addListener}): el servidor WebSocket y el servicio de avisos. Agregar un canal nuevo no toca el motor.
+  \item[Cliente--servidor con empuje en tiempo real.] El panel web (página estática sin \emph{build}) es el cliente; el gateway le entrega
+  la página, las fotos y la API HTTP, y le \emph{empuja} las alertas por WebSocket sin que tenga que preguntar.
+  \item[Servicios pequeños con persistencia políglota para el estado compartido.] El servicio de acceso (permisos, PostgreSQL) y el de
+  colaboración (configuración del puesto, MongoDB; presencia y caché, Redis) son procesos aparte porque tienen garantías distintas que
+  defender (ADR~0005).
+\end{description}
+
+\textbf{Por qué no microservicios para todo.} El núcleo del producto es un reactor Maven de módulos con un solo proceso de gateway (que
+contiene el motor de alertas y el servicio de avisos) y un tracker aparte. Un equipo de tres personas y un requisito de menos de 5~s
+de extremo a extremo favorecen pocos procesos y llamadas locales; lo que escala por operadores (el gateway) se hizo \emph{sin estado}
+para poder replicarlo (ADR~0006), y lo que no se debe replicar (el tracker, por cámara, junto a la pantalla y los modelos) quedó aparte. La
+frontera entre procesos está donde cambian las garantías o la forma de escalar, no por moda.
+
+\section{Modelo cloud}
+El despliegue público usa el modelo de \textbf{infraestructura como servicio (IaaS)}: una instancia EC2 de AWS que ejecuta Docker, con todos
+los componentes en contenedores y las bases de datos autoadministradas en contenedores. Se evitó a propósito depender de servicios
+administrados propios de un proveedor (la portabilidad, sección~\ref{sec:portabilidad}). Los servicios de terceros se consumen como
+\textbf{SaaS}: Google Identity Services (identidad), Telegram (avisos) y, de forma opcional, el servicio de visión de NVIDIA. El diseño
+objetivo de disponibilidad añade servicios administrados de AWS (balanceador, RDS Multi-AZ y DNS), documentado pero no desplegado.
+
+\section{Decisiones clave}
+Cada decisión importante tiene un registro (ADR) con alternativas y consecuencias en \cod{docs/adr/}. La Tabla~\ref{tab:adr} las resume.
+
+\begin{table}[H]
+\centering\small
+\caption{Decisiones de arquitectura (ADR).}\label{tab:adr}
+\begin{tabularx}{\textwidth}{lYY}
+\toprule
+\textbf{ADR} & \textbf{Decisión} & \textbf{Por qué / consecuencia} \\
+\midrule
+0001 & Un \cod{Dockerfile} por módulo, con el reactor Maven como contexto; Xvfb para que AWT inicie sin pantalla & Los módulos comparten el \cod{pom} padre; se probó en Docker Desktop real, no solo por razonamiento \\
+0002 & El gateway en un contenedor con el motor dentro (misma JVM); H2 en modo servidor; la conexión por \cod{SAFEMODE_DB_URL}; puertos solo en 127.0.0.1 & Sin la variable todo funciona como antes (H2 local); la base y las fotos tienen datos de personas y no se exponen \\
+0003 & Dos cámaras desde una ventana compartida del navegador; zonas dibujadas con prueba previa; un seguimiento por cámara; reporte; «dueño que volvió» & Mediciones: yolov8m 371~ms con 1 cámara; con 2 cámaras yolov8s con 8 hilos por detector. La ventana de cámaras no puede minimizarse (límite del sistema operativo) \\
+0004 & Login con Google verificado en el servidor, lista blanca, sesión por cookie; avisos de texto por navegador y Telegram & Solo texto, sin fotos ni datos de personas, en aviso externo; el correo no se implementó \\
+0005 & PostgreSQL, MongoDB y Redis, cada uno por lo que garantiza; caché solo para mostrar, nunca para autorizar & Edición perdida resuelta con la versión en el filtro; falla cerrada si la autoridad no responde \\
+0006 & Gateway sin estado y replicable; alertas por sondeo de la base; sesiones compartidas opcionales; balanceador con vigilancia activa y pasiva & No hay afinidad de sesión; la base decide la unicidad de la alerta (\cod{UNIQUE}) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\textbf{Decisiones transversales.} (1) \emph{Configuración por entorno:} todo valor que varía (claves, URL de la base, orígenes) llega por
+variable de entorno, nunca por código ni repositorio. (2) \emph{Fallar cerrado:} ante la duda, se deniega (sesión sin base de datos, permiso sin
+autoridad, valor desconocido de una variable de configuración). (3) \emph{Lo que ya funciona no se rompe:} las capacidades nuevas son opcionales y
+con valor por defecto igual al comportamiento anterior (por ejemplo, H2 por defecto y PostgreSQL con una URL).
+
+\section{Justificación del balanceo, el despliegue distribuido y los servicios en tiempo real}
+\textbf{Balanceo.} Solo la capa de gateway escala por número de operadores; por eso es la única que se replica. El balanceador reparte sin
+afinidad de sesión (las sesiones están en la base) y vigila cada réplica con \cod{/ready}, que comprueba que llegue a la base; una réplica
+viva pero sin base no recibe tráfico. En el prototipo el balanceador es Caddy; en AWS sería un Application Load Balancer (Figura~\ref{fig:despliegue-objetivo}).
+
+\textbf{Despliegue distribuido.} Varios contenedores en un solo equipo no reemplazan un despliegue distribuido, y por eso el documento es
+explícito: el servidor público es único (Figura~\ref{fig:despliegue-actual}); el diseño distribuido (dos zonas, base administrada Multi-AZ) se calculó
+con los SLA publicados (99,5\,\% $\rightarrow$ 99,9375\,\%) y su comportamiento se validó con el prototipo de dos réplicas, pero no se desplegó. Se
+eligió ese reparto porque la base de datos es el límite (80\,\% de la indisponibilidad restante); Redis, MongoDB y el servicio de acceso quedan
+\emph{fuera del camino crítico} de una alerta y no se replican en esta etapa. El tracker es un punto único de \emph{detección} que ningún SLA de
+la nube cubre: corre por cámara, en el borde, y se mitiga solo con reinicio automático.
+
+\textbf{Servicios en tiempo real.} La promesa de valor es avisar en menos de 5~s. El camino de una alerta (Figura~\ref{fig:secuencia-alerta})
+evita todo lo que sume latencia: el tracker escribe el evento en la base, el motor lo lee cada 1~s, y el WebSocket lo empuja a los paneles
+(medido: del evento al panel, media 0,5~s y P95 0,9~s); los avisos externos salen en hilos aparte para que un canal lento no retrase la alerta;
+y la ruta crítica no depende de Redis, MongoDB ni del servicio de acceso. Cada WebSocket exige sesión y \cod{Origin} del panel, y el servidor
+revalida la sesión en cada mensaje y cierra los sockets de sesiones terminadas.

@@ -43,6 +43,9 @@ class DashboardHttpServerTest {
     @AfterEach
     void tearDown() {
         server.stop();
+        if (trackerServer != null) {
+            trackerServer.stop();
+        }
     }
 
     private HttpResponse<byte[]> get(String path) throws Exception {
@@ -137,13 +140,6 @@ class DashboardHttpServerTest {
         trackerServer = new DashboardHttpServer("localhost", port, tmp.resolve("dashboard"), tmp.resolve("photos"), fake,
                 java.util.Set.of(panelOrigin));
         trackerServer.start();
-    }
-
-    @AfterEach
-    void stopTrackerServer() {
-        if (trackerServer != null) {
-            trackerServer.stop();
-        }
     }
 
     private HttpResponse<String> send(String method, String path, String origin) throws Exception {
@@ -428,7 +424,7 @@ class DashboardHttpServerTest {
     void entregaLosScriptsYLaPaginaDePruebaDelPanel() throws Exception {
         startServerWithTracker();
         for (String name : new String[]{"camera-zones.js", "camera-names.js", "camera-share.js", "tracker-control.js", "report.js",
-                "browser-notifications.js"}) {
+                "browser-notifications.js", "puesto-sync.js", "realtime-session.js"}) {
             Files.writeString(tmp.resolve("dashboard").resolve(name), "// " + name);
             HttpResponse<String> response = send("GET", "/" + name, null);
             assertEquals(200, response.statusCode(), name);

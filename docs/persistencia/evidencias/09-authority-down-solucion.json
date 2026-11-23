@@ -1,0 +1,15 @@
+{
+  "mode": "authority-down",
+  "utc": "2026-11-07T04:56:31.599277+00:00",
+  "results": [
+    {
+      "test": "autoridad_no_disponible",
+      "passed": true,
+      "evidence": {
+        "edit_status": 503,
+        "edit_ms": 11,
+        "body": "{\"error\":\"No se pudo verificar el permiso (Gestion de acceso no disponible); no se guardo nada\"}"
+      }
+    }
+  ]
+}

@@ -18,10 +18,8 @@ import java.util.Base64;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 /**
@@ -53,24 +51,20 @@ public class AuthService {
         Optional<User> verify(String idToken);
     }
 
-    private static final class Session {
-        final User user;
-        final Instant expires;
-
-        Session(User user, Instant expires) {
-            this.user = user;
-            this.expires = expires;
-        }
-    }
-
     private final String clientId;
     private final Set<String> allowedEmails;
     private final TokenVerifier verifier;
     private final Clock clock;
     private final SecureRandom random = new SecureRandom();
-    private final Map<String, Session> sessions = new ConcurrentHashMap<>();
+    private final SessionStore sessions;
 
     public AuthService(String clientId, Set<String> allowedEmails, TokenVerifier verifier, Clock clock) {
+        this(clientId, allowedEmails, verifier, clock, new SessionStore.InMemory());
+    }
+
+    /** Con las sesiones en el almacen dado (la base compartida cuando hay varias replicas del gateway). */
+    AuthService(String clientId, Set<String> allowedEmails, TokenVerifier verifier, Clock clock, SessionStore sessions) {
+        this.sessions = sessions;
         this.clientId = clientId;
         Set<String> lower = new HashSet<>();
         for (String email : allowedEmails) {
@@ -84,6 +78,11 @@ public class AuthService {
     /** Servicio real: verifica contra Google. */
     public static AuthService google(String clientId, Set<String> allowedEmails) {
         return new AuthService(clientId, allowedEmails, new GoogleTokenVerifier(clientId), Clock.systemUTC());
+    }
+
+    /** Igual, con las sesiones en el almacen dado (SAFEMODE_SESSION_STORE=database: ver {@link JdbcSessionStore}). */
+    static AuthService google(String clientId, Set<String> allowedEmails, SessionStore sessions) {
+        return new AuthService(clientId, allowedEmails, new GoogleTokenVerifier(clientId), Clock.systemUTC(), sessions);
     }
 
     /** "a@x.com, B@y.com" -> {a@x.com, b@y.com}. */
@@ -115,11 +114,11 @@ public class AuthService {
     /** Crea una sesion y devuelve su identificador (el valor de la cookie). */
     public String createSession(User user) {
         Instant now = clock.instant();
-        sessions.values().removeIf(s -> s.expires.isBefore(now)); // limpia las vencidas
+        sessions.purgeExpired(now); // limpia las vencidas
         byte[] raw = new byte[32];
         random.nextBytes(raw);
         String id = Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
-        sessions.put(id, new Session(user, now.plus(SESSION_TTL)));
+        sessions.put(id, user, now.plus(SESSION_TTL));
         return id;
     }
 
@@ -129,15 +128,7 @@ public class AuthService {
         if (id == null) {
             return Optional.empty();
         }
-        Session session = sessions.get(id);
-        if (session == null) {
-            return Optional.empty();
-        }
-        if (session.expires.isBefore(clock.instant())) {
-            sessions.remove(id);
-            return Optional.empty();
-        }
-        return Optional.of(session.user);
+        return sessions.find(id, clock.instant());
     }
 
     public void logout(String cookieHeader) {
