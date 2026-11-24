@@ -25,6 +25,25 @@ public class ObjectPresenceTrackerTest {
     private static final int BROWSER_FRAMES_PORT = 8091;
 
     public static void main(String[] args) throws Exception {
+        // Registro opcional de muestras para el modelo de verificacion de retiro (SAFEMODE_REMOVAL_LOG=1, ver ml/GUIA_CAPTURA.md).
+        // Se valida primero: un error de configuracion no debe costar una captura (aun no se borra ni se abre nada).
+        RemovalSampleLog removalLog = RemovalSampleLog.fromEnvironment();
+        if (removalLog != null) {
+            System.out.println("Registro de muestras de retiro: ACTIVADO (" + removalLog.describe() + ")");
+        }
+        // Modelo de verificacion de retiro (opcional): SAFEMODE_REMOVAL_MODEL=off|shadow|active. off (por defecto) = la regla de siempre;
+        // shadow = el modelo se muestra por consola pero decide la regla; active = decide el modelo. El modelo se busca en
+        // SAFEMODE_REMOVAL_MODEL_FILE o, si no hay variable, en src/main/resources/removal-model/model.json (ver RemovalModelLoader).
+        // Si falta, esta danado, es de juguete y se pidio active, o el modo esta mal escrito, NO falla: avisa y sigue con la regla de siempre.
+        RemovalModelLoader.Loaded removalModel = RemovalModelLoader.fromEnvironment();
+        RemovalModelMode modelMode = removalModel.mode();
+        RemovalClassifier removalClassifier = removalModel.classifier();
+        if (removalModel.notice() != null) {
+            System.out.println(removalModel.notice());
+        }
+        if (removalClassifier != null && removalLog != null) {
+            removalLog.withClassifier(removalClassifier); // las filas del registro llevan model_p y model_action
+        }
         clearPreviousRunPhotos();
 
         // Camaras a vigilar: 1 (como siempre) o mas, desde la ventana compartida del navegador (ver openFrameSource).
@@ -67,6 +86,12 @@ public class ObjectPresenceTrackerTest {
                 trackers[i] = new ObjectTracker(store, poseEstimator).withCameraId(i + 1);
                 // si el detector pierde la mochila un momento (alguien se cruza) pero la zona sigue igual, no se da por retirada
                 trackers[i].withRemovalVerification();
+                if (removalLog != null) {
+                    trackers[i].withRemovalSampleLog(removalLog);
+                }
+                if (removalClassifier != null) {
+                    trackers[i].withRemovalClassifier(removalClassifier, modelMode);
+                }
                 if (ai != null) {
                     trackers[i].withOwnerVisionDescriber(ai);
                 }
@@ -117,6 +142,9 @@ public class ObjectPresenceTrackerTest {
             }
         } finally {
             capturer.stop();
+            if (removalLog != null) {
+                removalLog.close(); // anota los eventos que quedaban abiertos
+            }
         }
     }
 

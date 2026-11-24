@@ -1,0 +1,36 @@
+{
+  "format": 1,
+  "kind": "logistic",
+  "features": [
+    "x2_visible",
+    "x1_changed",
+    "x4_mean_abs_diff",
+    "x3_changed_soft"
+  ],
+  "mean": [
+    0.5,
+    0.5,
+    0.5,
+    0.5
+  ],
+  "std": [
+    0.3333333333333333,
+    0.3333333333333333,
+    0.3333333333333333,
+    0.3333333333333333
+  ],
+  "threshold": 0.4,
+  "logistic": {
+    "weights": [
+      0.5266499358470884,
+      5.243438044705431,
+      0.8901569124971771,
+      -0.9270333534817128
+    ],
+    "bias": -0.3
+  },
+  "meta": {
+    "toy": true,
+    "note": "pesos inventados para probar el formato y la integracion; NO es el modelo entrenado"
+  }
+}

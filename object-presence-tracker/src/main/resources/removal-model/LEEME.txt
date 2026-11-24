@@ -1,0 +1,9 @@
+Aqui vive el modelo de verificacion de retiro ENTRENADO: removal-model/model.json (formato en ml/removal_model.py).
+
+- Todavia no hay ninguno. Mientras falte, SAFEMODE_REMOVAL_MODEL=shadow|active no hace nada (el tracker avisa y sigue con la regla de siempre).
+- Lo deja ml/export_model.py export despues de entrenar con datos REALES (ml/train_removal.py). Se niega a exportar un modelo entrenado con datos
+  sinteticos. No pongas aqui pesos inventados: los modelos de juguete viven en src/test/resources/removal-model/ y llevan "meta": {"toy": true}.
+- Un modelo con "toy": true nunca puede decidir (modo active); solo se puede ver en shadow.
+- Despues de exportar hay que volver a compilar para que viaje en el jar:  mvn -pl object-presence-tracker -am install -DskipTests
+  (para probar uno sin recompilar: SAFEMODE_REMOVAL_MODEL_FILE=ruta/al/model.json).
+- Apagarlo: SAFEMODE_REMOVAL_MODEL=off, o borrar la variable.

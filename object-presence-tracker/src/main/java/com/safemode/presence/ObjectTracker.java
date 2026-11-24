@@ -57,6 +57,8 @@ public class ObjectTracker {
     // retiro real (alguien lo tapa y lo levanta) 0.28. Tope de frames de espera para no dejar un retiro real sin declarar.
     private static final double STILL_THERE_MAX_CHANGE = 0.15;
     private static final int MAX_VERIFIED_UNSEEN_FRAMES = 12;
+    // frames sin ver un objeto en reposo tras los cuales la regla deja de esperar (3 + 12); tambien lo usa RemovalSampleLog
+    static final int UNSEEN_CAP_FRAMES = MAX_FRAMES_UNSEEN + MAX_VERIFIED_UNSEEN_FRAMES;
     // Confirmacion rapida: si la parte visible de la zona ya cambio al menos esta fraccion (y se ve suficiente de la zona),
     // el retiro es claro y no se esperan los MAX_FRAMES_UNSEEN frames: basta con EARLY_REMOVAL_FRAMES sin ver el objeto.
     private static final double EARLY_REMOVAL_MIN_CHANGE = 0.6;
@@ -92,6 +94,11 @@ public class ObjectTracker {
     private int cameraId = 1;
     // persona -> dato de tatuajes ya obtenido de sus antebrazos en esta corrida (ver tattoosFromArms)
     private final Map<Long, String> tattooCheckByPerson = new java.util.concurrent.ConcurrentHashMap<>();
+    // opcional: anota las senales de cada frame sin ver un objeto en reposo (dataset del modelo de verificacion de retiro)
+    private RemovalSampleLog sampleLog;
+    // opcional: modelo que decide "sigue ahi" o "retirado" (SHADOW = solo se muestra, ACTIVE = decide el modelo); OFF = la regla de siempre
+    private RemovalClassifier classifier;
+    private RemovalModelMode modelMode = RemovalModelMode.OFF;
     private Executor aiExecutor;
     private ExecutorService ownedAiPool;
 
@@ -148,6 +155,9 @@ public class ObjectTracker {
      */
     public void onFrame(BufferedImage frame, List<Detection> detections) {
         Instant now = clock.instant();
+        if (sampleLog != null) {
+            sampleLog.frameStarted(frame);
+        }
 
         List<Detection> objectDetections = detections.stream()
                 .filter(d -> OBJECT_CLASSES.contains(d.className()))
@@ -211,6 +221,9 @@ public class ObjectTracker {
         }
 
         handleUnseenObjects(matchedIds, personDetections, personIds, now, frame);
+        if (sampleLog != null) {
+            sampleLog.frameFinished(now, frame, boxesOf(personDetections), boxesOf(objectDetections));
+        }
     }
 
     private void handleUnseenObjects(Set<Long> matchedIds, List<Detection> personDetections, List<Long> personIds,
@@ -227,27 +240,39 @@ public class ObjectTracker {
                 t.addDisappearanceNear(collectNearPersons(t.getX(), t.getY(), t.getWidth(), t.getHeight(),
                         personDetections, personIds, frame));
             }
+            boolean wasAtRest = t.getState() == TrackedObject.State.AT_REST; // markRemoved cambia el estado: se anota antes
+            if (wasAtRest && modelMode == RemovalModelMode.ACTIVE && decideByModel(t, frame, personDetections, personIds, now)) {
+                continue;
+            }
             if (t.getFramesUnseen() < MAX_FRAMES_UNSEEN) {
                 // confirmacion rapida: si la zona ya cambio claramente, no hace falta esperar el tercer frame
+                boolean removedEarly = false;
                 if (t.getState() == TrackedObject.State.AT_REST
                         && t.getFramesUnseen() >= EARLY_REMOVAL_FRAMES
                         && zoneClearlyChanged(t, frame, personDetections)) {
                     markRemoved(t, personDetections, personIds, now, frame);
                     tracked.remove(t.getId());
+                    removedEarly = true;
+                }
+                if (wasAtRest) {
+                    logUnseen(t, frame, personDetections, now, removedEarly ? "REMOVE_EARLY" : "WAIT", removedEarly ? "REMOVED" : null);
                 }
                 continue;
             }
             if (t.getState() == TrackedObject.State.AT_REST && stillLooksInPlace(t, frame, personDetections)) {
-                if (t.getFramesUnseen() >= MAX_FRAMES_UNSEEN + MAX_VERIFIED_UNSEEN_FRAMES) {
+                boolean cappedOut = t.getFramesUnseen() >= MAX_FRAMES_UNSEEN + MAX_VERIFIED_UNSEEN_FRAMES;
+                if (cappedOut) {
                     // la zona sigue igual tras muchos frames: el que falla es el detector, no hay retiro ni alerta
                     System.out.println("[DEBUG]   -> Objeto #" + t.getId() + " sin verse " + t.getFramesUnseen()
                             + " frames con la zona igual: el detector no lo ve, no es un retiro. Se deja de seguir sin alerta");
                     tracked.remove(t.getId());
                 }
+                logUnseen(t, frame, personDetections, now, cappedOut ? "DROP_CAP" : "STILL", cappedOut ? "DROPPED_CAP" : null);
                 continue;
             }
             if (t.getState() == TrackedObject.State.AT_REST) {
                 markRemoved(t, personDetections, personIds, now, frame);
+                logUnseen(t, frame, personDetections, now, "REMOVE", "REMOVED");
             } else {
                 System.out.println("[DEBUG]   -> Objeto #" + t.getId()
                         + " descartado SIN GUARDAR (nunca llegó a AT_REST, estado=" + t.getState() + ")");
@@ -364,6 +389,9 @@ public class ObjectTracker {
         boolean stillInPlace = Math.abs(det.x() - t.getX()) <= MOVEMENT_TOLERANCE_PX
                 && Math.abs(det.y() - t.getY()) <= MOVEMENT_TOLERANCE_PX;
 
+        if (sampleLog != null && t.getFramesUnseen() > 0 && t.getState() == TrackedObject.State.AT_REST) {
+            sampleLog.seenAgain(cameraId, t.getId(), now);
+        }
         t.resetFramesUnseen();
 
         if (t.getState() == TrackedObject.State.AT_REST) {
@@ -389,6 +417,9 @@ public class ObjectTracker {
             if (t.getState() == TrackedObject.State.AT_REST) {
                 markRemoved(t, personDetections, personIds, now, frame);
                 tracked.remove(t.getId());
+                if (sampleLog != null) {
+                    sampleLog.displacedRemoval(cameraId, t.getId(), now);
+                }
             } else {
                 t.setRestSinceAt(now);
             }
@@ -400,6 +431,7 @@ public class ObjectTracker {
             t.setLastNearPersons(collectNearPersons(t.getX(), t.getY(), t.getWidth(), t.getHeight(), personDetections, personIds, frame));
             if (verifyRemovalByImage) {
                 t.setRestFingerprint(RegionFingerprint.of(frame, t.getX(), t.getY(), t.getWidth(), t.getHeight()));
+                refreshFrameFingerprint(t, frame);
             }
         }
 
@@ -416,6 +448,7 @@ public class ObjectTracker {
         t.setState(TrackedObject.State.AT_REST);
         if (verifyRemovalByImage) {
             t.setRestFingerprint(RegionFingerprint.of(frame, t.getX(), t.getY(), t.getWidth(), t.getHeight()));
+            refreshFrameFingerprint(t, frame);
         }
         System.out.println("[DEBUG]   -> ¡Objeto #" + t.getId() + " marcado EN REPOSO! Guardando en BD...");
         String framePath = saveFrameSnapshot(frame, t.getId(), "REGISTERED_AT_REST", now);
@@ -625,6 +658,128 @@ public class ObjectTracker {
     public ObjectTracker withRemovalVerification() {
         this.verifyRemovalByImage = true;
         return this;
+    }
+
+    /**
+     * Activa (opcionalmente) el registro de muestras del modelo de verificacion de retiro: para cada frame sin ver un objeto en
+     * reposo anota las senales de su zona y lo que decidio la regla, sin cambiar ninguna decision. Necesita
+     * {@link #withRemovalVerification()} (de ahi sale la huella de reposo). Devuelve este mismo tracker.
+     */
+    public ObjectTracker withRemovalSampleLog(RemovalSampleLog log) {
+        this.sampleLog = log;
+        return this;
+    }
+
+    /**
+     * Activa (opcionalmente) el modelo de verificacion de retiro. En {@link RemovalModelMode#SHADOW} el modelo calcula su
+     * probabilidad y se muestra por consola, pero decide la regla de siempre (no cambia ninguna alerta); en
+     * {@link RemovalModelMode#ACTIVE} decide el modelo, desde el segundo frame sin ver el objeto, en lugar de la regla. Necesita
+     * {@link #withRemovalVerification()} (de ahi sale la huella de reposo) y el frame real: sin imagen se decide como siempre.
+     * {@link RemovalModelMode#OFF} (o no llamar a este metodo) deja todo exactamente como antes. Devuelve este mismo tracker.
+     */
+    public ObjectTracker withRemovalClassifier(RemovalClassifier classifier, RemovalModelMode mode) {
+        RemovalModelMode effective = mode == null ? RemovalModelMode.OFF : mode;
+        if (effective != RemovalModelMode.OFF && classifier == null) {
+            throw new IllegalArgumentException("El modo " + effective + " necesita un clasificador");
+        }
+        this.classifier = classifier;
+        this.modelMode = effective;
+        return this;
+    }
+
+    private boolean modelNeedsFrameFingerprint() {
+        return modelMode != RemovalModelMode.OFF && classifier != null && classifier.usesFeature("x5_frame_changed");
+    }
+
+    /**
+     * Suma el frame actual a la racha del objeto sin ver y devuelve el vector del catalogo de senales, o null si no se puede medir (sin
+     * imagen o sin huella de reposo). Hay que llamarlo UNA vez por frame sin ver el objeto: lleva la cuenta de la racha.
+     */
+    private double[] modelFeatures(TrackedObject t, BufferedImage frame, List<Detection> personDetections) {
+        RegionFingerprint atRest = t.getRestFingerprint();
+        RegionFingerprint now = RegionFingerprint.of(frame, t.getX(), t.getY(), t.getWidth(), t.getHeight());
+        if (atRest == null || now == null) {
+            return null;
+        }
+        List<Rectangle> people = boxesOf(personDetections);
+        RegionFingerprint.RemovalSignals signals = atRest.signals(now, people);
+        double frameChanged = classifier.usesFeature("x5_frame_changed")
+                ? RemovalSampleLog.frameChanged(t.getRestFrameFingerprint(), frame,
+                new Rectangle(t.getX(), t.getY(), t.getWidth(), t.getHeight()), people)
+                : -1;
+        return t.modelRun().next(signals, frameChanged, t.getFramesUnseen());
+    }
+
+    /** Modo sombra: muestra que dice el modelo en este frame junto a lo que hizo la regla. No cambia nada. */
+    private void shadowModel(TrackedObject t, BufferedImage frame, List<Detection> personDetections, String ruleAction) {
+        double[] catalog = modelFeatures(t, frame, personDetections);
+        if (catalog == null) {
+            return;
+        }
+        double p = classifier.probabilityFromCatalog(catalog);
+        boolean wouldRemove = t.getFramesUnseen() >= RemovalClassifier.DECIDES_FROM_FRAME && p >= classifier.threshold();
+        System.out.println("[MODELO] #" + t.getId() + " k=" + t.getFramesUnseen() + " p=" + String.format(java.util.Locale.ROOT, "%.3f", p)
+                + (wouldRemove ? " -> RETIRADO" : " -> espera") + " (umbral " + String.format(java.util.Locale.ROOT, "%.3f", classifier.threshold())
+                + ") | regla: " + ruleAction);
+    }
+
+    /**
+     * Modo activo: decide el modelo en lugar de la regla. Desde el segundo frame sin ver el objeto, si su probabilidad llega al umbral se
+     * da por retirado; si no, se espera (mientras alguien lo tapa el modelo no decide); tras el mismo tope de frames que la regla se deja
+     * de seguir sin alerta. Devuelve false si no se pudo medir la zona (sin imagen o sin huella): entonces decide la regla de siempre.
+     */
+    private boolean decideByModel(TrackedObject t, BufferedImage frame, List<Detection> personDetections, List<Long> personIds,
+                                  Instant now) {
+        double[] catalog = modelFeatures(t, frame, personDetections);
+        if (catalog == null) {
+            return false;
+        }
+        double p = classifier.probabilityFromCatalog(catalog);
+        int k = t.getFramesUnseen();
+        String pText = String.format(java.util.Locale.ROOT, "%.3f", p);
+        if (k >= RemovalClassifier.DECIDES_FROM_FRAME && p >= classifier.threshold()) {
+            System.out.println("[MODELO] #" + t.getId() + " k=" + k + " p=" + pText + " -> RETIRADO (decide el modelo)");
+            markRemoved(t, personDetections, personIds, now, frame);
+            tracked.remove(t.getId());
+            logUnseen(t, frame, personDetections, now, "MODEL_REMOVE", "REMOVED");
+        } else if (k >= UNSEEN_CAP_FRAMES) {
+            System.out.println("[MODELO] #" + t.getId() + " k=" + k + " p=" + pText + " -> sin verse " + k
+                    + " frames y el modelo no da el retiro: se deja de seguir sin alerta");
+            tracked.remove(t.getId());
+            logUnseen(t, frame, personDetections, now, "MODEL_DROP_CAP", "DROPPED_CAP");
+        } else {
+            System.out.println("[MODELO] #" + t.getId() + " k=" + k + " p=" + pText + " -> espera");
+            logUnseen(t, frame, personDetections, now, "MODEL_WAIT", null);
+        }
+        return true;
+    }
+
+    /** Le cuenta al registro de muestras un frame sin ver un objeto en reposo y lo que la regla decidio (outcome null = espera). */
+    private void logUnseen(TrackedObject t, BufferedImage frame, List<Detection> personDetections, Instant now, String action,
+                           String outcome) {
+        if (modelMode == RemovalModelMode.SHADOW) {
+            shadowModel(t, frame, personDetections, action);
+        }
+        if (sampleLog == null) {
+            return;
+        }
+        sampleLog.unseenFrame(new RemovalSampleLog.UnseenFrame(cameraId, t.getId(), t.getClassName(), t.getX(), t.getY(),
+                t.getWidth(), t.getHeight(), t.getFramesUnseen(), t.getRestFingerprint(), t.getRestFrameFingerprint(), frame,
+                boxesOf(personDetections), action, outcome, now));
+    }
+
+    /**
+     * Con registro de muestras, guarda tambien como se ve el cuadro completo (cuadricula gruesa): asi se distingue un retiro (cambia
+     * solo la zona del objeto) de una ventana que se mueve o un cambio de luz (cambia todo). Sin registro no hace nada.
+     */
+    private void refreshFrameFingerprint(TrackedObject t, BufferedImage frame) {
+        if ((sampleLog != null || modelNeedsFrameFingerprint()) && frame != null) {
+            t.setRestFrameFingerprint(RegionFingerprint.of(frame, 0, 0, frame.getWidth(), frame.getHeight()));
+        }
+    }
+
+    private static List<Rectangle> boxesOf(List<Detection> detections) {
+        return detections.stream().map(d -> new Rectangle(d.x(), d.y(), d.width(), d.height())).toList();
     }
 
     /** Activa (opcionalmente) la descripcion del dueno con un modelo de vision; devuelve este mismo tracker. */

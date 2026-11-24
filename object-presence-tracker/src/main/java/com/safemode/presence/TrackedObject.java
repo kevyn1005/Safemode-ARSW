@@ -37,6 +37,8 @@ public class TrackedObject {
     private Instant restSinceAt;
     private int framesUnseen = 0;
     private RegionFingerprint restFingerprint;
+    private RegionFingerprint restFrameFingerprint;
+    private RemovalFeatures.Run modelRun;
 
     private static final int MAX_LOOKS = 12;
 
@@ -161,10 +163,33 @@ public class TrackedObject {
         return restFingerprint;
     }
 
+    /**
+     * Como se veia el cuadro COMPLETO la ultima vez que se vio el objeto quieto. Solo se guarda cuando hay registro de muestras
+     * ({@link RemovalSampleLog}): sirve para saber si, al dejar de verse el objeto, cambio todo el cuadro (una ventana que se movio,
+     * un cambio de luz) o solo la zona del objeto (un retiro).
+     */
+    void setRestFrameFingerprint(RegionFingerprint fingerprint) {
+        this.restFrameFingerprint = fingerprint;
+    }
+
+    RegionFingerprint getRestFrameFingerprint() {
+        return restFrameFingerprint;
+    }
+
     void resetFramesUnseen() {
         this.framesUnseen = 0;
         // el objeto volvio a verse: lo anotado durante esa desaparicion ya no cuenta para un retiro posterior
         this.disappearanceNear.clear();
+        // y la racha del modelo de retiro (senales de secuencia) empieza de cero la proxima vez
+        this.modelRun = null;
+    }
+
+    /** Estado de la racha actual de frames sin ver el objeto para el modelo de retiro (se crea al primer frame sin verlo). */
+    RemovalFeatures.Run modelRun() {
+        if (modelRun == null) {
+            modelRun = new RemovalFeatures.Run();
+        }
+        return modelRun;
     }
 
     void incrementFramesUnseen() {

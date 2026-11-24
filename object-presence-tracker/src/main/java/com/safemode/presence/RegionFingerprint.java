@@ -32,8 +32,18 @@ final class RegionFingerprint {
         this.y1 = y1;
     }
 
+    // cambio "suave" (p. ej. un cambio de luz o de exposicion): menos exigente que CHANGED_LEVEL
+    private static final int SOFT_CHANGED_LEVEL = 25;
+
     /** Cuanto cambio la zona (entre los puntos que se podian comparar) y que parte de la zona se pudo comparar. */
     record Comparison(double changedFraction, double visibleFraction) {}
+
+    /**
+     * Las cuatro senales con las que se describe cuanto cambio la zona de un objeto que el detector dejo de ver (las usa el
+     * registro de muestras del modelo de verificacion de retiro, {@link RemovalSampleLog}). Todas van de 0 a 1.
+     * {@code changedFraction} y {@code visibleFraction} son exactamente las de {@link Comparison}.
+     */
+    record RemovalSignals(double changedFraction, double visibleFraction, double changedSoft, double meanAbsDiff) {}
 
     /** Huella de esa region (recortada a los bordes del frame), o null si no hay frame o la region queda fuera. */
     static RegionFingerprint of(BufferedImage frame, int x, int y, int width, int height) {
@@ -106,5 +116,40 @@ final class RegionFingerprint {
             }
         }
         return new Comparison(compared == 0 ? 0 : (double) changed / compared, (double) compared / brightness.length);
+    }
+
+    /**
+     * Como {@link #compare}, pero devuelve las cuatro senales del modelo de retiro en una sola pasada: la fraccion de puntos con
+     * cambio claro (nivel 45), la parte de la zona que se pudo comparar, la fraccion con cambio suave (nivel 25) y la
+     * diferencia absoluta media de brillo (dividida entre 255) de los puntos comparados. No modifica nada de lo que ya existe.
+     */
+    RemovalSignals signals(RegionFingerprint other, Collection<Rectangle> covered) {
+        int compared = 0;
+        int changed = 0;
+        int changedSoft = 0;
+        long absoluteSum = 0;
+        for (int j = 0; j < GRID; j++) {
+            for (int i = 0; i < GRID; i++) {
+                int px = sampleX(x0, x1, i);
+                int py = sampleY(y0, y1, j);
+                if (covered.stream().anyMatch(r -> r.contains(px, py))) {
+                    continue;
+                }
+                compared++;
+                int difference = Math.abs(brightness[j * GRID + i] - other.brightness[j * GRID + i]);
+                absoluteSum += difference;
+                if (difference > CHANGED_LEVEL) {
+                    changed++;
+                }
+                if (difference > SOFT_CHANGED_LEVEL) {
+                    changedSoft++;
+                }
+            }
+        }
+        if (compared == 0) {
+            return new RemovalSignals(0, 0, 0, 0);
+        }
+        return new RemovalSignals((double) changed / compared, (double) compared / brightness.length,
+                (double) changedSoft / compared, absoluteSum / (255.0 * compared));
     }
 }
