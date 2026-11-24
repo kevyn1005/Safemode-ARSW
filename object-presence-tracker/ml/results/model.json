@@ -1,0 +1,74 @@
+{
+  "format": 1,
+  "kind": "logistic",
+  "features": [
+    "x1_changed",
+    "x2_visible",
+    "x3_changed_soft",
+    "x4_mean_abs_diff"
+  ],
+  "mean": [
+    0.24703030085959882,
+    0.8003820401146131,
+    0.38077173638968487,
+    0.13115809169054443
+  ],
+  "std": [
+    0.20033569084083477,
+    0.3891699048258691,
+    0.26093910600610587,
+    0.0917897717615812
+  ],
+  "threshold": 0.5258,
+  "meta": {
+    "trained_at": "2026-11-24T19:10:27+00:00",
+    "seed": 20261124,
+    "model": "pocket",
+    "features_set": "zona",
+    "label_mode": "all",
+    "recall_target": 0.98,
+    "train_events": {
+      "removed": 23,
+      "still": 16
+    },
+    "train_sessions": [
+      "A-removed-limpio-01",
+      "A-removed-tapado-01",
+      "A-removed-tapado-02",
+      "A-still-persona-01",
+      "A-still-persona-02"
+    ],
+    "train_scenes": [
+      "A"
+    ],
+    "reserved_scene": "C",
+    "cv": {
+      "folds": 3,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.0625,
+      "false_removal_ci": [
+        0.01111905730833121,
+        0.2832926836802987
+      ],
+      "median_latency_frames": 2.0,
+      "auc": 0.9619565217391305
+    },
+    "rule_on_same_events": {
+      "recall": 1.0,
+      "false_removal_rate": 0.625
+    }
+  },
+  "logistic": {
+    "weights": [
+      -0.3467707882865282,
+      0.06307239897960597,
+      0.5362674083918888,
+      0.6155598284509217
+    ],
+    "bias": 0.4574661268030852
+  }
+}

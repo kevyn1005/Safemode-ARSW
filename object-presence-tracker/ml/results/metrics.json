@@ -1,0 +1,1074 @@
+{
+  "meta": {
+    "trained_at": "2026-11-24T19:10:27+00:00",
+    "seed": 20261124,
+    "model": "pocket",
+    "features_set": "zona",
+    "label_mode": "all",
+    "recall_target": 0.98,
+    "train_events": {
+      "removed": 23,
+      "still": 16
+    },
+    "train_sessions": [
+      "A-removed-limpio-01",
+      "A-removed-tapado-01",
+      "A-removed-tapado-02",
+      "A-still-persona-01",
+      "A-still-persona-02"
+    ],
+    "train_scenes": [
+      "A"
+    ],
+    "reserved_scene": "C",
+    "cv": {
+      "folds": 3,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.0625,
+      "false_removal_ci": [
+        0.01111905730833121,
+        0.2832926836802987
+      ],
+      "median_latency_frames": 2.0,
+      "auc": 0.9619565217391305
+    },
+    "rule_on_same_events": {
+      "recall": 1.0,
+      "false_removal_rate": 0.625
+    }
+  },
+  "rule": {
+    "tp": 23,
+    "fn": 0,
+    "fp": 10,
+    "tn": 6,
+    "recall": 1.0,
+    "recall_ci": [
+      0.8568788745827374,
+      1.0
+    ],
+    "false_removal_rate": 0.625,
+    "false_removal_ci": [
+      0.3864064709793481,
+      0.815190174452472
+    ],
+    "precision": 0.696969696969697,
+    "f1": 0.8214285714285714,
+    "median_latency_frames": 3.0
+  },
+  "selected": {
+    "model": "pocket",
+    "features_set": "zona",
+    "label_mode": "all",
+    "features": [
+      "x1_changed",
+      "x2_visible",
+      "x3_changed_soft",
+      "x4_mean_abs_diff"
+    ],
+    "n_params": 5,
+    "exportable": true,
+    "threshold": 0.5258,
+    "tp": 23,
+    "fn": 0,
+    "fp": 1,
+    "tn": 15,
+    "recall": 1.0,
+    "recall_ci": [
+      0.8568788745827374,
+      1.0
+    ],
+    "false_removal_rate": 0.0625,
+    "false_removal_ci": [
+      0.01111905730833121,
+      0.2832926836802987
+    ],
+    "precision": 0.9583333333333334,
+    "f1": 0.9787234042553191,
+    "median_latency_frames": 2.0,
+    "dropped_constant": []
+  },
+  "at_threshold_0.5": {
+    "tp": 23,
+    "fn": 0,
+    "fp": 1,
+    "tn": 15,
+    "recall": 1.0,
+    "recall_ci": [
+      0.8568788745827374,
+      1.0
+    ],
+    "false_removal_rate": 0.0625,
+    "false_removal_ci": [
+      0.01111905730833121,
+      0.2832926836802987
+    ],
+    "precision": 0.9583333333333334,
+    "f1": 0.9787234042553191,
+    "median_latency_frames": 2.0
+  },
+  "auc": 0.9619565217391305,
+  "logistic_vs_sklearn_max_diff": 3.5273891030307425e-09,
+  "ablation": [
+    {
+      "model": "pocket",
+      "features_set": "(ninguna: el elegido)",
+      "label_mode": "all",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff"
+      ],
+      "n_params": 5,
+      "exportable": true,
+      "threshold": 0.5258,
+      "tp": 23,
+      "fn": 0,
+      "fp": 1,
+      "tn": 15,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.0625,
+      "false_removal_ci": [
+        0.01111905730833121,
+        0.2832926836802987
+      ],
+      "precision": 0.9583333333333334,
+      "f1": 0.9787234042553191,
+      "median_latency_frames": 2.0
+    },
+    {
+      "model": "pocket",
+      "features_set": "sin x1_changed",
+      "label_mode": "all",
+      "features": [
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff"
+      ],
+      "n_params": 4,
+      "exportable": true,
+      "threshold": 0.5966,
+      "tp": 23,
+      "fn": 0,
+      "fp": 1,
+      "tn": 15,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.0625,
+      "false_removal_ci": [
+        0.01111905730833121,
+        0.2832926836802987
+      ],
+      "precision": 0.9583333333333334,
+      "f1": 0.9787234042553191,
+      "median_latency_frames": 2.0
+    },
+    {
+      "model": "pocket",
+      "features_set": "sin x2_visible",
+      "label_mode": "all",
+      "features": [
+        "x1_changed",
+        "x3_changed_soft",
+        "x4_mean_abs_diff"
+      ],
+      "n_params": 4,
+      "exportable": true,
+      "threshold": 0.6461,
+      "tp": 23,
+      "fn": 0,
+      "fp": 1,
+      "tn": 15,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.0625,
+      "false_removal_ci": [
+        0.01111905730833121,
+        0.2832926836802987
+      ],
+      "precision": 0.9583333333333334,
+      "f1": 0.9787234042553191,
+      "median_latency_frames": 2.0
+    },
+    {
+      "model": "pocket",
+      "features_set": "sin x3_changed_soft",
+      "label_mode": "all",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x4_mean_abs_diff"
+      ],
+      "n_params": 4,
+      "exportable": true,
+      "threshold": 0.5994,
+      "tp": 23,
+      "fn": 0,
+      "fp": 1,
+      "tn": 15,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.0625,
+      "false_removal_ci": [
+        0.01111905730833121,
+        0.2832926836802987
+      ],
+      "precision": 0.9583333333333334,
+      "f1": 0.9787234042553191,
+      "median_latency_frames": 2.0
+    },
+    {
+      "model": "pocket",
+      "features_set": "sin x4_mean_abs_diff",
+      "label_mode": "all",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft"
+      ],
+      "n_params": 4,
+      "exportable": true,
+      "threshold": 0.5187,
+      "tp": 23,
+      "fn": 0,
+      "fp": 4,
+      "tn": 12,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.25,
+      "false_removal_ci": [
+        0.10181901984237346,
+        0.49498768929398645
+      ],
+      "precision": 0.8518518518518519,
+      "f1": 0.92,
+      "median_latency_frames": 2.0
+    },
+    {
+      "model": "pocket",
+      "features_set": "con x5_frame_changed",
+      "label_mode": "all",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff",
+        "x5_frame_changed"
+      ],
+      "n_params": 6,
+      "exportable": true,
+      "threshold": 0.5998,
+      "tp": 23,
+      "fn": 0,
+      "fp": 1,
+      "tn": 15,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.0625,
+      "false_removal_ci": [
+        0.01111905730833121,
+        0.2832926836802987
+      ],
+      "precision": 0.9583333333333334,
+      "f1": 0.9787234042553191,
+      "median_latency_frames": 2.0
+    },
+    {
+      "model": "pocket",
+      "features_set": "con covered_frames",
+      "label_mode": "all",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff",
+        "covered_frames"
+      ],
+      "n_params": 6,
+      "exportable": true,
+      "threshold": 0.5105,
+      "tp": 23,
+      "fn": 0,
+      "fp": 4,
+      "tn": 12,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.25,
+      "false_removal_ci": [
+        0.10181901984237346,
+        0.49498768929398645
+      ],
+      "precision": 0.8518518518518519,
+      "f1": 0.92,
+      "median_latency_frames": 2.0
+    },
+    {
+      "model": "pocket",
+      "features_set": "con last_visible_x1",
+      "label_mode": "all",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff",
+        "last_visible_x1"
+      ],
+      "n_params": 6,
+      "exportable": true,
+      "threshold": 0.5109,
+      "tp": 23,
+      "fn": 0,
+      "fp": 1,
+      "tn": 15,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.0625,
+      "false_removal_ci": [
+        0.01111905730833121,
+        0.2832926836802987
+      ],
+      "precision": 0.9583333333333334,
+      "f1": 0.9787234042553191,
+      "median_latency_frames": 2.0
+    },
+    {
+      "model": "pocket",
+      "features_set": "con frames_unseen",
+      "label_mode": "all",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff",
+        "frames_unseen"
+      ],
+      "n_params": 6,
+      "exportable": true,
+      "threshold": 0.5796,
+      "tp": 23,
+      "fn": 0,
+      "fp": 3,
+      "tn": 13,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.1875,
+      "false_removal_ci": [
+        0.06591478773586765,
+        0.4300935986845823
+      ],
+      "precision": 0.8846153846153846,
+      "f1": 0.9387755102040817,
+      "median_latency_frames": 2.0
+    },
+    {
+      "model": "pocket",
+      "features_set": "con las 4 extra (8 senales)",
+      "label_mode": "all",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff",
+        "x5_frame_changed",
+        "covered_frames",
+        "last_visible_x1",
+        "frames_unseen"
+      ],
+      "n_params": 9,
+      "exportable": true,
+      "threshold": 0.5905,
+      "tp": 23,
+      "fn": 0,
+      "fp": 5,
+      "tn": 11,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.3125,
+      "false_removal_ci": [
+        0.14164435051961052,
+        0.5559606813326594
+      ],
+      "precision": 0.8214285714285714,
+      "f1": 0.9019607843137255,
+      "median_latency_frames": 4.0
+    }
+  ],
+  "signal_separation": [
+    {
+      "signal": "x1_changed",
+      "in_main_model": true,
+      "mean_still": 0.024133632972756405,
+      "mean_removed": 0.3298699294712533,
+      "auc": 0.9868355828953655
+    },
+    {
+      "signal": "x2_visible",
+      "in_main_model": true,
+      "mean_still": 0.2114549697916667,
+      "mean_removed": 0.9895488819026382,
+      "auc": 0.9218584566223832
+    },
+    {
+      "signal": "x3_changed_soft",
+      "in_main_model": true,
+      "mean_still": 0.04995630572916667,
+      "mean_removed": 0.49480706193938906,
+      "auc": 0.9866522743560786
+    },
+    {
+      "signal": "x4_mean_abs_diff",
+      "in_main_model": true,
+      "mean_still": 0.018532604006410255,
+      "mean_removed": 0.1800350312114214,
+      "auc": 0.9861704192546583
+    },
+    {
+      "signal": "x5_frame_changed",
+      "in_main_model": false,
+      "mean_still": 0.04583522596153846,
+      "mean_removed": 0.10214939478709695,
+      "auc": 0.6911950041657139
+    },
+    {
+      "signal": "frames_unseen",
+      "in_main_model": false,
+      "mean_still": 3.90625,
+      "mean_removed": 7.304347826086955,
+      "auc": 0.7641902783207131
+    },
+    {
+      "signal": "covered_frames",
+      "in_main_model": false,
+      "mean_still": 2.6822916666666665,
+      "mean_removed": 0.0,
+      "auc": 0.11848958333333343
+    },
+    {
+      "signal": "last_visible_x1",
+      "in_main_model": false,
+      "mean_still": 0.08753508489583334,
+      "mean_removed": 0.3298699294712533,
+      "auc": 0.9161012900143334
+    }
+  ],
+  "learning_curve": [
+    {
+      "model": "pocket",
+      "features_set": "fraccion 0.25",
+      "label_mode": "all",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff"
+      ],
+      "n_params": 5,
+      "exportable": true,
+      "threshold": 0.5649,
+      "tp": 23,
+      "fn": 0,
+      "fp": 5,
+      "tn": 11,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.3125,
+      "false_removal_ci": [
+        0.14164435051961052,
+        0.5559606813326594
+      ],
+      "precision": 0.8214285714285714,
+      "f1": 0.9019607843137255,
+      "median_latency_frames": 2.0,
+      "fraction": 0.25,
+      "train_events_per_fold": 6
+    },
+    {
+      "model": "pocket",
+      "features_set": "fraccion 0.50",
+      "label_mode": "all",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff"
+      ],
+      "n_params": 5,
+      "exportable": true,
+      "threshold": 0.4419,
+      "tp": 23,
+      "fn": 0,
+      "fp": 4,
+      "tn": 12,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.25,
+      "false_removal_ci": [
+        0.10181901984237346,
+        0.49498768929398645
+      ],
+      "precision": 0.8518518518518519,
+      "f1": 0.92,
+      "median_latency_frames": 2.0,
+      "fraction": 0.5,
+      "train_events_per_fold": 13
+    },
+    {
+      "model": "pocket",
+      "features_set": "fraccion 0.75",
+      "label_mode": "all",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff"
+      ],
+      "n_params": 5,
+      "exportable": true,
+      "threshold": 0.5022,
+      "tp": 23,
+      "fn": 0,
+      "fp": 4,
+      "tn": 12,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.25,
+      "false_removal_ci": [
+        0.10181901984237346,
+        0.49498768929398645
+      ],
+      "precision": 0.8518518518518519,
+      "f1": 0.92,
+      "median_latency_frames": 2.0,
+      "fraction": 0.75,
+      "train_events_per_fold": 20
+    },
+    {
+      "model": "pocket",
+      "features_set": "fraccion 1.00",
+      "label_mode": "all",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff"
+      ],
+      "n_params": 5,
+      "exportable": true,
+      "threshold": 0.5258,
+      "tp": 23,
+      "fn": 0,
+      "fp": 1,
+      "tn": 15,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.0625,
+      "false_removal_ci": [
+        0.01111905730833121,
+        0.2832926836802987
+      ],
+      "precision": 0.9583333333333334,
+      "f1": 0.9787234042553191,
+      "median_latency_frames": 2.0,
+      "fraction": 1.0,
+      "train_events_per_fold": 26
+    }
+  ],
+  "candidates": [
+    {
+      "model": "pocket",
+      "features_set": "zona",
+      "label_mode": "all",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff"
+      ],
+      "n_params": 5,
+      "exportable": true,
+      "threshold": 0.5258,
+      "tp": 23,
+      "fn": 0,
+      "fp": 1,
+      "tn": 15,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.0625,
+      "false_removal_ci": [
+        0.01111905730833121,
+        0.2832926836802987
+      ],
+      "precision": 0.9583333333333334,
+      "f1": 0.9787234042553191,
+      "median_latency_frames": 2.0,
+      "dropped_constant": []
+    },
+    {
+      "model": "perceptron",
+      "features_set": "zona",
+      "label_mode": "visible",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff"
+      ],
+      "n_params": 5,
+      "exportable": true,
+      "threshold": 0.4621,
+      "tp": 23,
+      "fn": 0,
+      "fp": 1,
+      "tn": 15,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.0625,
+      "false_removal_ci": [
+        0.01111905730833121,
+        0.2832926836802987
+      ],
+      "precision": 0.9583333333333334,
+      "f1": 0.9787234042553191,
+      "median_latency_frames": 2.0,
+      "dropped_constant": []
+    },
+    {
+      "model": "pocket",
+      "features_set": "zona",
+      "label_mode": "visible",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff"
+      ],
+      "n_params": 5,
+      "exportable": true,
+      "threshold": 0.5657,
+      "tp": 23,
+      "fn": 0,
+      "fp": 1,
+      "tn": 15,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.0625,
+      "false_removal_ci": [
+        0.01111905730833121,
+        0.2832926836802987
+      ],
+      "precision": 0.9583333333333334,
+      "f1": 0.9787234042553191,
+      "median_latency_frames": 2.0,
+      "dropped_constant": []
+    },
+    {
+      "model": "perceptron",
+      "features_set": "zona",
+      "label_mode": "all",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff"
+      ],
+      "n_params": 5,
+      "exportable": true,
+      "threshold": 0.5389,
+      "tp": 23,
+      "fn": 0,
+      "fp": 3,
+      "tn": 13,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.1875,
+      "false_removal_ci": [
+        0.06591478773586765,
+        0.4300935986845823
+      ],
+      "precision": 0.8846153846153846,
+      "f1": 0.9387755102040817,
+      "median_latency_frames": 2.0,
+      "dropped_constant": []
+    },
+    {
+      "model": "mlp4",
+      "features_set": "zona",
+      "label_mode": "all",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff"
+      ],
+      "n_params": 25,
+      "exportable": true,
+      "threshold": 0.8886,
+      "tp": 23,
+      "fn": 0,
+      "fp": 3,
+      "tn": 13,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.1875,
+      "false_removal_ci": [
+        0.06591478773586765,
+        0.4300935986845823
+      ],
+      "precision": 0.8846153846153846,
+      "f1": 0.9387755102040817,
+      "median_latency_frames": 2.0,
+      "dropped_constant": []
+    },
+    {
+      "model": "mlp4",
+      "features_set": "zona",
+      "label_mode": "visible",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff"
+      ],
+      "n_params": 25,
+      "exportable": true,
+      "threshold": 0.8946,
+      "tp": 23,
+      "fn": 0,
+      "fp": 3,
+      "tn": 13,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.1875,
+      "false_removal_ci": [
+        0.06591478773586765,
+        0.4300935986845823
+      ],
+      "precision": 0.8846153846153846,
+      "f1": 0.9387755102040817,
+      "median_latency_frames": 2.0,
+      "dropped_constant": []
+    },
+    {
+      "model": "logistica",
+      "features_set": "zona",
+      "label_mode": "all",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff"
+      ],
+      "n_params": 5,
+      "exportable": true,
+      "threshold": 0.8339,
+      "tp": 23,
+      "fn": 0,
+      "fp": 4,
+      "tn": 12,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.25,
+      "false_removal_ci": [
+        0.10181901984237346,
+        0.49498768929398645
+      ],
+      "precision": 0.8518518518518519,
+      "f1": 0.92,
+      "median_latency_frames": 2.0,
+      "dropped_constant": []
+    },
+    {
+      "model": "svm_lineal",
+      "features_set": "zona",
+      "label_mode": "all",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff"
+      ],
+      "n_params": 5,
+      "exportable": true,
+      "threshold": 0.6095,
+      "tp": 23,
+      "fn": 0,
+      "fp": 4,
+      "tn": 12,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.25,
+      "false_removal_ci": [
+        0.10181901984237346,
+        0.49498768929398645
+      ],
+      "precision": 0.8518518518518519,
+      "f1": 0.92,
+      "median_latency_frames": 2.0,
+      "dropped_constant": []
+    },
+    {
+      "model": "logistica",
+      "features_set": "zona",
+      "label_mode": "visible",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff"
+      ],
+      "n_params": 5,
+      "exportable": true,
+      "threshold": 0.8389,
+      "tp": 23,
+      "fn": 0,
+      "fp": 4,
+      "tn": 12,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.25,
+      "false_removal_ci": [
+        0.10181901984237346,
+        0.49498768929398645
+      ],
+      "precision": 0.8518518518518519,
+      "f1": 0.92,
+      "median_latency_frames": 2.0,
+      "dropped_constant": []
+    },
+    {
+      "model": "svm_lineal",
+      "features_set": "zona",
+      "label_mode": "visible",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff"
+      ],
+      "n_params": 5,
+      "exportable": true,
+      "threshold": 0.6154,
+      "tp": 23,
+      "fn": 0,
+      "fp": 4,
+      "tn": 12,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.25,
+      "false_removal_ci": [
+        0.10181901984237346,
+        0.49498768929398645
+      ],
+      "precision": 0.8518518518518519,
+      "f1": 0.92,
+      "median_latency_frames": 2.0,
+      "dropped_constant": []
+    },
+    {
+      "model": "svm_rbf",
+      "features_set": "zona",
+      "label_mode": "all",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff"
+      ],
+      "n_params": 1000000000,
+      "exportable": false,
+      "threshold": 0.2928,
+      "tp": 23,
+      "fn": 0,
+      "fp": 8,
+      "tn": 8,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.5,
+      "false_removal_ci": [
+        0.2799923761135083,
+        0.7200076238864916
+      ],
+      "precision": 0.7419354838709677,
+      "f1": 0.8518518518518519,
+      "median_latency_frames": 2.0,
+      "dropped_constant": []
+    },
+    {
+      "model": "svm_rbf",
+      "features_set": "zona",
+      "label_mode": "visible",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff"
+      ],
+      "n_params": 1000000000,
+      "exportable": false,
+      "threshold": 0.2988,
+      "tp": 23,
+      "fn": 0,
+      "fp": 8,
+      "tn": 8,
+      "recall": 1.0,
+      "recall_ci": [
+        0.8568788745827374,
+        1.0
+      ],
+      "false_removal_rate": 0.5,
+      "false_removal_ci": [
+        0.2799923761135083,
+        0.7200076238864916
+      ],
+      "precision": 0.7419354838709677,
+      "f1": 0.8518518518518519,
+      "median_latency_frames": 2.0,
+      "dropped_constant": []
+    },
+    {
+      "model": "mlp6",
+      "features_set": "zona",
+      "label_mode": "visible",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff"
+      ],
+      "n_params": 37,
+      "exportable": true,
+      "threshold": 0.001,
+      "tp": 22,
+      "fn": 1,
+      "fp": 8,
+      "tn": 8,
+      "recall": 0.9565217391304348,
+      "recall_ci": [
+        0.7900841350594088,
+        0.9922835330378734
+      ],
+      "false_removal_rate": 0.5,
+      "false_removal_ci": [
+        0.2799923761135083,
+        0.7200076238864916
+      ],
+      "precision": 0.7333333333333333,
+      "f1": 0.8301886792452831,
+      "median_latency_frames": 2.0,
+      "dropped_constant": []
+    },
+    {
+      "model": "mlp6",
+      "features_set": "zona",
+      "label_mode": "all",
+      "features": [
+        "x1_changed",
+        "x2_visible",
+        "x3_changed_soft",
+        "x4_mean_abs_diff"
+      ],
+      "n_params": 37,
+      "exportable": true,
+      "threshold": 0.001,
+      "tp": 22,
+      "fn": 1,
+      "fp": 16,
+      "tn": 0,
+      "recall": 0.9565217391304348,
+      "recall_ci": [
+        0.7900841350594088,
+        0.9922835330378734
+      ],
+      "false_removal_rate": 1.0,
+      "false_removal_ci": [
+        0.8063865817272802,
+        1.0
+      ],
+      "precision": 0.5789473684210527,
+      "f1": 0.7213114754098361,
+      "median_latency_frames": 2.0,
+      "dropped_constant": []
+    }
+  ]
+}
